@@ -1,0 +1,119 @@
+# ruff.toml for IRIS research project
+target-version = "py311"
+line-length = 88
+indent-width = 4
+
+# Only specify what differs from defaults
+src = ["src", "notebooks", "scripts", "models"]
+
+# Use extend-exclude to add to defaults, not replace them
+extend-exclude = [
+    "wandb",
+    "mlruns",
+    "lightning_logs",
+    "outputs",
+    "multirun",
+    "data/raw",
+    "data/external",
+    "data/interim",
+    "models/checkpoints",
+    "models/artifacts",
+    "*.pth",
+    "*.ckpt",
+    "*.h5",
+    "*.pkl",
+    ".dvc",
+    "dvc.lock",
+]
+
+[lint]
+# ML/Research optimized rule selection
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings  
+    "F",   # Pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade - modern Python
+    "B",   # flake8-bugbear - common bugs
+    "C4",  # flake8-comprehensions
+    "RUF", # Ruff-specific
+    "NPY", # NumPy-specific
+    "PD",  # Pandas-specific
+    "ANN", # Type annotations (selectively enforced)
+]
+
+ignore = [
+    "E501",   # Line too long (formatter handles)
+    "E741",   # Ambiguous variable names (i, l, O common in ML)
+    "N803",   # Argument names (ML uses single letters: x, y, z)
+    "N806",   # Variable names (ML conventions: X, y, etc.)
+    "T201",   # Print statements (useful for debugging/logging)
+    "ANN101", # Missing type for self
+    "ANN102", # Missing type for cls
+    "ANN401", # Dynamically typed expressions (Any)
+    "ANN204", # Missing return type annotation for special method `__init__`Ruff
+    "N999",   # Module names (allow invalid names for notebooks)
+    "W291",   # Trailing whitespace
+    "W293",   # Blank line contains whitespace
+    "D100",   # Missing top level module doc string
+    "D103",   # Missing docstring in public function
+]
+
+# Enable fixing for safe rules
+fixable = [
+    "F401",   # Unused imports
+    "I001",   # Import sorting
+    "UP",     # Syntax upgrades
+    "RUF100", # Unused noqa
+]
+unfixable = []
+
+[lint.per-file-ignores]
+# Notebooks - no typing required, loose rules
+"notebooks/*.py" = [
+    "E402", # Imports not at top
+    "F841", # Unused variables
+    "B018", # Useless expressions
+    "ANN",  # No type hints required
+    "T201", # Prints allowed
+]
+"notebooks/*.ipynb" = ["E402", "F841", "B018", "ANN", "T201"]
+
+# Root-level runner scripts - moderate typing (functions only)
+"main.py" = [
+    "ANN001", # Missing function argument types (only warn on returns)
+    "ANN002", # Missing *args type
+    "ANN003", # Missing **kwargs type
+    "T201",   # Prints allowed
+]
+
+# Source code - strict typing on public functions
+"src/**/*.py" = [
+    "T201", # Prints allowed for now
+]
+
+# Specific subdirectories with relaxed rules
+"src/models/*.py" = [
+    "ANN001", # Args optional (tensor shapes are complex)
+]
+
+# Tests - no typing required
+"tests/**/*.py" = ["ANN"]
+"conftest.py" = ["F401", "F811", "ANN"]
+
+[lint.isort]
+known-first-party = ["src", "models", "experiments"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = 72

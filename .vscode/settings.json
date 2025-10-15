@@ -1,0 +1,47 @@
+{
+    "files.exclude": {
+        "**/wandb": true,
+        "**/mlruns": true,
+        "**/data/raw": true,
+        "**/*.pth": true,
+        "**/*.ckpt": true
+    },
+    // Python Analysis - Package Indexing
+    "python.analysis.packageIndexDepths": [
+        {
+            "name": "transformers",
+            "depth": 4,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "torch",
+            "depth": 3,
+            "includeAllSymbols": false
+        }
+    ],
+    "python.analysis.indexing": true,
+    "python.analysis.typeCheckingMode": "basic",
+    // Pylance Diagnostic Overrides - Reduce ML library noise
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportCallIssue": "none",
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalMemberAccess": "none",
+        "reportAttributeAccessIssue": "none",
+        "reportMissingTypeStubs": "none",
+        "reportUndefinedVariable": "error",
+        "reportMissingImports": "warning"
+    },
+    // Python Formatting with Ruff
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+        }
+    },
+    // Ruff Settings
+    "ruff.nativeServer": "on",
+    // Other Extensions
+    "evenBetterToml.schema.enabled": false
+}
