@@ -570,9 +570,9 @@ wheels = [
 ]
 
 [[package]]
-name = "iris-personal-tests"
+name = "iris"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "jupyter" },
     { name = "num2words" },
@@ -605,6 +605,9 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", specifier = ">=4.56.2" },
 ]
+
+[package.metadata.requires-dev]
+dev = []
 
 [[package]]
 name = "isoduration"

@@ -1,7 +1,7 @@
 [project]
-name = "iris-personal-tests"
+name = "iris"
 version = "0.1.0"
-description = "Add your description here"
+description = "IRIS - Video understanding ML system"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -19,3 +19,14 @@ dependencies = [
     "tqdm>=4.67.1",
     "transformers>=4.56.2",
 ]
+
+[project.scripts]
+iris = "iris.main:main"
+# iris-process = "iris.vlm.inference.model_loader:process_video"  # Example: additional commands
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
