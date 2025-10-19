@@ -5,6 +5,7 @@ description = "IRIS - Video understanding ML system"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "accelerate>=1.10.1",
     "jupyter>=1.1.1",
     "num2words>=0.5.14",
     "numpy>=2.3.3",
@@ -20,13 +21,19 @@ dependencies = [
     "transformers>=4.56.2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.13.2",
+    "ipykernel>=6.29.0", # For Jupyter in VS Code
+]
+
 [project.scripts]
-iris = "iris.main:main"
+iris = "iris.main:cli"
 # iris-process = "iris.vlm.inference.model_loader:process_video"  # Example: additional commands
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = []
+[tool.hatch.build.targets.wheel]
+packages = ["src/iris"]

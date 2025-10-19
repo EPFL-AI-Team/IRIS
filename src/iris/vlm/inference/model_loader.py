@@ -1,18 +1,23 @@
-import torch
 from transformers import AutoProcessor, PreTrainedModel, ProcessorMixin
 
-from config.models import MODEL_CONFIGS
+from iris.config.models import MODEL_CONFIGS
+from iris.utils.logging import setup_logger
 
+logger = setup_logger(__name__)
 
 def load_model_and_processor(key: str) -> tuple[PreTrainedModel, ProcessorMixin]:
     """Load model and processor from config key."""
     model_cfg = MODEL_CONFIGS[key]
     print(f"Loading model: {model_cfg.id}...")
     model = model_cfg.loader.from_pretrained(
-        model_cfg.id,
-        device_map="auto",
-        dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        model_cfg.id, device_map="auto", dtype="auto"
     )
     processor = AutoProcessor.from_pretrained(model_cfg.id)
-    print("Model loaded!")
+
+    logger.info("Model loaded!")
+    logger.debug(f"Device: {model.device}")
+    logger.debug(f"Dtype: {model.dtype}")
+    if hasattr(model, "hf_device_map"):
+        logger.debug(f"Device map: {model.hf_device_map}")
+
     return model, processor
