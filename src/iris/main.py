@@ -6,7 +6,7 @@ import cv2
 from PIL import Image
 
 from iris.vlm.inference.model_loader import load_model_and_processor
-from iris.vlm.inference.queue.jobs import JobResult, SingleFrameJob
+from iris.vlm.inference.queue.jobs import Job, JobStatus, SingleFrameJob
 from iris.vlm.inference.queue.queue import InferenceQueue
 
 logging.basicConfig(
@@ -34,17 +34,29 @@ def load_camera_source(device_id: int = 1) -> cv2.VideoCapture:
 async def result_consumer(queue: InferenceQueue) -> NoReturn:
     """
     A separate, concurrent task that just waits for results and logs them.
+    It also inspects the job object to provide formatted logging.
     """
     logger.info("Result consumer started.")
     while True:
         # Wait for a result to appear in the 'outbox'
-        result: JobResult | None = await queue.get_result()
-        if result:
-            if result.status.value == "completed":
-                logging.info(f"[Job {result.job_id}]\t{result.result}")
-            else:
-                logging.error(f"[ERROR]: {result.job_id}\t{result.error}")
+        job: Job | None = await queue.get_result()
+        if not job:
+            continue
 
+        if job.status == JobStatus.COMPLETED:
+            # Ask the job object to format its own result
+            formatted_output = job.format_result()
+            logger.info(formatted_output)
+
+        elif job.status == JobStatus.FAILED:
+            # We can still have a standard format for failures
+            log_message = (
+                f"\n\nJob Failed: {job.job_id} ({job.job_type})\n"
+                f"----------------------------------------\n"
+                f"  - Error: {job.error}\n"
+                f"----------------------------------------\n"
+            )
+            logger.error(log_message)
         # Give control back to the event loop
         await asyncio.sleep(0.01)
 

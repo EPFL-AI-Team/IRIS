@@ -8,9 +8,9 @@ from typing import Any
 
 import torch
 from PIL import Image
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
 
 class JobStatus(Enum):
     """Job lifecycle states"""
@@ -19,15 +19,6 @@ class JobStatus(Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-class JobResult(BaseModel):
-    """Result from job execution"""
-
-    job_id: str
-    status: JobStatus
-    result: Any = None
-    error: str | None = None
 
 
 class Job(ABC):
@@ -43,18 +34,27 @@ class Job(ABC):
         self.submitted_at = time.time()
         self.started_at: float | None = None
         self.completed_at: float | None
+        self.result: Any = None
+        self.error: str | None = None
+        self.processing_time: float = 0.0
+
+    def format_result(self) -> str:
+        """
+        Provides a standard, one-line summary for a completed job.
+        Subclasses should override this to provide more detailed output.
+        """
+        # This acts as a default for any job that doesn't have a custom formatter.
+        header = f"Job Completed: {self.job_id} ({self.job_type})"
+        separator = "-" * (len(header) + 4)
+        return f"\n\n{header}\n{separator}\n  - Result: {self.result}\n{separator}\n"
 
     @abstractmethod
     async def execute(self) -> Any:
         """
         DO THE WORK.
 
-        Each job type implements this differently:
-        - SingleFrameJob: runs model on one frame
-        - BatchFrameJob: runs model on multiple frames
-        - ActivationJob: quick check to decide next action
-
-        MUST be async because it might await executor
+        This method should run the job and store its output
+        in 'self.result' or 'self.error'.
         """
         pass
 
@@ -98,7 +98,7 @@ class SingleFrameJob(Job):
         frame: Image.Image,
         model: Any,
         processor: Any,
-        prompt: str,
+        prompt: str,  # Specific to SingleFrameJob
         executor: ThreadPoolExecutor,
     ):
         super().__init__(job_id)
@@ -110,26 +110,48 @@ class SingleFrameJob(Job):
         self.prompt = prompt
         self.executor = executor  # For running blocking code
 
-    async def execute(self) -> str:
+    def format_result(self) -> str:
         """
-        Coordinate the inference
+        Overrides the base method to provide a detailed, structured
+        output specific to a SingleFrameJob.
+        """
+        header = f"Job Completed: {self.job_id} ({self.job_type})"
+        separator = "-" * (len(header) + 4)
+
+        # Clean up any weird whitespace from the model's output
+        clean_result = str(self.result).strip()
+
+        # Build the final, clean output block as a single string
+        return (
+            f"\n\n{header}\n{separator}\n"
+            f"  - Processing Time: {self.processing_time:.2f} seconds\n"
+            f'  - Prompt: "{self.prompt}"\n'
+            f"  - Result: {clean_result}\n"
+            f"{separator}\n"
+        )
+
+    async def execute(self) -> None:
+        """
+        Coordinate the inferenceand store the result in self.result.
         """
 
         self.status = JobStatus.RUNNING
         self.started_at = time.time()
-
         loop = asyncio.get_event_loop()
 
         # Run blocking work in its own thread
-        result = await loop.run_in_executor(
+        inference_output = await loop.run_in_executor(
             self.executor,  # Which thread to pool
             self._sync_inference,  # Non-async function to run
         )
 
-        self.status = JobStatus.COMPLETED
+        self.result = inference_output
         self.completed_at = time.time()
+        self.status = JobStatus.COMPLETED
+        self.processing_time = self.completed_at - self.started_at
 
-        return result
+        # Clear data to save memory (not necessary for single frame)
+        # self.frame = None
 
     def _sync_inference(self) -> str:
         """
@@ -139,7 +161,6 @@ class SingleFrameJob(Job):
         logger.info(f"WORKER: Starting inference for {self.job_id}")
 
         with torch.no_grad():
-            # Prepare input
             messages = [
                 {
                     "role": "user",
@@ -162,6 +183,6 @@ class SingleFrameJob(Job):
 
             # Decode embeddings back to text
             result = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
-        
+
         logger.info(f"WORKER: Finished inference for {self.job_id}")
         return result

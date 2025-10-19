@@ -2,7 +2,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from iris.vlm.inference.queue.jobs import Job, JobResult, JobStatus
+from iris.vlm.inference.queue.jobs import Job, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class InferenceQueue:
             num_workers: Number of parallel threads for inference. For one GPU, use 1.
         """
         self.queue: asyncio.Queue[Job | None] = asyncio.Queue(maxsize=max_queue_size)
-        self.results: asyncio.Queue[JobResult] = asyncio.Queue()
+        self.results: asyncio.Queue[Job] = asyncio.Queue()
         self.executor = ThreadPoolExecutor(
             max_workers=num_workers
         )  # Thread pool for running blocking GPU code
@@ -78,52 +78,36 @@ class InferenceQueue:
             logger.warning(f"Queue is full. Dropped {job}")
             return False
 
-    async def get_result(self, timeout: float | None = None) -> JobResult | None:
-        """
-        Waits for and returns the next completed job result.
-
-        Returns:
-            A JobResult object, or None if a timeout occurs.
-        """
+    async def get_result(self, timeout: float | None = None) -> Job | None:
+        """Waits for and returns the next completed job object."""
         try:
-            # await waits here until an item is available in the results queue
             return await asyncio.wait_for(self.results.get(), timeout)
         except TimeoutError:
             return None
 
     async def _worker(self, name: str) -> None:
-        """The core consumer loop that pulls jobs, executes them, and queues results."""
+        """The core consumer loop that processes jobs by executing them, and queuing results."""
         logger.info(f"{name} has started.")
-
         while self._running:
-            # 1. Wait for a job to appear in the queue
+            # Wait for a job to appear in the queue
             job: Job | None = await self.queue.get()
-
-            # 2. Check for the shutdown signal
+            # Check for the shutdown signal
             if job is None:
                 self.queue.task_done()
                 break
 
-            job_result: JobResult | None = None
             try:
                 logger.info(f"{name} is processing {job}")
-                # 3. Execute the job (which runs blocking code in the executor)
-                result_data = await job.execute()
-
-                # 4. Create a success result
-                job_result = JobResult(
-                    job_id=job.job_id, status=JobStatus.COMPLETED, result=result_data
-                )
+                # Run the job. The job updates its own internal state.
+                await job.execute()
             except Exception as e:
                 logger.error(f"{name} failed on {job}: {e}", exc_info=True)
-                # 5. Create a failure result
-                job_result = JobResult(
-                    job_id=job.job_id, status=JobStatus.FAILED, error=str(e)
-                )
+                # If it fails, update the job's state
+                job.status = JobStatus.FAILED
+                job.error = str(e)
             finally:
-                # 6. Always put a result in the outbox and mark the task done
-                if job_result:
-                    await self.results.put(job_result)
+                # Pass the entire job object to the results queue
+                await self.results.put(job)
                 self.queue.task_done()
 
         logger.info(f"{name} has stopped.")
