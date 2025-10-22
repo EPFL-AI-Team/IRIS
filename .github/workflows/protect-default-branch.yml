@@ -1,0 +1,13 @@
+name: Prevent Direct Pushes to Default Branch
+on:
+  push:
+    branches:
+      - main
+jobs:
+  block:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block direct pushes
+        run: |
+          echo "🚫 Direct pushes to main are not allowed. Please open a Pull Request."
+          exit 1
