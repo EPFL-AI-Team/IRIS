@@ -1,3 +1,4 @@
+import torch
 from transformers import AutoProcessor, PreTrainedModel, ProcessorMixin
 
 from iris.config.models import MODEL_CONFIGS
@@ -5,12 +6,17 @@ from iris.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
+
 def load_model_and_processor(key: str) -> tuple[PreTrainedModel, ProcessorMixin]:
     """Load model and processor from config key."""
     model_cfg = MODEL_CONFIGS[key]
     print(f"Loading model: {model_cfg.id}...")
     model = model_cfg.loader.from_pretrained(
-        model_cfg.id, device_map="auto", dtype="auto"
+        model_cfg.id,
+        device_map="mps",
+        dtype=torch.float16,  # dtype="auto",
+        attn_implementation="sdpa",
+        low_cpu_mem_usage=True,
     )
     processor = AutoProcessor.from_pretrained(model_cfg.id)
 

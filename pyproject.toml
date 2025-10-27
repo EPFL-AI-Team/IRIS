@@ -18,7 +18,7 @@ dependencies = [
     "torchcodec>=0.7.0",
     "torchvision>=0.23.0",
     "tqdm>=4.67.1",
-    "transformers>=4.56.2",
+    "transformers>=4.57.0",
 ]
 
 [project.optional-dependencies]

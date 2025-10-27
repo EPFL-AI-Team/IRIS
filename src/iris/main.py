@@ -10,7 +10,7 @@ from iris.vlm.inference.queue.jobs import Job, JobStatus, SingleFrameJob
 from iris.vlm.inference.queue.queue import InferenceQueue
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -18,9 +18,11 @@ logging.basicConfig(
 # Set to DEBUG to see device info, INFO for normal operation
 logger = logging.getLogger(__name__)
 
-CURRENT_MODEL_KEY = "smolvlm"
+# CURRENT_MODEL_KEY = "smolvlm"
+CURRENT_MODEL_KEY = "smolvlm2"
+# CURRENT_MODEL_KEY = "qwen3-2b"
 BATCH_SIZE = 8  # How many frames to grab for a job
-INFERENCE_INTERVAL = 60  # Frames to wait before triggering
+INFERENCE_INTERVAL = 120  # Frames to wait before triggering
 
 
 def load_camera_source(device_id: int = 1) -> cv2.VideoCapture:
@@ -47,6 +49,8 @@ async def result_consumer(queue: InferenceQueue) -> NoReturn:
             # Ask the job object to format its own result
             formatted_output = job.format_result()
             logger.info(formatted_output)
+            with open("inference_results.txt", "a") as f:
+                f.write(f"{formatted_output}\n\n")
 
         elif job.status == JobStatus.FAILED:
             # We can still have a standard format for failures
@@ -56,6 +60,8 @@ async def result_consumer(queue: InferenceQueue) -> NoReturn:
                 f"  - Error: {job.error}\n"
                 f"----------------------------------------\n"
             )
+            with open("inference_results.txt", "a") as f:
+                f.write(f"{log_message}\n\n")
             logger.error(log_message)
         # Give control back to the event loop
         await asyncio.sleep(0.01)
@@ -76,7 +82,12 @@ async def main() -> None:
 
     cap = load_camera_source()
     frame_count = 0
-    PROMPT = "Describe what you see in the foreground in one sentence"
+    PROMPT = """Describe what you see in the foreground in one sentence.
+If you see a person with glasses, respond EXACTLY with:
+TOOL_CALL: {"tool_name": "person_item_detector", "params": {"item": "water_bottle", "person_present": true}}
+Otherwise, describe normally.
+"""
+    # PROMPT = "Describe what you see in the foreground in one sentence"
     frame_buffer: list[Image.Image] = []
 
     logger.info("Starting video stream...")
@@ -100,6 +111,7 @@ async def main() -> None:
 
             # Non-blocking job submission (to the queue)
             if frame_count % INFERENCE_INTERVAL == 0 and frame_buffer:
+                # if frame_count == INFERENCE_INTERVAL and frame_buffer:
                 logger.info(f"MAIN: Triggering job for frame {frame_count}")
 
                 # Get the most recent frame for analysis
