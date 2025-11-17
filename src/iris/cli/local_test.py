@@ -27,7 +27,7 @@ INFERENCE_INTERVAL = 120  # Frames to wait before triggering
 
 def load_camera_source(device_id: int = 1) -> cv2.VideoCapture:
     """Initialize video capture from camera."""
-    cap = cv2.VideoCapture(device_id)  # 0 is the default webcam
+    cap = cv2.VideoCapture(device_id)
     if not cap.isOpened():
         raise OSError("Cannot open webcam")
     return cap
@@ -49,7 +49,7 @@ async def result_consumer(queue: InferenceQueue) -> NoReturn:
             # Ask the job object to format its own result
             formatted_output = job.format_result()
             logger.info(formatted_output)
-            with open("inference_results.txt", "a") as f:
+            with open("inference_results.txt", "a", encoding="utf-8") as f:
                 f.write(f"{formatted_output}\n\n")
 
         elif job.status == JobStatus.FAILED:
@@ -60,9 +60,10 @@ async def result_consumer(queue: InferenceQueue) -> NoReturn:
                 f"  - Error: {job.error}\n"
                 f"----------------------------------------\n"
             )
-            with open("inference_results.txt", "a") as f:
+            with open("inference_results.txt", "a", encoding="utf-8") as f:
                 f.write(f"{log_message}\n\n")
             logger.error(log_message)
+
         # Give control back to the event loop
         await asyncio.sleep(0.01)
 
