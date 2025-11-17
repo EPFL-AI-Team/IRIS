@@ -6,6 +6,7 @@ import json
 import time
 
 import websockets
+from websockets.client import WebSocketClientProtocol
 
 from iris.client.capture.camera import CameraCapture
 
@@ -23,16 +24,17 @@ class StreamingClient:
 
     async def stream(self) -> None:
         """Connect and stream frames with auto-reconnect."""
+        self.running = True
         retry_delay = 1.0
         max_delay = 30.0
-        
+
         while self.running:
             try:
                 async with websockets.connect(self.ws_url) as ws:
                     print(f"Connected to {self.ws_url}")
                     retry_delay = 1.0  # Reset on successful connection
                     await self._stream_loop(ws)
-                    
+
             except websockets.exceptions.WebSocketException as e:
                 print(f"Connection failed: {e}. Retrying in {retry_delay:.1f}s...")
                 await asyncio.sleep(retry_delay)
@@ -41,34 +43,39 @@ class StreamingClient:
                 print(f"Unexpected error: {e}")
                 break
 
-    async def _stream_loop(self, ws: websockets.WebSocketClientProtocol) -> None:
+    async def _stream_loop(self, ws: WebSocketClientProtocol) -> None:
         """Main streaming loop once connected."""
         while self.running:
             try:
-                frame_jpeg = self.camera.get_frame_jpeg(quality=80)
+                frame_jpeg = self.camera.get_frame_jpeg(quality=self.jpeg_quality)
                 if frame_jpeg is None:
                     await asyncio.sleep(0.1)
                     continue
 
+                # Calculate FPS
+                elapsed = time.time() - self.start_time
+                fps = self.frame_count / elapsed if elapsed > 0 else 0.0
+
                 message = {
                     "timestamp": time.time(),
                     "frame_id": self.frame_count,
+                    "fps": fps,
                     "frame": base64.b64encode(frame_jpeg).decode("utf-8"),
                 }
 
                 await ws.send(json.dumps(message))
                 self.frame_count += 1
-                
+
                 # Try to receive result (non-blocking)
                 try:
-                    response = await asyncio.wait_for(ws.recv(), timeout=0.1)
+                    response = await asyncio.wait_for(ws.recv(), timeout=0.01)
                     result = json.loads(response)
                     print(f"Result: {result.get('result', 'N/A')}")
                 except TimeoutError:
                     pass  # No result yet
-                
+
                 await asyncio.sleep(0.01)
-                
+
             except websockets.exceptions.ConnectionClosed:
                 print("Connection closed by server")
                 break

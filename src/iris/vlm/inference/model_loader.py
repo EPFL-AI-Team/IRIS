@@ -1,4 +1,3 @@
-import torch
 from transformers import AutoProcessor, PreTrainedModel, ProcessorMixin
 
 from iris.config.models import MODEL_CONFIGS
@@ -14,7 +13,7 @@ def load_model_and_processor(key: str) -> tuple[PreTrainedModel, ProcessorMixin]
     model = model_cfg.loader.from_pretrained(
         model_cfg.id,
         device_map="mps",
-        dtype=torch.float16,  # dtype="auto",
+        dtype="auto",
         attn_implementation="sdpa",
         low_cpu_mem_usage=True,
     )

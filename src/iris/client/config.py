@@ -23,7 +23,7 @@ class ServerConfig(BaseSettings):
 
     @property
     def ws_url(self) -> str:
-        """ "Returns full ip endpoint for target server"""
+        """Returns full ip endpoint for target server"""
         return f"ws://{self.host}:{self.port}{self.endpoint}"
 
 

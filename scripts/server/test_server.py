@@ -1,14 +1,11 @@
 """Test server to receive video streams from clients."""
 
-import asyncio
-import base64
 import json
 from datetime import datetime
 
+import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-import uvicorn
-
 
 app = FastAPI(title="IRIS Test Server")
 

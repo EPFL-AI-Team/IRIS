@@ -31,7 +31,7 @@ async def get_status() -> dict[str, Any]:
         "camera_active": state.camera is not None and state.camera.cap.isOpened(),
         "streaming_active": state.streaming_client is not None
         and state.streaming_client.running,
-        "config": state.config.dict(),
+        "config": state.config.model_dump(),
         "fps": state.streaming_client.get_fps() if state.streaming_client else 0.0,
     }
 
@@ -41,7 +41,7 @@ async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     """Update server configuration."""
     state = get_app_state()
     state.config.server = new_config
-    return {"status": "ok", "config": state.config.server.dict()}
+    return {"status": "ok", "config": state.config.server.model_dump()}
 
 
 @router.post("/start")
