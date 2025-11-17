@@ -6,19 +6,24 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.10.1",
+    "fastapi>=0.121.1",
     "jupyter>=1.1.1",
     "num2words>=0.5.14",
     "numpy>=2.3.3",
     "opencv-python>=4.11.0.86",
     "pillow>=11.3.0",
     "pydantic>=2.12.2",
+    "pydantic-settings>=2.12.0",
     "qwen-vl-utils>=0.0.14",
     "ruff>=0.13.2",
+    "threaded-videocapture>=1.0.1",
     "torch>=2.8.0",
     "torchcodec>=0.7.0",
     "torchvision>=0.23.0",
     "tqdm>=4.67.1",
     "transformers>=4.57.0",
+    "uvicorn>=0.38.0",
+    "websockets>=15.0.1",
 ]
 
 [project.optional-dependencies]
@@ -28,8 +33,10 @@ dev = [
 ]
 
 [project.scripts]
-iris = "iris.main:cli"
-# iris-process = "iris.vlm.inference.model_loader:process_video"  # Example: additional commands
+iris-client = "iris.client.web.app:main"
+iris-server = "iris.server.app:main"
+iris-test = "iris.cli.local_test:cli"
+iris = "iris.cli.local_test:cli"
 
 [build-system]
 requires = ["hatchling"]
