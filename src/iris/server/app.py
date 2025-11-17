@@ -1,13 +1,12 @@
 """IRIS Inference Server - receives frames, runs VLM inference."""
 
+import asyncio
 import base64
 import logging
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from io import BytesIO
-import time
-import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from PIL import Image
@@ -25,7 +24,7 @@ config = ServerConfig()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown."""
     # Startup
     state = get_server_state()
@@ -70,14 +69,14 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     state = get_server_state()
     logger.info("Client connected")
-    
+
     # --- CONFIGURATION ---
-    VIDEO_BATCH_SIZE = 16  # How many frames to accumulate before running inference
-    FRAME_SKIP = 60         # Only keep every Nth frame to save memory/compute
+    video_batch_size = 16  # How many frames to accumulate before running inference
+    frame_skip = 60  # Only keep every Nth frame to save memory/compute
     # ---------------------
-    
+
     # Producer loop which receives frames and pushes them to the queue
-    async def receive_loop():
+    async def receive_loop() -> None:
         frame_buffer: list[Image.Image] = []
         buffer_start_time = 0.0
         frame_counter = 0
@@ -85,28 +84,28 @@ async def inference_endpoint(websocket: WebSocket) -> None:
             while True:
                 data = await websocket.receive_json()
                 arrival_time = time.time()
-                
+
                 frame_b64 = data["frame"]
                 frame_id = data["frame_id"]
 
                 image_data = base64.b64decode(frame_b64)
                 image = Image.open(BytesIO(image_data))
-                
+
                 # Accumulation logic
                 frame_counter += 1
-                if frame_counter % FRAME_SKIP != 0:
-                    continue # Skip this frame
+                if frame_counter % frame_skip != 0:
+                    continue  # Skip this frame
 
                 if not frame_buffer:
-                    buffer_start_time = arrival_time
-                
+                    buffer_start_time = arrival_time  # noqa: F841
+
                 frame_buffer.append(image)
-                
-                if len(frame_buffer) >= VIDEO_BATCH_SIZE:
-                    logger.info(f"Accumulated {len(frame_buffer)} frames. Submitting job")
-                
-                
-                
+
+                if len(frame_buffer) >= video_batch_size:
+                    logger.info(
+                        "Accumulated %d frames. Submitting job", len(frame_buffer)
+                    )
+
                     curr_prompt = "Describe what you see in one sentence. Describe the colors, and the expressions of people in detail"
 
                     job = SingleFrameJob(
@@ -118,27 +117,27 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         executor=state.queue.executor,
                         received_at=arrival_time,
                     )
-                    
+
                     frame_buffer.clear()
-                    
+
                     # Submit without waiting for the result
                     submitted = await state.queue.submit(job)
                     if not submitted:
-                        logger.warning(f"Dropped frame {frame_id}, queue full")
-        
+                        logger.warning("Dropped frame %s, queue full", frame_id)
+
         except WebSocketDisconnect:
             logger.info("Client disconnected (Receive Loop)")
         except Exception as e:
-            logger.error(f"Receive loop error: {e}", exc_info=True)
+            logger.error("Receive loop error: %s", e, exc_info=True)
 
     # Consumer loop which watches queue result and sends them to the client
-    async def send_loop():
+    async def send_loop() -> None:
         try:
             while True:
                 # Wait specifically for the NEXT available result
                 # accessing the internal results queue directly
                 result_job = await state.queue.results.get()
-                
+
                 response = {
                     "job_id": result_job.job_id,
                     "status": result_job.status.value,
@@ -147,18 +146,19 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         "inference_time": result_job.processing_time,
                         "total_latency": result_job.total_latency,
                         "received_at": result_job.received_at,
-                        # "frames_processed": getattr(result_job, "frames", 1) if isinstance(result, SingleFrameJob) else len(result.frames)
-                    }
+                        # "frames_processed": getattr(result_job, "frames", 1)
+                        # if isinstance(result, SingleFrameJob) else len(result.frames)
+                    },
                 }
-                
+
                 await websocket.send_json(response)
                 state.queue.results.task_done()
-                
+
         except WebSocketDisconnect:
             logger.info("Client disconnected (Send Loop)")
         except Exception as e:
-            logger.error(f"Send loop error: {e}", exc_info=True)
-    
+            logger.error("Send loop error: %s", e, exc_info=True)
+
     # Run both functions concurrently
     # This runs until one of them finishes (usually the receive loop on disconnect)
     await asyncio.gather(receive_loop(), send_loop())
