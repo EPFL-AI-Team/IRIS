@@ -1,0 +1,64 @@
+# Fine-tuning Configuration for VideoMAE Classifier
+# Simple Text List Format (video_path label)
+
+# Model Configuration
+model:
+  name: "IRIS/videomae-base" # Or github model path
+  num_classes: 12  # Update based on your action taxonomy
+  dropout: 0.1
+  freeze_backbone: false  # Set to true for faster training (only train head)
+  pretrained: true  # Load HuggingFace weights as fallback
+  pretrained_checkpoint: null  # Path to your pretrained checkpoint
+
+# Data Configuration
+data:
+  format: "simple"  # Use "simple" for text list format, "json" for annotation format
+
+  # Simple format: text files with "video_path label" per line
+  train_list: "/Users/annaellebenlamri/IRIS/lab-videos/train_list.txt"
+  val_list: "/Users/annaellebenlamri/IRIS/lab-videos/val_list.txt"
+  test_list: "/Users/annaellebenlamri/IRIS/lab-videos/test_list.txt"
+
+  # Video preprocessing
+  frame_rate: null  # null means use original frame rate
+  num_frames: 16  # Number of frames per clip
+  frame_size: 224  # Resize to 224x224
+
+  # Data augmentation
+  augmentation:
+    enabled: true
+    horizontal_flip: 0.5
+    color_jitter: 0.2
+    rotation_degrees: 5
+
+  # Dataloader
+  batch_size: 8  # Adjust based on GPU memory
+  num_workers: 4
+  pin_memory: true
+
+# Training Configuration
+training:
+  num_epochs: 50 
+  learning_rate: 5e-5  
+  weight_decay: 0.01
+
+  # Optimizer
+  optimizer: "adamw"
+  momentum: 0.9  # For SGD
+
+  # Learning rate scheduler
+  scheduler: "cosine"  # Options: cosine, step, none
+  lr_decay_rate: 0.1
+
+  # Regularization
+  label_smoothing: 0.1
+
+  # Gradient accumulation (simulate larger batch size)
+  accumulation_steps: 4  # Effective batch size = batch_size * accumulation_steps = 32
+
+  # Mixed precision training (FP16)
+  use_amp: true  # Use automatic mixed precision for faster training
+
+  # Checkpointing
+  save_dir: "outputs/finetune_simple_checkpoints"
+  save_frequency: 5  # Save every N epochs
