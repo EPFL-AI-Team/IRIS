@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRIS Streaming Client</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>IRIS Streaming Client</h1>
+
+        <!-- Video Preview -->
+        <div class="video-section">
+            <h2>Camera Preview</h2>
+            <img id="preview" src="" alt="Camera preview">
+            <div id="preview-status">Camera inactive</div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="config-section">
+            <h2>Server Configuration</h2>
+            <form id="config-form">
+                <div class="form-group">
+                    <label for="host">Server Host:</label>
+                    <input type="text" id="host" value="localhost" required>
+                </div>
+                <div class="form-group">
+                    <label for="port">Server Port:</label>
+                    <input type="number" id="port" value="8000" min="1024" max="65535" required>
+                </div>
+                <div class="form-group">
+                    <label for="endpoint">Endpoint:</label>
+                    <input type="text" id="endpoint" value="/ws/stream" required>
+                </div>
+                <button type="submit">Update Config</button>
+            </form>
+        </div>
+
+        <!-- Control Buttons -->
+        <div class="control-section">
+            <button id="start-btn" class="btn-start">Start Streaming</button>
+            <button id="stop-btn" class="btn-stop" disabled>Stop Streaming</button>
+        </div>
+
+        <!-- Status Display -->
+        <div class="status-section">
+            <h2>Status</h2>
+            <div id="status">
+                <p><strong>Camera:</strong> <span id="camera-status">Inactive</span></p>
+                <p><strong>Streaming:</strong> <span id="streaming-status">Inactive</span></p>
+                <p><strong>FPS:</strong> <span id="fps">0.0</span></p>
+                <p><strong>Target:</strong> <span id="target">Not configured</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/client.js"></script>
+</body>
+
+</html>
