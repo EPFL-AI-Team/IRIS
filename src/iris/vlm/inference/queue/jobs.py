@@ -119,20 +119,20 @@ class SingleFrameJob(Job):
         separator = "-" * (len(header) + 4)
 
         # Clean up any weird whitespace from the model's output
-        clean_result = str(self.result).strip()
+        clean_result = str(self.result).strip().split("Assistant:")[-1]
 
         # Build the final, clean output block as a single string
         return (
             f"\n\n{header}\n{separator}\n"
             f"  - Processing Time: {self.processing_time:.2f} seconds\n"
-            f'  - Prompt: "{self.prompt}"\n'
+            # f'  - Prompt: "{self.prompt}"\n'
             f"  - Result: {clean_result}\n"
             f"{separator}\n"
         )
 
     async def execute(self) -> None:
         """
-        Coordinate the inferenceand store the result in self.result.
+        Coordinate the inference and store the result in self.result.
         """
 
         self.status = JobStatus.RUNNING
