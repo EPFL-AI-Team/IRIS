@@ -679,3 +679,4 @@ tags
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
+inference_results.txt
