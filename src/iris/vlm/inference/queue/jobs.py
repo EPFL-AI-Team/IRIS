@@ -100,6 +100,7 @@ class SingleFrameJob(Job):
         processor: Any,
         prompt: str,  # Specific to SingleFrameJob
         executor: ThreadPoolExecutor,
+        received_at: float,
     ):
         super().__init__(job_id)
 
@@ -109,6 +110,8 @@ class SingleFrameJob(Job):
         self.processor = processor
         self.prompt = prompt
         self.executor = executor  # For running blocking code
+        self.received_at = received_at  # Store arrival time
+        self.total_latency: float = 0.0 # Will store (completed - received)
 
     def format_result(self) -> str:
         """
@@ -127,6 +130,7 @@ class SingleFrameJob(Job):
             f"  - Processing Time: {self.processing_time:.2f} seconds\n"
             # f'  - Prompt: "{self.prompt}"\n'
             f"  - Result: {clean_result}\n"
+            
             f"{separator}\n"
         )
 
@@ -149,6 +153,7 @@ class SingleFrameJob(Job):
         self.completed_at = time.time()
         self.status = JobStatus.COMPLETED
         self.processing_time = self.completed_at - self.started_at
+        self.total_latency = self.completed_at - self.received_at
 
         # Clear data to save memory (not necessary for single frame)
         # self.frame = None
@@ -180,9 +185,12 @@ class SingleFrameJob(Job):
             ).to(self.model.device)
 
             outputs = self.model.generate(**inputs, max_new_tokens=128)
-
-            # Decode embeddings back to text
-            result = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
+            
+            # Slice the output to remove input tokens (cleaner than text parsing)
+            generated_ids = outputs[0][len(inputs.input_ids[0]):]
+            
+            # Decode only the new tokens
+            result = self.processor.decode(generated_ids, skip_special_tokens=True)
 
         logger.info(f"WORKER: Finished inference for {self.job_id}")
         return result

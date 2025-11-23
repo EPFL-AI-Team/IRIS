@@ -29,6 +29,10 @@ class ModelConfig(BaseModel):
 
 
 MODEL_CONFIGS: dict[str, ModelConfig] = {
+    "qwen2.5-7b": ModelConfig(
+        id="Qwen/Qwen2.5-VL-7B-Instruct",
+        loader=Qwen2_5_VLForConditionalGeneration,
+    ),
     "qwen3-2b": ModelConfig(
         id="Qwen/Qwen3-VL-2B-Instruct",
         loader=Qwen3VLForConditionalGeneration,
