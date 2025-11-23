@@ -5,6 +5,8 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from io import BytesIO
+import time
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from PIL import Image
@@ -28,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     state = get_server_state()
 
     logger.info("Loading model...")
+
     state.model, state.processor = load_model_and_processor(config.model_key)
 
     logger.info("Starting inference queue...")
@@ -66,41 +69,98 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     state = get_server_state()
     logger.info("Client connected")
+    
+    # --- CONFIGURATION ---
+    VIDEO_BATCH_SIZE = 16  # How many frames to accumulate before running inference
+    FRAME_SKIP = 60         # Only keep every Nth frame to save memory/compute
+    # ---------------------
+    
+    # Producer loop which receives frames and pushes them to the queue
+    async def receive_loop():
+        frame_buffer: list[Image.Image] = []
+        buffer_start_time = 0.0
+        frame_counter = 0
+        try:
+            while True:
+                data = await websocket.receive_json()
+                arrival_time = time.time()
+                
+                frame_b64 = data["frame"]
+                frame_id = data["frame_id"]
 
-    try:
-        while True:
-            data = await websocket.receive_json()
+                image_data = base64.b64decode(frame_b64)
+                image = Image.open(BytesIO(image_data))
+                
+                # Accumulation logic
+                frame_counter += 1
+                if frame_counter % FRAME_SKIP != 0:
+                    continue # Skip this frame
 
-            frame_b64 = data["frame"]
-            frame_id = data["frame_id"]
+                if not frame_buffer:
+                    buffer_start_time = arrival_time
+                
+                frame_buffer.append(image)
+                
+                if len(frame_buffer) >= VIDEO_BATCH_SIZE:
+                    logger.info(f"Accumulated {len(frame_buffer)} frames. Submitting job")
+                
+                
+                
+                    curr_prompt = "Describe what you see in one sentence. Describe the colors, and the expressions of people in detail"
 
-            image_data = base64.b64decode(frame_b64)
-            image = Image.open(BytesIO(image_data))
+                    job = SingleFrameJob(
+                        job_id=f"frame-{frame_id}",
+                        frame=image,
+                        model=state.model,
+                        processor=state.processor,
+                        prompt=curr_prompt,
+                        executor=state.queue.executor,
+                        received_at=arrival_time,
+                    )
+                    
+                    frame_buffer.clear()
+                    
+                    # Submit without waiting for the result
+                    submitted = await state.queue.submit(job)
+                    if not submitted:
+                        logger.warning(f"Dropped frame {frame_id}, queue full")
+        
+        except WebSocketDisconnect:
+            logger.info("Client disconnected (Receive Loop)")
+        except Exception as e:
+            logger.error(f"Receive loop error: {e}", exc_info=True)
 
-            job = SingleFrameJob(
-                job_id=f"frame-{frame_id}",
-                frame=image,
-                model=state.model,
-                processor=state.processor,
-                prompt="Describe what you see in one sentence.",
-                executor=state.queue.executor,
-            )
-
-            await state.queue.submit(job)
-            result_job = await state.queue.get_result(timeout=30.0)
-
-            if result_job:
-                await websocket.send_json({
+    # Consumer loop which watches queue result and sends them to the client
+    async def send_loop():
+        try:
+            while True:
+                # Wait specifically for the NEXT available result
+                # accessing the internal results queue directly
+                result_job = await state.queue.results.get()
+                
+                response = {
                     "job_id": result_job.job_id,
                     "status": result_job.status.value,
                     "result": result_job.result,
-                    "processing_time": result_job.processing_time,
-                })
-
-    except WebSocketDisconnect:
-        logger.info("Client disconnected")
-    except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
+                    "metrics": {
+                        "inference_time": result_job.processing_time,
+                        "total_latency": result_job.total_latency,
+                        "received_at": result_job.received_at,
+                        # "frames_processed": getattr(result_job, "frames", 1) if isinstance(result, SingleFrameJob) else len(result.frames)
+                    }
+                }
+                
+                await websocket.send_json(response)
+                state.queue.results.task_done()
+                
+        except WebSocketDisconnect:
+            logger.info("Client disconnected (Send Loop)")
+        except Exception as e:
+            logger.error(f"Send loop error: {e}", exc_info=True)
+    
+    # Run both functions concurrently
+    # This runs until one of them finishes (usually the receive loop on disconnect)
+    await asyncio.gather(receive_loop(), send_loop())
 
 
 def main() -> None:
