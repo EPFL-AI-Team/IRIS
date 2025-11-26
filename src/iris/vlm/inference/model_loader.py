@@ -1,6 +1,6 @@
 from transformers import AutoProcessor, PreTrainedModel, ProcessorMixin
 
-from iris.config.models import MODEL_CONFIGS
+from iris.vlm.models import MODEL_CONFIGS
 from iris.utils.logging import setup_logger
 
 logger = setup_logger(__name__)

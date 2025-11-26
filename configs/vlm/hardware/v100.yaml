@@ -1,0 +1,25 @@
+training:
+#   batch_size: 8
+#   gradient_accumulation_steps: 4  # Effective batch = 32
+
+# model:
+#   torch_dtype: "float16"
+
+# accelerate:
+#   use_accelerate: true
+#   mixed_precision: "fp16"  # V100 supports fp16, NOT bf16
+#   gradient_checkpointing: true
+
+# peft:
+#   use_peft: true
+#   peft_method: "lora"
+#   r: 8
+#   alpha: 16
+#   dropout: 0.1
+
+# quantization:
+#   load_in_4bit: true
+#   bnb_4bit_quant_type: "nf4"
+#   bnb_4bit_compute_dtype: "float16"
+
+# device: "cuda"

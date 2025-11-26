@@ -14,6 +14,7 @@ dependencies = [
     "pillow>=11.3.0",
     "pydantic>=2.12.2",
     "pydantic-settings>=2.12.0",
+    "pyyaml>=6.0.3",
     "qwen-vl-utils>=0.0.14",
     "ruff>=0.13.2",
     "threaded-videocapture>=1.0.1",
