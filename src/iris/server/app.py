@@ -9,13 +9,16 @@ from io import BytesIO
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from PIL import Image
 
+from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
-from iris.vlm.inference.model_loader import load_model_and_processor
 from iris.vlm.inference.queue.jobs import SingleFrameJob
 from iris.vlm.inference.queue.queue import InferenceQueue
+from iris.vlm.models import load_model_and_processor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+config = ServerConfig()
 
 
 @asynccontextmanager
@@ -25,10 +28,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     state = get_server_state()
 
     logger.info("Loading model...")
-    state.model, state.processor = load_model_and_processor("smolvlm2")
+    state.model, state.processor = load_model_and_processor(config.model_key)
 
     logger.info("Starting inference queue...")
-    state.queue = InferenceQueue(max_queue_size=10, num_workers=1)
+    state.queue = InferenceQueue(
+        max_queue_size=config.max_queue_size, num_workers=config.num_workers
+    )
     await state.queue.start()
 
     state.model_loaded = True
