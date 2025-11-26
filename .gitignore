@@ -1,4 +1,7 @@
 data/**/*.mp4
+data/**/*.json
+data/**/*.txt
+data/**/*.csv
 models/**/*.pth
 !**/.gitkeep
 
