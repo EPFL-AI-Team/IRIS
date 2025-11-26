@@ -61,7 +61,13 @@ async def start_streaming() -> dict[str, Any]:
             return {"status": "error", "message": "Failed to start camera"}
 
     # Start streaming
-    state.streaming_client = StreamingClient(state.config.server.ws_url, state.camera)
+    def store_result(result: dict[str, Any]) -> None:
+        """Callback to store inference results."""
+        state.latest_result = result
+
+    state.streaming_client = StreamingClient(
+        state.config.server.ws_url, state.camera, result_callback=store_result
+    )
     task = asyncio.create_task(state.streaming_client.stream())
     # Store task reference to prevent it from being garbage collected
     state.streaming_task = task
@@ -98,5 +104,24 @@ async def preview_websocket(websocket: WebSocket) -> None:
                 if frame_jpeg:
                     await websocket.send_text(base64.b64encode(frame_jpeg).decode())
             await asyncio.sleep(0.05)  # 20 FPS preview
+    except WebSocketDisconnect:
+        pass
+
+
+@router.websocket("/results")
+async def results_websocket(websocket: WebSocket) -> None:
+    """WebSocket endpoint for inference results."""
+    state = get_app_state()
+    await websocket.accept()
+
+    last_sent_result = None
+
+    try:
+        while True:
+            # Send new result if it has changed
+            if state.latest_result and state.latest_result != last_sent_result:
+                await websocket.send_json(state.latest_result)
+                last_sent_result = state.latest_result
+            await asyncio.sleep(0.1)  # Check for new results 10 times per second
     except WebSocketDisconnect:
         pass

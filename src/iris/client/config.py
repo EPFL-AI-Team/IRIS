@@ -18,7 +18,7 @@ class ServerConfig(BaseSettings):
     """Target server configuration."""
 
     host: str = Field(default="localhost")
-    port: int = Field(default=8001, ge=1024, le=65535)
+    port: int = Field(default=8005, ge=1024, le=65535)
     endpoint: str = Field(default="/ws/stream")
 
     @property

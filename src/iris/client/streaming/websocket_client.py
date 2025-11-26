@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import time
+from typing import Callable
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -14,13 +15,20 @@ from iris.client.capture.camera import CameraCapture
 class StreamingClient:
     """WebSocket client for streaming video frames"""
 
-    def __init__(self, ws_url: str, camera: CameraCapture, jpeg_quality: int = 80):
+    def __init__(
+        self,
+        ws_url: str,
+        camera: CameraCapture,
+        jpeg_quality: int = 80,
+        result_callback: Callable[[dict], None] | None = None,
+    ):
         self.ws_url = ws_url
         self.camera = camera
         self.jpeg_quality = jpeg_quality
         self.running = False
         self.frame_count = 0
         self.start_time = time.time()
+        self.result_callback = result_callback
 
     async def stream(self) -> None:
         """Connect and stream frames with auto-reconnect."""
@@ -70,7 +78,9 @@ class StreamingClient:
                 try:
                     response = await asyncio.wait_for(ws.recv(), timeout=0.01)
                     result = json.loads(response)
-                    print(f"Result: {result.get('result', 'N/A')}")
+                    print(result)
+                    if self.result_callback:
+                        self.result_callback(result)
                 except TimeoutError:
                     pass  # No result yet
 

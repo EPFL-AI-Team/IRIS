@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -70,6 +71,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     try:
         while True:
             data = await websocket.receive_json()
+            received_at = time.time()
 
             frame_b64 = data["frame"]
             frame_id = data["frame_id"]
@@ -90,11 +92,17 @@ async def inference_endpoint(websocket: WebSocket) -> None:
             result_job = await state.queue.get_result(timeout=30.0)
 
             if result_job:
+                total_latency = time.time() - received_at
                 await websocket.send_json({
                     "job_id": result_job.job_id,
                     "status": result_job.status.value,
                     "result": result_job.result,
-                    "processing_time": result_job.processing_time,
+                    "frame": frame_b64,
+                    "metrics": {
+                        "inference_time": result_job.processing_time,
+                        "total_latency": total_latency,
+                        "received_at": received_at,
+                    },
                 })
 
     except WebSocketDisconnect:

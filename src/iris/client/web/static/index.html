@@ -12,11 +12,24 @@
     <div class="container">
         <h1>IRIS Streaming Client</h1>
 
-        <!-- Video Preview -->
-        <div class="video-section">
-            <h2>Camera Preview</h2>
-            <img id="preview" src="" alt="Camera preview">
-            <div id="preview-status">Camera inactive</div>
+        <!-- Main Content: Side by Side -->
+        <div class="main-content">
+            <!-- Video Preview -->
+            <div class="video-section">
+                <h2>Camera Preview</h2>
+                <img id="preview" src="" alt="Camera preview">
+                <div id="preview-status">Camera inactive</div>
+            </div>
+
+            <!-- Inference Results -->
+            <div class="results-section">
+                <h2>Inference Results</h2>
+                <div id="results-container">
+                    <div class="results-placeholder">
+                        <p>No results yet. Start streaming to see inference results.</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Configuration -->
@@ -29,7 +42,7 @@
                 </div>
                 <div class="form-group">
                     <label for="port">Server Port:</label>
-                    <input type="number" id="port" value="8000" min="1024" max="65535" required>
+                    <input type="number" id="port" value="8005" min="1024" max="65535" required>
                 </div>
                 <div class="form-group">
                     <label for="endpoint">Endpoint:</label>

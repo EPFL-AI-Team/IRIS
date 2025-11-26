@@ -1,5 +1,6 @@
 // WebSocket for preview
 let previewWs = null;
+let resultsWs = null;
 let statusInterval = null;
 
 // Initialize preview WebSocket
@@ -20,6 +21,68 @@ function connectPreview() {
     document.getElementById("preview-status").textContent = "Camera inactive";
     setTimeout(connectPreview, 2000); // Reconnect
   };
+}
+
+// Initialize results WebSocket
+function connectResults() {
+  resultsWs = new WebSocket(`ws://${window.location.host}/results`);
+
+  resultsWs.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    displayResult(data);
+  };
+
+  resultsWs.onerror = (error) => {
+    console.error("Results WebSocket error:", error);
+  };
+
+  resultsWs.onclose = () => {
+    console.log("Results WebSocket closed, reconnecting...");
+    setTimeout(connectResults, 2000); // Reconnect
+  };
+}
+
+// Display inference result
+function displayResult(data) {
+  const container = document.getElementById("results-container");
+
+  // Format timestamp
+  const timestamp = new Date(data.metrics.received_at * 1000).toLocaleTimeString();
+
+  container.innerHTML = `
+    <div class="result-content">
+      <img class="result-frame" src="data:image/jpeg;base64,${data.frame}" alt="Analyzed frame">
+
+      <div class="result-text">
+        <h3>Description</h3>
+        <p>${data.result}</p>
+      </div>
+
+      <div class="result-metrics">
+        <h3>Metrics</h3>
+        <div class="metric-row">
+          <span class="metric-label">Job ID:</span>
+          <span class="metric-value">${data.job_id}</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Status:</span>
+          <span class="metric-value">${data.status}</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Inference Time:</span>
+          <span class="metric-value">${data.metrics.inference_time.toFixed(3)}s</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Total Latency:</span>
+          <span class="metric-value">${data.metrics.total_latency.toFixed(3)}s</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Timestamp:</span>
+          <span class="metric-value">${timestamp}</span>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 // Update status display
@@ -104,5 +167,6 @@ document.getElementById("stop-btn").addEventListener("click", async () => {
 
 // Initialize
 connectPreview();
+connectResults();
 updateStatus();
 statusInterval = setInterval(updateStatus, 1000);

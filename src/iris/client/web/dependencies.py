@@ -17,6 +17,7 @@ class AppState:
         self.camera: CameraCapture | None = None
         self.streaming_client: StreamingClient | None = None
         self.streaming_task: asyncio.Task | None = None
+        self.latest_result: dict | None = None
 
 
 # Singleton instance
