@@ -1,3 +1,7 @@
+"""
+Model loading utilities + MODEL_CONFIGS registry. Shared by train + inference.
+"""
+
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
