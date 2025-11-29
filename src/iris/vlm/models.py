@@ -1,11 +1,22 @@
+"""
+Model loading utilities + MODEL_CONFIGS registry. Shared by train + inference.
+"""
+
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from transformers import (
     AutoModelForImageTextToText,
+    AutoProcessor,
+    PreTrainedModel,
+    ProcessorMixin,
     Qwen2_5_VLForConditionalGeneration,
     Qwen3VLForConditionalGeneration,
 )
+
+from iris.utils.logging import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class ModelConfig(BaseModel):
@@ -34,3 +45,25 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
         id="HuggingFaceTB/SmolVLM2-2.2B-Instruct", loader=AutoModelForImageTextToText
     ),
 }
+
+
+def load_model_and_processor(key: str) -> tuple[PreTrainedModel, ProcessorMixin]:
+    """Load model and processor from config key."""
+    model_cfg = MODEL_CONFIGS[key]
+    print(f"Loading model: {model_cfg.id}...")
+    model = model_cfg.loader.from_pretrained(
+        model_cfg.id,
+        device_map="mps",
+        dtype="auto",
+        attn_implementation="sdpa",
+        low_cpu_mem_usage=True,
+    )
+    processor = AutoProcessor.from_pretrained(model_cfg.id)
+
+    logger.info("Model loaded!")
+    logger.debug(f"Device: {model.device}")
+    logger.debug(f"Dtype: {model.dtype}")
+    if hasattr(model, "hf_device_map"):
+        logger.debug(f"Device map: {model.hf_device_map}")
+
+    return model, processor
