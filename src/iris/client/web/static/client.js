@@ -3,9 +3,53 @@ let previewWs = null;
 let resultsWs = null;
 let statusInterval = null;
 
+// Activity logging
+const LOG_MAX_ENTRIES = 100;
+
+function addLog(message, level = 'INFO') {
+  const container = document.getElementById('log-container');
+  if (!container) return;
+
+  const timestamp = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = `log-entry log-level-${level}`;
+  entry.innerHTML = `
+    <span class="log-timestamp">[${timestamp}]</span>
+    <span class="log-level">${level}</span>
+    <span class="log-message">${message}</span>
+  `;
+
+  container.appendChild(entry);
+
+  // Limit entries
+  const entries = container.getElementsByClassName('log-entry');
+  if (entries.length > LOG_MAX_ENTRIES) {
+    container.removeChild(entries[0]);
+  }
+
+  // Auto-scroll to bottom
+  container.scrollTop = container.scrollHeight;
+}
+
+// Update connection status
+function updateConnectionStatus(elementId, status) {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.textContent = status;
+    element.className = `status-indicator status-${status.toLowerCase()}`;
+  }
+}
+
 // Initialize preview WebSocket
 function connectPreview() {
+  updateConnectionStatus('preview-connection', 'Connecting');
+  addLog('Connecting to preview WebSocket...', 'INFO');
   previewWs = new WebSocket(`ws://${window.location.host}/preview`);
+
+  previewWs.onopen = () => {
+    updateConnectionStatus('preview-connection', 'Connected');
+    addLog('Preview WebSocket connected', 'INFO');
+  };
 
   previewWs.onmessage = (event) => {
     const img = document.getElementById("preview");
@@ -14,29 +58,45 @@ function connectPreview() {
   };
 
   previewWs.onerror = () => {
+    updateConnectionStatus('preview-connection', 'Error');
     document.getElementById("preview-status").textContent = "Preview error";
+    addLog('Preview WebSocket error', 'ERROR');
   };
 
   previewWs.onclose = () => {
+    updateConnectionStatus('preview-connection', 'Disconnected');
     document.getElementById("preview-status").textContent = "Camera inactive";
+    addLog('Preview WebSocket closed, reconnecting...', 'WARNING');
     setTimeout(connectPreview, 2000); // Reconnect
   };
 }
 
 // Initialize results WebSocket
 function connectResults() {
+  updateConnectionStatus('results-connection', 'Connecting');
+  addLog('Connecting to results WebSocket...', 'INFO');
   resultsWs = new WebSocket(`ws://${window.location.host}/results`);
+
+  resultsWs.onopen = () => {
+    updateConnectionStatus('results-connection', 'Connected');
+    addLog('Results WebSocket connected', 'INFO');
+  };
 
   resultsWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
+    addLog(`Received result: ${data.job_id} (${data.status})`, 'INFO');
     displayResult(data);
   };
 
   resultsWs.onerror = (error) => {
+    updateConnectionStatus('results-connection', 'Error');
+    addLog('Results WebSocket error', 'ERROR');
     console.error("Results WebSocket error:", error);
   };
 
   resultsWs.onclose = () => {
+    updateConnectionStatus('results-connection', 'Disconnected');
+    addLog('Results WebSocket closed, reconnecting...', 'WARNING');
     console.log("Results WebSocket closed, reconnecting...");
     setTimeout(connectResults, 2000); // Reconnect
   };
@@ -138,15 +198,19 @@ document.getElementById("config-form").addEventListener("submit", async (e) => {
 // Start streaming
 document.getElementById("start-btn").addEventListener("click", async () => {
   try {
+    addLog('Starting streaming...', 'INFO');
     const response = await fetch("/start", { method: "POST" });
     const data = await response.json();
 
     if (data.status === "ok") {
+      addLog('Streaming started successfully', 'INFO');
       updateStatus();
     } else {
+      addLog(`Start failed: ${data.message}`, 'ERROR');
       alert(`Start failed: ${data.message}`);
     }
   } catch (error) {
+    addLog(`Failed to start streaming: ${error.message}`, 'ERROR');
     alert("Failed to start streaming");
   }
 });
@@ -154,18 +218,33 @@ document.getElementById("start-btn").addEventListener("click", async () => {
 // Stop streaming
 document.getElementById("stop-btn").addEventListener("click", async () => {
   try {
+    addLog('Stopping streaming...', 'INFO');
     const response = await fetch("/stop", { method: "POST" });
     const data = await response.json();
 
     if (data.status === "ok") {
+      addLog('Streaming stopped successfully', 'INFO');
       updateStatus();
     }
   } catch (error) {
+    addLog(`Failed to stop streaming: ${error.message}`, 'ERROR');
     alert("Failed to stop streaming");
   }
 });
 
+// Initialize clear log button
+document.addEventListener('DOMContentLoaded', () => {
+  const clearBtn = document.getElementById('clear-log-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      document.getElementById('log-container').innerHTML = '';
+      addLog('Log cleared', 'INFO');
+    });
+  }
+});
+
 // Initialize
+addLog('IRIS Client initializing...', 'INFO');
 connectPreview();
 connectResults();
 updateStatus();

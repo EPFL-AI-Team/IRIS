@@ -3,13 +3,16 @@
 import asyncio
 import base64
 import json
+import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import websockets
 from websockets.client import WebSocketClientProtocol
 
 from iris.client.capture.camera import CameraCapture
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingClient:
@@ -36,19 +39,41 @@ class StreamingClient:
         retry_delay = 1.0
         max_delay = 30.0
 
+        attempt_count = 0
         while self.running:
             try:
                 async with websockets.connect(self.ws_url) as ws:
-                    print(f"Connected to {self.ws_url}")
+                    logger.info("Connected to %s", self.ws_url)
                     retry_delay = 1.0  # Reset on successful connection
+                    attempt_count = 0
                     await self._stream_loop(ws)
 
+            except websockets.exceptions.InvalidStatusCode as e:
+                logger.error("Server returned invalid status code: %s", e)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+                attempt_count += 1
             except websockets.exceptions.WebSocketException as e:
-                print(f"Connection failed: {e}. Retrying in {retry_delay:.1f}s...")
+                attempt_count += 1
+                logger.warning(
+                    "Connection failed: %s. Retrying in %.1fs... (attempt %d)",
+                    e,
+                    retry_delay,
+                    attempt_count,
+                )
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+            except ConnectionRefusedError:
+                attempt_count += 1
+                logger.error(
+                    "Connection refused. Is the server running at %s? (attempt %d)",
+                    self.ws_url,
+                    attempt_count,
+                )
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
             except Exception as e:
-                print(f"Unexpected error: {e}")
+                logger.error("Unexpected error: %s", e, exc_info=True)
                 break
 
     async def _stream_loop(self, ws: WebSocketClientProtocol) -> None:
@@ -78,7 +103,7 @@ class StreamingClient:
                 try:
                     response = await asyncio.wait_for(ws.recv(), timeout=0.01)
                     result = json.loads(response)
-                    print(result)
+                    logger.debug("Received result: %s", result)
                     if self.result_callback:
                         self.result_callback(result)
                 except TimeoutError:
@@ -87,7 +112,7 @@ class StreamingClient:
                 await asyncio.sleep(0.01)
 
             except websockets.exceptions.ConnectionClosed:
-                print("Connection closed by server")
+                logger.info("Connection closed by server")
                 break
 
     def stop(self) -> None:

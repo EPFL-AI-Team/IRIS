@@ -229,3 +229,113 @@ button:disabled {
 .metric-value {
     font-family: 'Courier New', monospace;
 }
+
+/* Status Indicators */
+.status-indicator {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.85em;
+}
+
+.status-connected {
+    background: #4caf50;
+    color: white;
+}
+
+.status-connecting {
+    background: #ff9800;
+    color: white;
+}
+
+.status-disconnected {
+    background: #f44336;
+    color: white;
+}
+
+.status-error {
+    background: #d32f2f;
+    color: white;
+}
+
+/* Activity Log Section */
+.log-section {
+    margin-top: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 15px;
+    background: white;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.log-header h2 {
+    margin-bottom: 0;
+}
+
+.btn-clear {
+    background: #6c757d;
+    color: white;
+    padding: 8px 16px;
+    font-size: 0.9em;
+}
+
+.btn-clear:hover {
+    background: #5a6268;
+}
+
+.log-container {
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.log-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid #eee;
+    line-height: 1.4;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-timestamp {
+    color: #666;
+    margin-right: 8px;
+}
+
+.log-level {
+    font-weight: bold;
+    margin-right: 8px;
+}
+
+.log-message {
+    color: #333;
+}
+
+.log-level-INFO {
+    color: #0066cc;
+}
+
+.log-level-WARNING {
+    color: #ff8800;
+}
+
+.log-level-ERROR {
+    color: #cc0000;
+}
+
+.log-level-DEBUG {
+    color: #666;
+}

@@ -5,6 +5,8 @@ data/**/*.csv
 models/**/*.pth
 !**/.gitkeep
 
+.claude/
+
 # Created by https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
 
