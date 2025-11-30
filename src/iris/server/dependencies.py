@@ -1,5 +1,6 @@
 """Server-side state management with dependency injection."""
 
+from iris.server.metrics import MetricsCollector
 from iris.vlm.inference.queue.queue import InferenceQueue
 
 
@@ -11,6 +12,7 @@ class ServerState:
         self.processor = None
         self.queue: InferenceQueue | None = None
         self.model_loaded = False
+        self.metrics: MetricsCollector | None = None
 
 
 # Singleton
