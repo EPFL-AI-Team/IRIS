@@ -14,7 +14,8 @@ from PIL import Image
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
-from iris.vlm.inference.queue.jobs import SingleFrameJob
+from iris.server.jobs.config import JobConfig
+from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
 from iris.vlm.inference.queue.queue import InferenceQueue
 from iris.vlm.models import load_model_and_processor
@@ -70,12 +71,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     logger.info("Signal handlers registered for graceful shutdown")
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Manage startup and shutdown."""
-    # Startup
-    state = get_server_state()
-
     logger.info("Loading model...")
 
     state.model, state.processor = load_model_and_processor(config.model_key)
@@ -95,6 +90,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             collect_gpu_metrics=True,
         )
         logger.info("Metrics collection enabled")
+
+    # Initialize job manager
+    state.job_manager = JobManager(state)
+    logger.info("Job manager initialized")
 
     state.model_loaded = True
     logger.info("Server ready!")
@@ -142,6 +141,92 @@ async def health() -> dict[str, str | bool]:
     }
 
 
+@app.post("/jobs/start")
+async def start_job(config: JobConfig) -> dict[str, any]:
+    """Start a new job with specified configuration.
+
+    Args:
+        config: Job configuration (validated Pydantic model)
+
+    Returns:
+        Dictionary with job_id, status, job_type, and config
+    """
+    state = get_server_state()
+
+    try:
+        job_id = await state.job_manager.start_job(config)
+        return {
+            "job_id": job_id,
+            "status": "started",
+            "job_type": config.job_type.value,
+            "config": config.model_dump()
+        }
+    except Exception as e:
+        logger.error(f"Failed to start job: {e}", exc_info=True)
+        return {"error": str(e)}, 500
+
+
+@app.delete("/jobs/{job_id}/stop")
+async def stop_job(job_id: str) -> dict[str, any]:
+    """Stop a running job.
+
+    Args:
+        job_id: Job identifier
+
+    Returns:
+        Dictionary with job_id, status, and message
+    """
+    state = get_server_state()
+
+    try:
+        success = await state.job_manager.stop_job(job_id)
+        if success:
+            return {
+                "job_id": job_id,
+                "status": "stopped",
+                "message": "Job stopped successfully"
+            }
+        else:
+            return {"error": "Job not found"}, 404
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    except Exception as e:
+        logger.error(f"Failed to stop job: {e}", exc_info=True)
+        return {"error": str(e)}, 500
+
+
+@app.get("/jobs/{job_id}/status")
+async def get_job_status(job_id: str) -> dict[str, any]:
+    """Get status of a specific job.
+
+    Args:
+        job_id: Job identifier
+
+    Returns:
+        Dictionary with job status details
+    """
+    state = get_server_state()
+
+    status = await state.job_manager.get_job_status(job_id)
+    if status:
+        return status
+    else:
+        return {"error": "Job not found"}, 404
+
+
+@app.get("/jobs/active")
+async def list_active_jobs() -> dict[str, any]:
+    """List all active jobs.
+
+    Returns:
+        Dictionary with list of active jobs
+    """
+    state = get_server_state()
+
+    jobs = await state.job_manager.list_active_jobs()
+    return {"active_jobs": jobs}
+
+
 @app.websocket("/ws/stream")
 async def inference_endpoint(websocket: WebSocket) -> None:
     """Receive frames and return inference results."""
@@ -149,16 +234,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     state = get_server_state()
     logger.info("Client connected")
 
-    # --- CONFIGURATION ---
-    video_batch_size = 16  # How many frames to accumulate before running inference
-    frame_skip = 60  # Only keep every Nth frame to save memory/compute
-    # ---------------------
-
-    # Producer loop which receives frames and pushes them to the queue
+    # Producer loop which receives frames and routes them to active jobs
     async def receive_loop() -> None:
-        frame_buffer: list[Image.Image] = []
-        buffer_start_time = 0.0
-        frame_counter = 0
         try:
             while True:
                 data = await websocket.receive_json()
@@ -170,39 +247,12 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 image_data = base64.b64decode(frame_b64)
                 image = Image.open(BytesIO(image_data))
 
-                # Accumulation logic
-                frame_counter += 1
-                if frame_counter % frame_skip != 0:
-                    continue  # Skip this frame
-
-                if not frame_buffer:
-                    buffer_start_time = arrival_time  # noqa: F841
-
-                frame_buffer.append(image)
-
-                if len(frame_buffer) >= video_batch_size:
-                    logger.info(
-                        "Accumulated %d frames. Submitting job", len(frame_buffer)
-                    )
-
-                    curr_prompt = "Describe what you see in one sentence. Describe the colors, and the expressions of people in detail"
-
-                    job = SingleFrameJob(
-                        job_id=f"frame-{frame_id}",
-                        frame=image,
-                        model=state.model,
-                        processor=state.processor,
-                        prompt=curr_prompt,
-                        executor=state.queue.executor,
-                        received_at=arrival_time,
-                    )
-
-                    frame_buffer.clear()
-
-                    # Submit without waiting for the result
-                    submitted = await state.queue.submit(job)
-                    if not submitted:
-                        logger.warning("Dropped frame %s, queue full", frame_id)
+                # Route frame to active jobs (decoupled from job creation)
+                await state.job_manager.route_frame(
+                    frame=image,
+                    frame_id=frame_id,
+                    timestamp=arrival_time
+                )
 
         except WebSocketDisconnect:
             logger.info("Client disconnected (Receive Loop)")
@@ -217,18 +267,15 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 # accessing the internal results queue directly
                 result_job = await state.queue.results.get()
 
+                # Base response structure
                 response = {
                     "job_id": result_job.job_id,
+                    "job_type": result_job.job_type,
                     "status": result_job.status.value,
-                    "result": result_job.result,
-                    "metrics": {
-                        "inference_time": result_job.processing_time,
-                        "total_latency": result_job.total_latency,
-                        "received_at": result_job.received_at,
-                        # "frames_processed": getattr(result_job, "frames", 1)
-                        # if isinstance(result, SingleFrameJob) else len(result.frames)
-                    },
                 }
+
+                # Add job-specific data via polymorphism
+                response.update(result_job.to_response_dict())
 
                 await websocket.send_json(response)
                 state.queue.results.task_done()

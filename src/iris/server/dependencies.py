@@ -1,7 +1,12 @@
 """Server-side state management with dependency injection."""
 
+from typing import TYPE_CHECKING
+
 from iris.server.metrics import MetricsCollector
 from iris.vlm.inference.queue.queue import InferenceQueue
+
+if TYPE_CHECKING:
+    from iris.server.jobs.manager import JobManager
 
 
 class ServerState:
@@ -13,6 +18,7 @@ class ServerState:
         self.queue: InferenceQueue | None = None
         self.model_loaded = False
         self.metrics: MetricsCollector | None = None
+        self.job_manager: JobManager | None = None
 
 
 # Singleton
