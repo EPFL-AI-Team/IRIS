@@ -12,6 +12,7 @@ import torch
 from PIL import Image
 
 if TYPE_CHECKING:
+    from iris.config import MemoryBufferConfig
     from iris.server.jobs.config import TriggerConfig
     from iris.vlm.inference.queue.queue import InferenceQueue
 
@@ -322,7 +323,7 @@ class FrameCollectionJob(Job):
         self.frame_buffer.append(frame)
 
         if self.debug_logging:
-            elapsed = timestamp - self.buffer_start_time
+            elapsed = timestamp - self.buffer_start_time  # pyright: ignore[reportOperatorIssue]
             logger.info(
                 "[%s] Collected %d frames (%.1fs elapsed)",
                 self.job_id,
@@ -331,7 +332,7 @@ class FrameCollectionJob(Job):
             )
 
         # Check trigger conditions
-        elapsed = timestamp - self.buffer_start_time
+        elapsed = timestamp - self.buffer_start_time  # pyright: ignore[reportOperatorIssue]
         if self.trigger.should_trigger(len(self.frame_buffer), elapsed):
             await self._trigger_inference()
 
@@ -345,6 +346,19 @@ class FrameCollectionJob(Job):
             len(self.frame_buffer),
         )
 
+        # Get memory buffer config from ServerState
+        from iris.server.config import ServerConfig
+        from iris.server.dependencies import get_server_state
+
+        state = get_server_state()
+
+        # Access memory buffer config if ServerConfig is available
+        memory_buffer_config = None
+        if hasattr(state, "model") and state.model is not None:
+            # Config is created at module level in app.py
+            config = ServerConfig()
+            memory_buffer_config = config.memory_buffer
+
         # Create VideoInferenceJob with buffered frames
         video_job = VideoInferenceJob(
             job_id=f"{self.job_id}-video-{self.triggered_count}",
@@ -353,6 +367,7 @@ class FrameCollectionJob(Job):
             processor=self.processor,
             prompt=self.prompt,
             executor=self.executor,
+            memory_buffer_config=memory_buffer_config,
         )
 
         # Submit to queue
@@ -413,6 +428,7 @@ class VideoInferenceJob(Job):
         processor: Any,
         prompt: str,
         executor: ThreadPoolExecutor,
+        memory_buffer_config: "MemoryBufferConfig | None" = None,
     ):
         super().__init__(job_id)
         self.frames = frames
@@ -421,6 +437,7 @@ class VideoInferenceJob(Job):
         self.prompt = prompt
         self.executor = executor
         self.total_latency: float = 0.0
+        self.memory_buffer_config = memory_buffer_config
 
     async def execute(self) -> None:
         """Run batch inference in ThreadPoolExecutor."""

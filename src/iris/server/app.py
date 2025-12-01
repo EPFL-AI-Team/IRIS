@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from io import BytesIO
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from PIL import Image
 
 from iris.server.config import ServerConfig
@@ -28,7 +28,9 @@ config = ServerConfig()
 # Initialize log streaming handler if enabled
 log_streaming_handler: WebSocketLogHandler | None = None
 if config.enable_log_streaming:
-    log_streaming_handler = WebSocketLogHandler(min_level=config.log_streaming_min_level)
+    log_streaming_handler = WebSocketLogHandler(
+        min_level=config.log_streaming_min_level
+    )
     # Add to root logger to capture all logs
     logging.getLogger().addHandler(log_streaming_handler)
     logger.info("Log streaming enabled (min level: %s)", config.log_streaming_min_level)
@@ -73,7 +75,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Loading model...")
 
-    state.model, state.processor = load_model_and_processor(config.model_key)
+    state.model, state.processor = load_model_and_processor(
+        vlm_config_name=config.vlm_config,
+        hardware=config.vlm_hardware,
+    )
 
     logger.info("Starting inference queue...")
     state.queue = InferenceQueue(
@@ -84,6 +89,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize metrics collector if enabled
     if config.enable_metrics:
         from iris.server.metrics import MetricsCollector
+
         state.metrics = MetricsCollector(
             persist=True,
             log_dir="logs/metrics",
@@ -94,6 +100,24 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize job manager
     state.job_manager = JobManager(state)
     logger.info("Job manager initialized")
+
+    # Initialize memory buffer if enabled
+    if config.memory_buffer.enabled:
+        from iris.vlm.memory.buffer import MemoryBuffer
+
+        state.memory_buffer = MemoryBuffer(
+            max_frames=config.memory_buffer.max_frames_in_buffer,
+            decay_factor=config.memory_buffer.recency_decay_factor,
+        )
+        state.memory_buffer.enabled = True
+        logger.info(
+            "Memory buffer initialized: %d frames (%.0f tokens per frame, %d max tokens)",
+            config.memory_buffer.max_frames_in_buffer,
+            config.memory_buffer.tokens_per_frame,
+            config.memory_buffer.max_buffer_tokens,
+        )
+    else:
+        logger.info("Memory buffer disabled")
 
     state.model_loaded = True
     logger.info("Server ready!")
@@ -113,17 +137,19 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("Force shutdown - terminating all jobs immediately")
             await state.queue.stop()
         else:
-            logger.info("Graceful shutdown - waiting for in-flight jobs (timeout: %.1fs)", config.graceful_shutdown_timeout)
+            logger.info(
+                "Graceful shutdown - waiting for in-flight jobs (timeout: %.1fs)",
+                config.graceful_shutdown_timeout,
+            )
             try:
                 await asyncio.wait_for(
-                    state.queue.stop(),
-                    timeout=config.graceful_shutdown_timeout
+                    state.queue.stop(), timeout=config.graceful_shutdown_timeout
                 )
                 logger.info("All in-flight jobs completed successfully")
             except TimeoutError:
                 logger.warning(
                     "Graceful shutdown timeout (%.1fs) exceeded. Some jobs may be incomplete.",
-                    config.graceful_shutdown_timeout
+                    config.graceful_shutdown_timeout,
                 )
     logger.info("Server stopped.")
 
@@ -159,11 +185,11 @@ async def start_job(config: JobConfig) -> dict[str, any]:
             "job_id": job_id,
             "status": "started",
             "job_type": config.job_type.value,
-            "config": config.model_dump()
+            "config": config.model_dump(),
         }
     except Exception as e:
         logger.error(f"Failed to start job: {e}", exc_info=True)
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.delete("/jobs/{job_id}/stop")
@@ -184,15 +210,17 @@ async def stop_job(job_id: str) -> dict[str, any]:
             return {
                 "job_id": job_id,
                 "status": "stopped",
-                "message": "Job stopped successfully"
+                "message": "Job stopped successfully",
             }
         else:
-            return {"error": "Job not found"}, 404
+            raise HTTPException(status_code=404, detail="Job not found")
     except ValueError as e:
-        return {"error": str(e)}, 400
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to stop job: {e}", exc_info=True)
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/jobs/{job_id}/status")
@@ -211,7 +239,7 @@ async def get_job_status(job_id: str) -> dict[str, any]:
     if status:
         return status
     else:
-        return {"error": "Job not found"}, 404
+        raise HTTPException(status_code=404, detail="Job not found")
 
 
 @app.get("/jobs/active")
@@ -249,9 +277,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
                 # Route frame to active jobs (decoupled from job creation)
                 await state.job_manager.route_frame(
-                    frame=image,
-                    frame_id=frame_id,
-                    timestamp=arrival_time
+                    frame=image, frame_id=frame_id, timestamp=arrival_time
                 )
 
         except WebSocketDisconnect:
@@ -281,8 +307,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 state.queue.results.task_done()
 
                 # Record job metrics (if applicable)
-                if state.metrics and hasattr(result_job, 'processing_time'):
-                    total_latency = getattr(result_job, 'total_latency', result_job.processing_time)
+                if state.metrics and hasattr(result_job, "processing_time"):
+                    total_latency = getattr(
+                        result_job, "total_latency", result_job.processing_time
+                    )
                     state.metrics.record_job(
                         job_id=result_job.job_id,
                         inference_time=result_job.processing_time,
@@ -310,7 +338,10 @@ async def log_streaming_endpoint(websocket: WebSocket) -> None:
 
     await websocket.accept()
     log_streaming_handler.add_connection(websocket)
-    logger.info("Log streaming client connected (total: %d)", log_streaming_handler.get_connection_count())
+    logger.info(
+        "Log streaming client connected (total: %d)",
+        log_streaming_handler.get_connection_count(),
+    )
 
     try:
         # Keep connection alive and wait for client disconnect
@@ -327,7 +358,10 @@ async def log_streaming_endpoint(websocket: WebSocket) -> None:
         logger.error("Log streaming error: %s", e, exc_info=True)
     finally:
         log_streaming_handler.remove_connection(websocket)
-        logger.info("Log streaming client removed (remaining: %d)", log_streaming_handler.get_connection_count())
+        logger.info(
+            "Log streaming client removed (remaining: %d)",
+            log_streaming_handler.get_connection_count(),
+        )
 
 
 @app.get("/metrics")

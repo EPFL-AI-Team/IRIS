@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from iris.config import _yaml_config
+
 
 class TriggerConfig(BaseModel):
     """Trigger configuration for frame collection jobs.
@@ -71,21 +73,21 @@ class FrameCollectionJobConfig(JobConfig):
     job_type: Literal[JobType.FRAME_COLLECTION] = JobType.FRAME_COLLECTION
     trigger: TriggerConfig = Field(
         default_factory=lambda: TriggerConfig(
-            frame_count=16,
-            time_seconds=5.0
+            frame_count=_yaml_config.get("jobs", {}).get("frame_collection", {}).get("trigger", {}).get("frame_count", 5),
+            time_seconds=_yaml_config.get("jobs", {}).get("frame_collection", {}).get("trigger", {}).get("time_seconds", 5.0)
         ),
         description="Trigger conditions for batch inference"
     )
     frame_skip: int = Field(
-        default=60,
+        default=_yaml_config.get("jobs", {}).get("frame_collection", {}).get("frame_skip", 1),
         description="Keep every Nth frame (1 = keep all frames)"
     )
     debug_logging: bool = Field(
-        default=False,
+        default=_yaml_config.get("jobs", {}).get("frame_collection", {}).get("debug_logging", False),
         description="Log collection progress"
     )
     continuous: bool = Field(
-        default=True,
+        default=_yaml_config.get("jobs", {}).get("frame_collection", {}).get("continuous", True),
         description="Restart collection after triggering (True) or stop after one batch (False)"
     )
 
