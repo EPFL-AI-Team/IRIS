@@ -27,10 +27,18 @@ async def home() -> HTMLResponse:
 async def get_status() -> dict[str, Any]:
     """Get current status."""
     state = get_app_state()
+
+    # Determine streaming server connection status
+    if state.streaming_client:
+        streaming_server_status = state.streaming_client.connection_state
+    else:
+        streaming_server_status = "disconnected"
+
     return {
         "camera_active": state.camera is not None and state.camera.cap.isOpened(),
         "streaming_active": state.streaming_client is not None
         and state.streaming_client.running,
+        "streaming_server_status": streaming_server_status,
         "config": state.config.model_dump(),
         "fps": state.streaming_client.get_fps() if state.streaming_client else 0.0,
     }
@@ -91,11 +99,67 @@ async def stop_streaming() -> dict[str, str]:
     return {"status": "ok", "message": "Stopped"}
 
 
+@router.get("/cameras")
+async def list_cameras() -> dict[str, Any]:
+    """List available camera devices on server."""
+    import cv2
+
+    cameras = []
+    for i in range(10):  # Check first 10 camera indices
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cameras.append({"index": i, "name": f"Camera {i}", "resolution": f"{width}x{height}"})
+            cap.release()
+    return {"cameras": cameras}
+
+
+@router.post("/camera/select")
+async def select_camera(request: dict[str, int]) -> dict[str, Any]:
+    """Switch server to different camera device."""
+    state = get_app_state()
+    camera_index = request["camera_index"]
+
+    # Stop current camera if running
+    if state.camera:
+        state.camera.stop()
+        state.camera = None
+
+    # Update config and start new camera
+    state.config.video.camera_index = camera_index
+    state.camera = CameraCapture(
+        camera_index=camera_index,
+        width=state.config.video.width,
+        height=state.config.video.height,
+        fps=state.config.video.fps,
+    )
+
+    if not state.camera.start():
+        state.camera = None
+        return {"status": "error", "message": f"Failed to open camera {camera_index}"}
+
+    return {"status": "ok", "camera_index": camera_index}
+
+
 @router.websocket("/preview")
 async def preview_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for local video preview."""
     state = get_app_state()
     await websocket.accept()
+
+    # Initialize camera if not already running
+    if state.camera is None:
+        state.camera = CameraCapture(
+            camera_index=state.config.video.camera_index,
+            width=state.config.video.width,
+            height=state.config.video.height,
+            fps=state.config.video.fps,
+        )
+        if not state.camera.start():
+            state.camera = None
+            await websocket.close()
+            return
 
     try:
         while True:
@@ -106,6 +170,13 @@ async def preview_websocket(websocket: WebSocket) -> None:
             await asyncio.sleep(0.05)  # 20 FPS preview
     except WebSocketDisconnect:
         pass
+    finally:
+        # Stop camera if we're not streaming to server
+        if state.camera and (
+            state.streaming_client is None or not state.streaming_client.running
+        ):
+            state.camera.stop()
+            state.camera = None
 
 
 @router.websocket("/results")

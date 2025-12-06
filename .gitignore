@@ -1,7 +1,4 @@
-data/**/*.mp4
-data/**/*.json
-data/**/*.txt
-data/**/*.csv
+data/**/*
 models/**/*.pth
 !**/.gitkeep
 

@@ -32,28 +32,34 @@ class StreamingClient:
         self.frame_count = 0
         self.start_time = time.time()
         self.result_callback = result_callback
+        self.connection_state = "disconnected"  # Track connection state
 
     async def stream(self) -> None:
         """Connect and stream frames with auto-reconnect."""
         self.running = True
+        self.connection_state = "connecting"
         retry_delay = 1.0
         max_delay = 30.0
 
         attempt_count = 0
         while self.running:
             try:
+                self.connection_state = "connecting"
                 async with websockets.connect(self.ws_url) as ws:
                     logger.info("Connected to %s", self.ws_url)
+                    self.connection_state = "connected"
                     retry_delay = 1.0  # Reset on successful connection
                     attempt_count = 0
                     await self._stream_loop(ws)
 
             except websockets.exceptions.InvalidStatusCode as e:
+                self.connection_state = "error"
                 logger.error("Server returned invalid status code: %s", e)
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
                 attempt_count += 1
             except websockets.exceptions.WebSocketException as e:
+                self.connection_state = "error"
                 attempt_count += 1
                 logger.warning(
                     "Connection failed: %s. Retrying in %.1fs... (attempt %d)",
@@ -64,6 +70,7 @@ class StreamingClient:
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
             except ConnectionRefusedError:
+                self.connection_state = "error"
                 attempt_count += 1
                 logger.error(
                     "Connection refused. Is the server running at %s? (attempt %d)",
@@ -73,6 +80,7 @@ class StreamingClient:
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, max_delay)
             except Exception as e:
+                self.connection_state = "error"
                 logger.error("Unexpected error: %s", e, exc_info=True)
                 break
 
@@ -118,6 +126,7 @@ class StreamingClient:
     def stop(self) -> None:
         """Stop streaming."""
         self.running = False
+        self.connection_state = "disconnected"
 
     def get_fps(self) -> float:
         """Calculate current FPS."""

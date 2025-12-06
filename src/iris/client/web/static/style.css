@@ -48,8 +48,6 @@ h2 {
 }
 
 #preview {
-    max-width: 100%;
-    height: auto;
     border: 2px solid #ddd;
     border-radius: 5px;
     background: #000;
@@ -61,11 +59,59 @@ h2 {
     font-size: 0.9em;
 }
 
-.config-section {
+.config-status-row {
+    display: flex;
+    gap: 20px;
     margin-bottom: 30px;
+}
+
+@media (max-width: 1024px) {
+    .config-status-row {
+        flex-direction: column;
+    }
+}
+
+.config-section {
+    flex: 1;
     padding: 20px;
     background: #f9f9f9;
     border-radius: 5px;
+}
+
+.status-section {
+    flex: 1;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 5px;
+}
+
+.camera-config-section {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f0f7ff;
+    border-radius: 5px;
+    border: 1px solid #b3d9ff;
+}
+
+.camera-config-section select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+#camera-permission-status {
+    margin-top: 10px;
+    padding: 8px;
+    font-size: 0.9em;
+    color: #666;
+}
+
+#server-camera-options,
+#client-camera-options {
+    margin-top: 15px;
 }
 
 .form-group {
@@ -134,12 +180,6 @@ button[type="submit"]:hover {
 button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-.status-section {
-    padding: 20px;
-    background: #f9f9f9;
-    border-radius: 5px;
 }
 
 #status p {
@@ -338,4 +378,123 @@ button:disabled {
 
 .log-level-DEBUG {
     color: #666;
+}
+
+/* Toast notification styles */
+#toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.toast {
+    background: white;
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 300px;
+    max-width: 400px;
+    pointer-events: auto;
+    animation: slideIn 0.3s ease-out;
+    border-left: 4px solid #333;
+}
+
+.toast.toast-success {
+    border-left-color: #4caf50;
+}
+
+.toast.toast-error {
+    border-left-color: #f44336;
+}
+
+.toast.toast-info {
+    border-left-color: #2196f3;
+}
+
+.toast.toast-warning {
+    border-left-color: #ff9800;
+}
+
+.toast-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.toast-success .toast-icon::before {
+    content: '✓';
+    color: #4caf50;
+}
+
+.toast-error .toast-icon::before {
+    content: '✕';
+    color: #f44336;
+}
+
+.toast-info .toast-icon::before {
+    content: 'ℹ';
+    color: #2196f3;
+}
+
+.toast-warning .toast-icon::before {
+    content: '⚠';
+    color: #ff9800;
+}
+
+.toast-message {
+    flex: 1;
+    color: #333;
+    font-size: 14px;
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    color: #333;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.toast.removing {
+    animation: slideOut 0.3s ease-out forwards;
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
 }
