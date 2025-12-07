@@ -105,12 +105,20 @@ async def list_cameras() -> dict[str, Any]:
     import cv2
 
     cameras = []
-    for i in range(10):  # Check first 10 camera indices
-        cap = cv2.VideoCapture(i)
+    for i in range(10):
+        # Suppress OpenCV warnings temporarily
+        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
         if cap.isOpened():
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            cameras.append({"index": i, "name": f"Camera {i}", "resolution": f"{width}x{height}"})
+            cameras.append({
+                "index": i,
+                "name": f"Camera {i}",
+                "resolution": f"{width}x{height}",
+            })
+            cap.release()
+        else:
+            # Immediately release if it fails
             cap.release()
     return {"cameras": cameras}
 
