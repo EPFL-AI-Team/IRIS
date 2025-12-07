@@ -105,24 +105,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     state.job_manager = JobManager(state)
     logger.info("Job manager initialized")
 
-    # Initialize memory buffer if enabled
-    if config.memory_buffer.enabled:
-        from iris.vlm.memory.buffer import MemoryBuffer
-
-        state.memory_buffer = MemoryBuffer(
-            max_frames=config.memory_buffer.max_frames_in_buffer,
-            decay_factor=config.memory_buffer.recency_decay_factor,
-        )
-        state.memory_buffer.enabled = True
-        logger.info(
-            "Memory buffer initialized: %d frames (%.0f tokens per frame, %d max tokens)",
-            config.memory_buffer.max_frames_in_buffer,
-            config.memory_buffer.tokens_per_frame,
-            config.memory_buffer.max_buffer_tokens,
-        )
-    else:
-        logger.info("Memory buffer disabled")
-
     state.model_loaded = True
     logger.info("Server ready!")
 

@@ -12,7 +12,6 @@ import torch
 from PIL import Image
 
 if TYPE_CHECKING:
-    from iris.config import MemoryBufferConfig
     from iris.server.jobs.config import TriggerConfig
     from iris.vlm.inference.queue.queue import InferenceQueue
 
@@ -346,19 +345,6 @@ class FrameCollectionJob(Job):
             len(self.frame_buffer),
         )
 
-        # Get memory buffer config from ServerState
-        from iris.server.config import ServerConfig
-        from iris.server.dependencies import get_server_state
-
-        state = get_server_state()
-
-        # Access memory buffer config if ServerConfig is available
-        memory_buffer_config = None
-        if hasattr(state, "model") and state.model is not None:
-            # Config is created at module level in app.py
-            config = ServerConfig()
-            memory_buffer_config = config.memory_buffer
-
         # Create VideoInferenceJob with buffered frames
         video_job = VideoInferenceJob(
             job_id=f"{self.job_id}-video-{self.triggered_count}",
@@ -367,7 +353,6 @@ class FrameCollectionJob(Job):
             processor=self.processor,
             prompt=self.prompt,
             executor=self.executor,
-            memory_buffer_config=memory_buffer_config,
         )
 
         # Submit to queue
@@ -428,7 +413,6 @@ class VideoInferenceJob(Job):
         processor: Any,
         prompt: str,
         executor: ThreadPoolExecutor,
-        memory_buffer_config: "MemoryBufferConfig | None" = None,
     ):
         super().__init__(job_id)
         self.frames = frames
@@ -437,7 +421,6 @@ class VideoInferenceJob(Job):
         self.prompt = prompt
         self.executor = executor
         self.total_latency: float = 0.0
-        self.memory_buffer_config = memory_buffer_config
 
     async def execute(self) -> None:
         """Run batch inference in ThreadPoolExecutor."""
@@ -464,12 +447,6 @@ class VideoInferenceJob(Job):
 
     def _sync_batch_inference(self) -> str:
         """Batch inference on video frames (blocking GPU work).
-
-        TODO: Implement memory buffer feature
-        - Track visual memory across frames
-        - Use temporal context for understanding
-        - Implement attention-based frame selection
-        - Round decayed compression for memory efficiency
 
         Current: Process first frame only (placeholder)
         """

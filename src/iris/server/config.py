@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from iris.config import MemoryBufferConfig, _yaml_config
+from iris.config import _yaml_config
 
 
 class ServerConfig(BaseModel):
@@ -35,9 +35,4 @@ class ServerConfig(BaseModel):
     enable_metrics: bool = Field(
         default=_yaml_config.get("server", {}).get("enable_metrics", True),
         description="Collect and persist metrics"
-    )
-
-    # Memory buffer configuration
-    memory_buffer: MemoryBufferConfig = Field(
-        default_factory=lambda: MemoryBufferConfig(**_yaml_config.get("memory_buffer", {}))
     )

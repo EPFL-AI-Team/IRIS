@@ -7,7 +7,6 @@ from iris.vlm.inference.queue.queue import InferenceQueue
 
 if TYPE_CHECKING:
     from iris.server.jobs.manager import JobManager
-    from iris.vlm.memory.buffer import MemoryBuffer
 
 
 class ServerState:
@@ -20,7 +19,6 @@ class ServerState:
         self.model_loaded = False
         self.metrics: MetricsCollector | None = None
         self.job_manager: JobManager | None = None
-        self.memory_buffer: MemoryBuffer | None = None
 
 
 # Singleton
