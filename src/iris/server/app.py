@@ -232,6 +232,37 @@ async def get_job_status(job_id: str) -> dict[str, any]:
         raise HTTPException(status_code=404, detail="Job not found")
 
 
+@app.post("/jobs/{job_id}/trigger")
+async def trigger_job(job_id: str) -> dict[str, str]:
+    """Manually trigger inference for a VideoJob.
+
+    Args:
+        job_id: Job identifier
+
+    Returns:
+        Dictionary with status message
+
+    Raises:
+        HTTPException: 404 if job not found, 400 if job doesn't support manual triggering
+    """
+    state = get_server_state()
+
+    # Get job from active jobs
+    async with state.job_manager.lock:
+        job = state.job_manager.active_jobs.get(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not hasattr(job, "trigger_inference"):
+        raise HTTPException(
+            status_code=400, detail="Job does not support manual triggering"
+        )
+
+    await job.trigger_inference()
+    return {"status": "ok", "message": "Inference triggered"}
+
+
 @app.get("/jobs/active")
 async def list_active_jobs() -> dict[str, any]:
     """List all active jobs.
@@ -251,6 +282,16 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     state = get_server_state()
     logger.info("Client connected")
+
+    # Log queue for this connection
+    log_queue = asyncio.Queue()
+
+    def log_callback(msg: dict) -> None:
+        """Callback to receive log messages from jobs."""
+        asyncio.create_task(log_queue.put(msg))
+
+    # Register log callback with JobManager
+    state.job_manager.register_log_callback(log_callback)
 
     # Producer loop which receives frames and routes them to active jobs
     async def receive_loop() -> None:
@@ -279,35 +320,48 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     async def send_loop() -> None:
         try:
             while True:
-                # Wait specifically for the NEXT available result
-                # accessing the internal results queue directly
-                result_job = await state.queue.results.get()
+                # Check for log messages (non-blocking)
+                try:
+                    log_msg = log_queue.get_nowait()
+                    await websocket.send_json(log_msg)
+                except asyncio.QueueEmpty:
+                    pass
 
-                # Base response structure
-                response = {
-                    "job_id": result_job.job_id,
-                    "job_type": result_job.job_type,
-                    "status": result_job.status.value,
-                }
-
-                # Add job-specific data via polymorphism
-                response.update(result_job.to_response_dict())
-
-                await websocket.send_json(response)
-                state.queue.results.task_done()
-
-                # Record job metrics (if applicable)
-                if state.metrics and hasattr(result_job, "processing_time"):
-                    total_latency = getattr(
-                        result_job, "total_latency", result_job.processing_time
+                # Check for job results (with short timeout to allow log checking)
+                try:
+                    result_job = await asyncio.wait_for(
+                        state.queue.results.get(), timeout=0.1
                     )
-                    state.metrics.record_job(
-                        job_id=result_job.job_id,
-                        inference_time=result_job.processing_time,
-                        total_latency=total_latency,
-                        status=result_job.status.value,
-                        queue_depth=state.queue.queue.qsize(),
-                    )
+
+                    # Base response structure
+                    response = {
+                        "type": "result",
+                        "job_id": result_job.job_id,
+                        "job_type": result_job.job_type,
+                        "status": result_job.status.value,
+                    }
+
+                    # Add job-specific data via polymorphism
+                    response.update(result_job.to_response_dict())
+
+                    await websocket.send_json(response)
+                    state.queue.results.task_done()
+
+                    # Record job metrics (if applicable)
+                    if state.metrics and hasattr(result_job, "processing_time"):
+                        total_latency = getattr(
+                            result_job, "total_latency", result_job.processing_time
+                        )
+                        state.metrics.record_job(
+                            job_id=result_job.job_id,
+                            inference_time=result_job.processing_time,
+                            total_latency=total_latency,
+                            status=result_job.status.value,
+                            queue_depth=state.queue.queue.qsize(),
+                        )
+                except asyncio.TimeoutError:
+                    # No results ready, continue loop to check logs
+                    pass
 
         except WebSocketDisconnect:
             logger.info("Client disconnected (Send Loop)")

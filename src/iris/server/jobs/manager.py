@@ -35,6 +35,15 @@ class JobManager:
         self.state = state
         self.active_jobs: dict[str, Job] = {}
         self.lock = asyncio.Lock()
+        self.log_callbacks: list = []  # Callable[[dict], None]
+
+    def register_log_callback(self, callback) -> None:
+        """Register callback for WebSocket logging.
+
+        Args:
+            callback: Function that accepts dict with log message
+        """
+        self.log_callbacks.append(callback)
 
     async def start_job(self, config: JobConfig) -> str:
         """Create and start a job, return job_id.
@@ -57,6 +66,10 @@ class JobManager:
                 executor=self.state.queue.executor,
                 queue=self.state.queue,
             )
+
+            # Set log callback if job supports it
+            if hasattr(job, 'log_callback'):
+                job.log_callback = lambda msg: self._broadcast_log(msg)
 
             # Add to active jobs
             self.active_jobs[job.job_id] = job
@@ -172,3 +185,12 @@ class JobManager:
             for job_id in completed:
                 del self.active_jobs[job_id]
                 logger.debug(f"Cleaned up completed job: {job_id}")
+
+    def _broadcast_log(self, log_message: dict) -> None:
+        """Send log message to all registered callbacks.
+
+        Args:
+            log_message: Dict with 'type', 'job_id', 'message', 'timestamp'
+        """
+        for callback in self.log_callbacks:
+            callback(log_message)
