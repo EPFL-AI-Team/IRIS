@@ -2,6 +2,8 @@
 
 import asyncio
 import base64
+import logging
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,7 @@ from iris.client.config import ServerConfig
 from iris.client.streaming.websocket_client import StreamingClient
 from iris.client.web.dependencies import get_app_state
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -52,10 +55,38 @@ async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     return {"status": "ok", "config": state.config.server.model_dump()}
 
 
+@router.post("/tunnel/config")
+async def update_tunnel_config(request: dict[str, str]) -> dict[str, Any]:
+    """Update SSH tunnel remote hostname."""
+    state = get_app_state()
+
+    if "remote_host" in request:
+        state.config.ssh_tunnel.remote_host = request["remote_host"]
+
+    return {"status": "ok", "remote_host": state.config.ssh_tunnel.remote_host}
+
+
 @router.post("/start")
 async def start_streaming() -> dict[str, Any]:
     """Start camera and streaming."""
     state = get_app_state()
+
+    # Start SSH tunnel if enabled
+    if state.config.ssh_tunnel.enabled and state.config.ssh_tunnel.remote_host:
+        ssh_key = Path(state.config.ssh_tunnel.ssh_key_path).expanduser()
+
+        cmd = [
+            "ssh",
+            "-N",
+            "-L",
+            f"8001:{state.config.ssh_tunnel.remote_host}:8001",
+            "-i",
+            str(ssh_key),
+            f"{state.config.ssh_tunnel.ssh_user}@{state.config.ssh_tunnel.ssh_host}",
+        ]
+
+        state.tunnel_process = subprocess.Popen(cmd)
+        logger.info("Started SSH tunnel to %s", state.config.ssh_tunnel.remote_host)
 
     # Start camera
     if state.camera is None:
@@ -95,6 +126,12 @@ async def stop_streaming() -> dict[str, str]:
     if state.camera:
         state.camera.stop()
         state.camera = None
+
+    # Stop SSH tunnel
+    if state.tunnel_process:
+        state.tunnel_process.terminate()
+        state.tunnel_process = None
+        logger.info("Stopped SSH tunnel")
 
     return {"status": "ok", "message": "Stopped"}
 

@@ -49,3 +49,9 @@ client:
     port: 8006
     use_ssl: false
     cert_dir: "~/iris-certs"  # Directory containing key.pem and cert.pem
+  ssh_tunnel:
+    enabled: false  # Toggle on for IZAR HPC
+    ssh_host: "izar.hpc.epfl.ch"
+    ssh_user: "mhamelin"
+    ssh_key_path: "~/.ssh/id_rsa"
+    remote_host: ""  # Set via UI or config (IZAR compute node hostname)

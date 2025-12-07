@@ -100,9 +100,38 @@ class WebConfig(BaseModel):
         return self.cert_path / "cert.pem"
 
 
+class SSHTunnelConfig(BaseModel):
+    """SSH tunnel configuration for HPC cluster access."""
+
+    enabled: bool = Field(
+        default=_yaml_config.get("client", {})
+        .get("ssh_tunnel", {})
+        .get("enabled", False)
+    )
+    ssh_host: str = Field(
+        default=_yaml_config.get("client", {})
+        .get("ssh_tunnel", {})
+        .get("ssh_host", "izar.hpc.epfl.ch")
+    )
+    ssh_user: str = Field(
+        default=_yaml_config.get("client", {}).get("ssh_tunnel", {}).get("ssh_user", "")
+    )
+    ssh_key_path: str = Field(
+        default=_yaml_config.get("client", {})
+        .get("ssh_tunnel", {})
+        .get("ssh_key_path", "~/.ssh/id_rsa")
+    )
+    remote_host: str = Field(
+        default=_yaml_config.get("client", {})
+        .get("ssh_tunnel", {})
+        .get("remote_host", "")
+    )
+
+
 class ClientConfig(BaseModel):
     """Complete client configuration."""
 
     video: VideoConfig = Field(default_factory=VideoConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    ssh_tunnel: SSHTunnelConfig = Field(default_factory=SSHTunnelConfig)
