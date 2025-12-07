@@ -50,6 +50,11 @@
                         <label for="endpoint">Endpoint:</label>
                         <input type="text" id="endpoint" value="/ws/stream" required>
                     </div>
+                    <div class="form-group">
+                        <label for="tunnel-hostname">IZAR Hostname (SSH Tunnel):</label>
+                        <input type="text" id="tunnel-hostname" placeholder="i27 or icn042.iccluster">
+                        <small style="display: block; margin-top: 4px; color: #666;">Leave empty if not using IZAR</small>
+                    </div>
                     <button type="submit">Update Config</button>
                 </form>
             </div>

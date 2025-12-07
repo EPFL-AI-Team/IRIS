@@ -54,12 +54,16 @@ def handle_shutdown_signal(signum: int, frame: any) -> None:
             config.graceful_shutdown_timeout,
         )
         shutdown_event.set()
-    else:
+    elif shutdown_count == 2:
         logger.warning(
-            "Received signal %s again. Force shutdown initiated. Queued jobs will be terminated.",
+            "Received signal %s again. Force shutdown initiated. Exiting immediately.",
             signal.Signals(signum).name,
         )
         force_shutdown_event.set()
+
+        # Unregister handlers to allow default behavior (immediate exit on next signal)
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 
 @asynccontextmanager
@@ -136,6 +140,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         if force_shutdown_event.is_set():
             logger.warning("Force shutdown - terminating all jobs immediately")
             await state.queue.stop()
+            logger.warning("Exiting now")
+            import sys
+
+            sys.exit(1)  # Force exit if still running
         else:
             logger.info(
                 "Graceful shutdown - waiting for in-flight jobs (timeout: %.1fs)",

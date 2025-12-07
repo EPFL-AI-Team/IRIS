@@ -53,13 +53,16 @@ class InferenceQueue:
 
         # Send a "None" signal for each worker to unblock and exit
         for _ in self.workers:
-            await self.queue.put(None)
+            try:
+                self.queue.put_nowait(None)  # Non-blocking
+            except asyncio.QueueFull:
+                pass  # Queue full, worker will exit when it drains
 
         # Wait for all worker tasks to complete
         await asyncio.gather(*self.workers, return_exceptions=True)
 
         # Shut down the thread pool
-        self.executor.shutdown(wait=True)
+        self.executor.shutdown(wait=False)  # Don't wait for GPU threads
         logger.info("Inference queue stopped.")
 
     async def submit(self, job: Job) -> bool:

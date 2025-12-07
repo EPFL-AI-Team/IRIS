@@ -47,7 +47,7 @@ client:
   web:
     host: "0.0.0.0"
     port: 8006
-    use_ssl: false
+    use_ssl: true
     cert_dir: "~/iris-certs"  # Directory containing key.pem and cert.pem
   ssh_tunnel:
     enabled: false  # Toggle on for IZAR HPC

@@ -383,6 +383,11 @@ async function updateStatus() {
       "target"
     ).textContent = `${data.config.server.host}:${data.config.server.port}${data.config.server.endpoint}`;
 
+    // Update tunnel hostname field if available
+    if (data.config.ssh_tunnel && data.config.ssh_tunnel.remote_host) {
+      document.getElementById("tunnel-hostname").value = data.config.ssh_tunnel.remote_host;
+    }
+
     // Update streaming server connection status
     const streamingServerStatus = data.streaming_server_status || "disconnected";
     updateConnectionStatus('streaming-server',
@@ -406,16 +411,28 @@ document.getElementById("config-form").addEventListener("submit", async (e) => {
     endpoint: document.getElementById("endpoint").value,
   };
 
+  const tunnelHostname = document.getElementById("tunnel-hostname").value;
+
   try {
+    // Update server config
     const response = await fetch("/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });
 
-    if (response.ok) {
+    // Update tunnel hostname
+    const tunnelResponse = await fetch("/tunnel/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remote_host: tunnelHostname }),
+    });
+
+    if (response.ok && tunnelResponse.ok) {
       showToast("Configuration updated successfully", "success");
       updateStatus();
+    } else {
+      showToast("Configuration update partially failed", "error");
     }
   } catch (error) {
     showToast("Configuration update failed", "error");
