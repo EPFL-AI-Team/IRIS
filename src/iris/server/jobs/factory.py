@@ -7,7 +7,7 @@ from typing import Any
 from iris.server.jobs.config import (
     JobConfig,
     JobType,
-    FrameCollectionJobConfig,
+    VideoJobConfig,
 )
 from iris.vlm.inference.queue.queue import InferenceQueue
 
@@ -39,9 +39,6 @@ class JobFactory:
             ValueError: If job type is unknown
             NotImplementedError: If job type requires additional data at creation
         """
-        # Import here to avoid circular dependencies
-        from iris.vlm.inference.queue.jobs import FrameCollectionJob
-
         # Generate job_id if not provided
         if not config.job_id:
             config.job_id = f"{config.job_type.value}-{uuid.uuid4().hex[:8]}"
@@ -53,40 +50,36 @@ class JobFactory:
                 "SingleFrameJob requires a frame at creation time. "
                 "Create it directly instead of using the factory."
             )
-        elif config.job_type == JobType.FRAME_COLLECTION:
-            return JobFactory._create_frame_collection_job(
+        elif config.job_type == JobType.VIDEO:
+            return JobFactory._create_video_job(
                 config, model, processor, executor, queue
-            )
-        elif config.job_type == JobType.VIDEO_INFERENCE:
-            # VideoInferenceJob requires frames at creation - created by FrameCollectionJob
-            raise NotImplementedError(
-                "VideoInferenceJob requires frames at creation time. "
-                "It should be created by FrameCollectionJob when triggered."
             )
         else:
             raise ValueError(f"Unknown job type: {config.job_type}")
 
     @staticmethod
-    def _create_frame_collection_job(
-        config: FrameCollectionJobConfig,
+    def _create_video_job(
+        config: VideoJobConfig,
         model: Any,
         processor: Any,
         executor: ThreadPoolExecutor,
         queue: InferenceQueue,
     ):
-        """Create FrameCollectionJob from configuration."""
+        """Create unified VideoJob from configuration."""
         # Import here to avoid circular dependencies
-        from iris.vlm.inference.queue.jobs import FrameCollectionJob
+        from iris.vlm.inference.queue.jobs import VideoJob
 
-        return FrameCollectionJob(
+        return VideoJob(
             job_id=config.job_id,
-            trigger=config.trigger,
-            frame_skip=config.frame_skip,
-            prompt=config.prompt,
             model=model,
             processor=processor,
             executor=executor,
             queue=queue,
-            debug_logging=config.debug_logging,
+            prompt=config.prompt,
+            trigger=config.trigger,
+            frame_skip=config.frame_skip,
+            max_buffer_size=config.max_buffer_size,
             continuous=config.continuous,
+            log_progress=config.log_progress,
+            log_every_n_frames=config.log_every_n_frames,
         )
