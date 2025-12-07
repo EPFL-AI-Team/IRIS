@@ -18,7 +18,7 @@ dependencies = [
     "websockets>=15.0.1",
 ]
 
-[dependecy-groups]
+[dependency-groups]
 # Client-only dependencies (Pi + Mac dev)
 client = ["opencv-python>=4.11.0.86", "threaded-videocapture>=1.0.1"]
 
@@ -31,7 +31,7 @@ server = [
     "pynvml>=11.5.0 ; platform_system == 'Linux'",
     "qwen-vl-utils>=0.0.14",
     "torch>=2.8.0",
-    "torchcodec>=0.7.0",
+    "torchcodec>=0.7.0 ; sys_platform == 'darwin' or (sys_platform == 'linux' and platform_machine == 'x86_64')",
     "torchvision>=0.23.0",
     "transformers>=4.57.0",
     "uvicorn>=0.38.0",
