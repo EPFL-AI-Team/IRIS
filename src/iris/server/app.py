@@ -5,6 +5,7 @@ import base64
 import logging
 import signal
 import time
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -14,7 +15,7 @@ from PIL import Image
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
-from iris.server.jobs.config import JobConfig
+from iris.server.jobs.config import JobConfig, TriggerMode, VideoJobConfig
 from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
 from iris.vlm.inference.queue.queue import InferenceQueue
@@ -293,6 +294,24 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     # Register log callback with JobManager
     state.job_manager.register_log_callback(log_callback)
 
+    # AUTO-CREATE VIDEO JOB WITH UNIQUE ID PER CONNECTION
+    connection_job_id = f"video_job_{uuid.uuid4().hex[:8]}"
+    job_config = VideoJobConfig(
+        job_id=connection_job_id,
+        prompt="Describe what you see in the video.",
+        trigger_mode=TriggerMode.PERIODIC,
+        buffer_size=config.jobs.get("video", {}).get("buffer_size", 8),
+        overlap_frames=config.jobs.get("video", {}).get("overlap_frames", 4),
+    )
+
+    try:
+        job_id = await state.job_manager.start_job(job_config)
+        logger.info(f"Auto-created VideoJob for connection: {job_id}")
+    except Exception as e:
+        logger.error(f"Failed to auto-create VideoJob: {e}")
+        await websocket.close(code=1011, reason="Failed to create video job")
+        return
+
     # Producer loop which receives frames and routes them to active jobs
     async def receive_loop() -> None:
         try:
@@ -370,7 +389,15 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
     # Run both functions concurrently
     # This runs until one of them finishes (usually the receive loop on disconnect)
-    await asyncio.gather(receive_loop(), send_loop())
+    try:
+        await asyncio.gather(receive_loop(), send_loop())
+    finally:
+        # CLEANUP: Stop and remove job when WebSocket disconnects
+        try:
+            await state.job_manager.stop_job(connection_job_id)
+            logger.info(f"Cleaned up VideoJob on disconnect: {connection_job_id}")
+        except Exception as e:
+            logger.error(f"Failed to clean up job {connection_job_id}: {e}")
 
 
 @app.websocket("/ws/logs")

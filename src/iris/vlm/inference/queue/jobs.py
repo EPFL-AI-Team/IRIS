@@ -260,14 +260,14 @@ class SingleFrameJob(Job):
 
 
 class VideoJob(Job):
-    """Unified video job: buffer frames + batch inference.
+    """Simplified video job: buffer frames + batch inference.
 
-    Accepts incoming frames, buffers them, and triggers inference based on:
-    - Periodic: frame_count OR time_seconds threshold
-    - Manual: API call to /jobs/{job_id}/trigger
-    - Disabled: Only triggered by other jobs
+    Accepts incoming frames, buffers them, and triggers inference based on mode:
+    - PERIODIC: Auto-trigger when buffer reaches buffer_size
+    - MANUAL: Trigger only via API call
+    - DISABLED: Buffer but never process
 
-    After inference, can optionally continue buffering (continuous mode).
+    Uses overlap_frames for temporal continuity between inferences.
     """
 
     def __init__(
@@ -278,12 +278,9 @@ class VideoJob(Job):
         executor: ThreadPoolExecutor,
         queue: "InferenceQueue",
         prompt: str = "Describe what you see in the video.",
-        trigger: "TriggerConfig" = None,
-        frame_skip: int = 1,
-        max_buffer_size: int = 100,
-        continuous: bool = True,
-        log_progress: bool = True,
-        log_every_n_frames: int = 1,
+        trigger_mode: "TriggerMode" = None,
+        buffer_size: int = 8,
+        overlap_frames: int = 4,
     ):
         super().__init__(job_id)
         self.model = model
@@ -292,29 +289,18 @@ class VideoJob(Job):
         self.queue = queue
         self.prompt = prompt
 
-        # Import TriggerConfig here to avoid circular import
-        if trigger is None:
-            from iris.server.jobs.config import TriggerConfig
-            trigger = TriggerConfig()
-        self.trigger = trigger
+        # Import TriggerMode here to avoid circular import
+        if trigger_mode is None:
+            from iris.server.jobs.config import TriggerMode
+            trigger_mode = TriggerMode.PERIODIC
+        self.trigger_mode = trigger_mode
 
-        self.frame_skip = frame_skip
-        self.max_buffer_size = max_buffer_size
-        self.continuous = continuous
-        self.log_progress = log_progress
-        self.log_every_n_frames = log_every_n_frames
+        self.buffer_size = buffer_size
+        self.overlap_frames = overlap_frames
 
-        # Frame buffer
+        # Minimal state
         self.frame_buffer: list[Image.Image] = []
-        self.frame_counter = 0
-        self.buffer_start_time: float | None = None
-
-        # Control
-        self.frame_event = asyncio.Event()
         self.stop_event = asyncio.Event()
-        self.manual_trigger_event = asyncio.Event()
-
-        # Logging callback (set by JobManager)
         self.log_callback: Any = None  # Callable[[dict], None]
 
     def accepts_frames(self) -> bool:
@@ -322,94 +308,87 @@ class VideoJob(Job):
         return True
 
     async def add_frame(self, frame: Image.Image, frame_id: int, timestamp: float) -> None:
-        """Buffer incoming frame and check trigger conditions."""
-        # Apply frame skip
-        self.frame_counter += 1
-        if self.frame_counter % self.frame_skip != 0:
-            return
+        """Buffer frame and auto-trigger based on mode.
 
-        # Start timing on first frame
-        if self.buffer_start_time is None:
-            self.buffer_start_time = timestamp
-
-        # Add to buffer (enforce max size with FIFO)
-        if len(self.frame_buffer) >= self.max_buffer_size:
-            self.frame_buffer.pop(0)
-        self.frame_buffer.append(frame.copy())
-
-        # Send WebSocket log
-        if self.log_progress and self.frame_counter % self.log_every_n_frames == 0:
-            self._send_log(
-                f"Buffered frame {len(self.frame_buffer)}/{self.trigger.frame_count or 'N/A'}"
-            )
-
-        # Signal frame received
-        self.frame_event.set()
-
-    async def trigger_inference(self) -> None:
-        """Manually trigger inference (API call)."""
+        PERIODIC: Auto-trigger when buffer reaches buffer_size
+        MANUAL: Buffer and wait for API trigger
+        DISABLED: Buffer but never process
+        """
         from iris.server.jobs.config import TriggerMode
 
-        if self.trigger.mode == TriggerMode.MANUAL or self.trigger.mode == TriggerMode.DISABLED:
-            self.manual_trigger_event.set()
+        self.frame_buffer.append(frame.copy())
+
+        if self.trigger_mode == TriggerMode.PERIODIC:
+            if len(self.frame_buffer) >= self.buffer_size:
+                self._send_log(f"Buffer full ({self.buffer_size} frames), running inference")
+                await self._run_inference()
+                # Keep last N frames for overlap
+                self.frame_buffer = self.frame_buffer[-self.overlap_frames:]
+                self._send_log(f"Kept {self.overlap_frames} frames for overlap")
+
+        elif self.trigger_mode == TriggerMode.MANUAL:
+            self._send_log(f"Buffered frame {len(self.frame_buffer)} (waiting for manual trigger)")
+
+        # DISABLED mode: just buffer, never process
+
+    async def trigger_inference(self) -> None:
+        """Manually trigger inference (called by API endpoint).
+
+        Only works in MANUAL mode.
+        """
+        from iris.server.jobs.config import TriggerMode
+
+        if self.trigger_mode != TriggerMode.MANUAL:
+            self._send_log(f"Cannot trigger: mode is {self.trigger_mode.value}")
+            return
+
+        if not self.frame_buffer:
+            self._send_log("Cannot trigger: buffer empty")
+            return
+
+        self._send_log(f"Manual trigger: processing {len(self.frame_buffer)} frames")
+        await self._run_inference()
+        self.frame_buffer.clear()  # No overlap for manual mode
 
     async def execute(self) -> None:
-        """Main loop: wait for frames, check triggers, run inference."""
+        """Minimal execute - VideoJob processes in add_frame() instead of loop.
+
+        This method is called when job is submitted to queue, but VideoJob
+        doesn't use a traditional execute loop. Inference happens via:
+        - PERIODIC: add_frame() auto-triggers
+        - MANUAL: trigger_inference() API call
+        - DISABLED: never triggers
+        """
         self.status = JobStatus.RUNNING
-        logger.info(f"VideoJob {self.job_id} started (trigger={self.trigger.mode})")
+        self.started_at = time.time()
+        logger.info(f"[{self.job_id}] VideoJob ready (mode={self.trigger_mode.value})")
 
+        # Stay alive until stopped
         while not self.stop_event.is_set():
-            try:
-                # Wait for frame or stop signal (with timeout to check stop_event)
-                await asyncio.wait_for(self.frame_event.wait(), timeout=1.0)
-                self.frame_event.clear()
-            except asyncio.TimeoutError:
-                continue
-
-            # Check if we should trigger
-            elapsed = time.time() - self.buffer_start_time if self.buffer_start_time else 0
-            should_auto_trigger = self.trigger.should_trigger(len(self.frame_buffer), elapsed)
-            should_manual_trigger = self.manual_trigger_event.is_set()
-
-            if should_auto_trigger or should_manual_trigger:
-                self.manual_trigger_event.clear()
-
-                # Log trigger
-                self._send_log(f"Collected {len(self.frame_buffer)} frames, launching inference")
-
-                # Run inference on buffered frames
-                await self._run_inference()
-
-                # Reset buffer if continuous
-                if self.continuous:
-                    self.frame_buffer.clear()
-                    self.buffer_start_time = None
-                else:
-                    break
+            await asyncio.sleep(1.0)
 
         self.status = JobStatus.COMPLETED
-        logger.info(f"VideoJob {self.job_id} completed")
+        logger.info(f"[{self.job_id}] VideoJob completed")
 
     async def _run_inference(self) -> None:
         """Run inference on buffered frames in ThreadPoolExecutor."""
         if not self.frame_buffer:
             return
 
-        # Copy frames for inference
-        frames = self.frame_buffer.copy()
+        frames_to_process = self.frame_buffer.copy()
+        logger.info(f"[{self.job_id}] Running inference on {len(frames_to_process)} frames")
 
-        # Run blocking GPU work in executor
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             self.executor,
             self._sync_inference,
-            frames,
-            self.prompt,
+            frames_to_process,
+            self.prompt
         )
 
-        # Store result
         self.result = result
-        self._send_log(f"Inference completed: {len(frames)} frames processed")
+        logger.info(f"[{self.job_id}] Inference complete: {result[:100]}")
+        self._send_log(f"Inference result: {result[:100]}...")
 
     def _sync_inference(self, frames: list[Image.Image], prompt: str) -> str:
         """Blocking GPU inference (runs in ThreadPoolExecutor).
@@ -468,15 +447,17 @@ class VideoJob(Job):
             })
 
     def stop(self) -> None:
-        """Stop buffering and exit."""
+        """Stop job (called when WebSocket disconnects)."""
+        logger.info(f"[{self.job_id}] Stopping VideoJob")
         self.stop_event.set()
 
     def get_status_dict(self) -> dict:
         """Return custom status information."""
         return {
             "frames_buffered": len(self.frame_buffer),
-            "trigger_mode": str(self.trigger.mode),
-            "continuous": self.continuous,
+            "trigger_mode": str(self.trigger_mode.value),
+            "buffer_size": self.buffer_size,
+            "overlap_frames": self.overlap_frames,
         }
 
     def to_response_dict(self) -> dict:

@@ -11,40 +11,9 @@ from iris.config import _yaml_config
 class TriggerMode(str, Enum):
     """Trigger modes for video jobs."""
 
-    PERIODIC = "periodic"  # Automatic (frame_count OR time_seconds)
+    PERIODIC = "periodic"  # Automatic (buffer_size frames)
     MANUAL = "manual"      # API call to /jobs/{id}/trigger
-    DISABLED = "disabled"  # No automatic triggering (job-to-job only)
-
-
-class TriggerConfig(BaseModel):
-    """Trigger configuration for video jobs.
-
-    Triggers inference based on mode:
-    - PERIODIC: Triggers when frame_count OR time_seconds threshold met
-    - MANUAL: Only triggers via API call
-    - DISABLED: No automatic triggering (for job-to-job orchestration)
-    """
-
-    mode: TriggerMode = Field(default=TriggerMode.PERIODIC)
-    frame_count: int | None = Field(default=5)       # For periodic mode
-    time_seconds: float | None = Field(default=5.0)  # For periodic mode
-
-    def should_trigger(self, frames: int, elapsed: float) -> bool:
-        """Check if trigger conditions are met.
-
-        Args:
-            frames: Number of frames collected
-            elapsed: Elapsed time since collection started
-
-        Returns:
-            True if trigger conditions met, False otherwise
-        """
-        if self.mode != TriggerMode.PERIODIC:
-            return False
-
-        count_met = self.frame_count and frames >= self.frame_count
-        time_met = self.time_seconds and elapsed >= self.time_seconds
-        return count_met or time_met
+    DISABLED = "disabled"  # Buffering only, never triggers
 
 
 class JobType(str, Enum):
@@ -71,19 +40,15 @@ class SingleFrameJobConfig(JobConfig):
 class VideoJobConfig(JobConfig):
     """Configuration for video job (buffer + inference).
 
-    Accepts incoming frames, buffers them, and triggers inference based on config.
+    Simplified to 3 core parameters:
+    - trigger_mode: When to run inference (PERIODIC/MANUAL/DISABLED)
+    - buffer_size: Number of frames before triggering
+    - overlap_frames: Frames to keep after inference for continuity
     """
 
     job_type: Literal[JobType.VIDEO] = JobType.VIDEO
 
-    # Trigger configuration
-    trigger: TriggerConfig = Field(default_factory=TriggerConfig)
-
-    # Frame handling
-    frame_skip: int = Field(default=1, ge=1, description="Keep every Nth frame")
-    max_buffer_size: int = Field(default=100, description="Prevent infinite growth")
-
-    # Behavior
-    continuous: bool = Field(default=True, description="Restart after trigger?")
-    log_progress: bool = Field(default=True, description="Send WebSocket logs?")
-    log_every_n_frames: int = Field(default=1, description="Log frequency")
+    # Core parameters (only 3!)
+    trigger_mode: TriggerMode = Field(default=TriggerMode.PERIODIC)
+    buffer_size: int = Field(default=8, ge=1, description="Frames before inference")
+    overlap_frames: int = Field(default=4, ge=0, description="Frames to keep after inference")

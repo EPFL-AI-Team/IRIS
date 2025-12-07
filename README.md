@@ -48,38 +48,67 @@ IRIS uses a flexible job system for managing inference tasks. Jobs can be starte
 
 ### Trigger Modes
 
-VideoJob supports three different triggering mechanisms:
+VideoJob supports three triggering modes via the `trigger_mode` parameter:
 
 **PERIODIC (Automatic)**
-- Triggers when `frame_count >= N` OR `time_seconds >= T`
+- Automatically triggers inference when buffer reaches `buffer_size` frames
+- After inference, keeps last `overlap_frames` for temporal continuity
 - Configuration example:
 ```python
 {
     "job_type": "video",
-    "trigger": {
-        "mode": "periodic",
-        "frame_count": 5,
-        "time_seconds": 5.0
-    }
+    "trigger_mode": "periodic",
+    "buffer_size": 8,
+    "overlap_frames": 4
 }
 ```
+**Use case:** Continuous video analysis (e.g., Qwen2.5-VL logging)
 
 **MANUAL (API-triggered)**
-- Only triggers via explicit API call: `POST /jobs/{job_id}/trigger`
+- Buffers frames but only triggers via API call: `POST /jobs/{job_id}/trigger`
+- No overlap - buffer clears after each trigger
 - Configuration example:
 ```python
 {
     "job_type": "video",
-    "trigger": {
-        "mode": "manual"
-    }
+    "trigger_mode": "manual",
+    "buffer_size": 1
 }
 ```
+**Use case:** On-demand analysis (e.g., colony counter when user clicks)
 
-**DISABLED (Job-to-job orchestration)**
-- No automatic triggering
-- Used when one job launches another programmatically
-- Enables conditional workflows (e.g., YOLO detection → VLM analysis)
+**DISABLED (Buffering Only)**
+- Accepts and buffers frames but never processes them
+- For future use or conditional triggering
+- Configuration example:
+```python
+{
+    "job_type": "video",
+    "trigger_mode": "disabled",
+    "buffer_size": 8
+}
+```
+**Use case:** Placeholder for future YOLO integration
+
+### Auto-Started VideoJob
+
+When a client connects to `/ws/stream`, a VideoJob is automatically created for that connection:
+- Job ID: Unique per connection (e.g., `video_job_a3f7b2c1`)
+- Mode: PERIODIC
+- Buffer: 8 frames (configurable in `config.yaml`)
+- Overlap: 4 frames - 50% overlap for temporal continuity
+- Cleanup: Automatically stopped and removed when WebSocket disconnects
+
+**No manual job creation needed - just start streaming!**
+
+You can configure defaults in `config.yaml`:
+```yaml
+jobs:
+  video:
+    trigger_mode: "periodic"
+    buffer_size: 8
+    overlap_frames: 4
+```
 
 ### API Endpoints
 
@@ -91,8 +120,9 @@ Content-Type: application/json
 {
     "job_type": "video",
     "prompt": "Describe what you see in the video.",
-    "trigger": {"mode": "periodic", "frame_count": 5},
-    "continuous": true
+    "trigger_mode": "periodic",
+    "buffer_size": 8,
+    "overlap_frames": 4
 }
 ```
 

@@ -9,6 +9,7 @@ from iris.server.jobs.config import (
     JobType,
     VideoJobConfig,
 )
+from iris.vlm.inference.queue.jobs import VideoJob
 from iris.vlm.inference.queue.queue import InferenceQueue
 
 
@@ -22,7 +23,7 @@ class JobFactory:
         processor: Any,
         executor: ThreadPoolExecutor,
         queue: InferenceQueue,
-    ):
+    ) -> VideoJob:
         """Create job instance based on config.job_type.
 
         Args:
@@ -65,21 +66,21 @@ class JobFactory:
         executor: ThreadPoolExecutor,
         queue: InferenceQueue,
     ):
-        """Create unified VideoJob from configuration."""
+        """Create VideoJob from simplified configuration."""
         # Import here to avoid circular dependencies
         from iris.vlm.inference.queue.jobs import VideoJob
 
+        # job_id is guaranteed to be set by create_job(), but add fallback for type safety
+        job_id = config.job_id or f"video-{uuid.uuid4().hex[:8]}"
+
         return VideoJob(
-            job_id=config.job_id,
+            job_id=job_id,
             model=model,
             processor=processor,
             executor=executor,
             queue=queue,
             prompt=config.prompt,
-            trigger=config.trigger,
-            frame_skip=config.frame_skip,
-            max_buffer_size=config.max_buffer_size,
-            continuous=config.continuous,
-            log_progress=config.log_progress,
-            log_every_n_frames=config.log_every_n_frames,
+            trigger_mode=config.trigger_mode,
+            buffer_size=config.buffer_size,
+            overlap_frames=config.overlap_frames,
         )

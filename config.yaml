@@ -14,14 +14,10 @@ server:
   enable_metrics: true
 
 jobs:
-  frame_collection:
-    # Updated defaults for 1 FPS streaming
-    trigger:
-      frame_count: 5  # Trigger every 5 frames at 1 FPS = 5 seconds
-      time_seconds: 5.0  # Alternative trigger
-    frame_skip: 1  # Keep all frames at 1 FPS (was 60)
-    debug_logging: false
-    continuous: true
+  video:
+    trigger_mode: "periodic"  # "periodic" | "manual" | "disabled"
+    buffer_size: 8
+    overlap_frames: 4
 
 client:
   video:
