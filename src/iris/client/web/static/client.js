@@ -352,13 +352,13 @@ function displayResult(data) {
     <div class="result-header">
       <span class="result-timestamp">${timestamp}</span>
       <span class="result-job-id">${data.job_id}</span>
-      <span class="result-frames">Frames: ${data.frames_processed}</span>
+      <span class="result-frames">Frames: ${data.frames_processed || 0}</span>
     </div>
     <div class="result-text">
-      <p>${data.result}</p>
+      <p>${data.result || 'No result'}</p>
     </div>
     <div class="result-metrics">
-      <span>Inference: ${data.inference_time?.toFixed(3)}s</span>
+      <span>Inference: ${(data.metrics?.inference_time || data.inference_time || 0).toFixed(3)}s</span>
     </div>
   `;
 

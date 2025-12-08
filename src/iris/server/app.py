@@ -324,30 +324,44 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         job_id = await state.job_manager.start_job(job_config)
         logger.info(f"Auto-created VideoJob for connection: {job_id}")
 
+        # Track WebSocket connection state
+        connection_active = True
+        pending_tasks = []
+
         # Register result callback for immediate broadcasting
         video_job = state.job_manager.get_job(job_id)
         if video_job and hasattr(video_job, 'result_callback'):
             async def result_handler(result_data: dict):
                 """Handle result from VideoJob and broadcast via WebSocket."""
-                # Send to WebSocket client
-                await websocket.send_json(result_data)
+                if not connection_active:
+                    return  # Skip if connection is closed
+                
+                try:
+                    # Send to WebSocket client
+                    await websocket.send_json(result_data)
 
-                # Record metrics
-                if state.metrics:
-                    state.metrics.record_job(
-                        job_id=result_data["job_id"],
-                        inference_time=result_data.get("inference_time", 0.0),
-                        total_latency=result_data.get("inference_time", 0.0),
-                        status="completed",
-                        queue_depth=state.queue.queue.qsize(),
-                    )
+                    # Record metrics
+                    if state.metrics:
+                        state.metrics.record_job(
+                            job_id=result_data["job_id"],
+                            inference_time=result_data.get("inference_time", 0.0),
+                            total_latency=result_data.get("inference_time", 0.0),
+                            status="completed",
+                            queue_depth=state.queue.queue.qsize(),
+                        )
 
-                    # Save detailed result to session results file
-                    state.metrics.record_inference_result(result_data)
+                        # Save detailed result to session results file
+                        state.metrics.record_inference_result(result_data)
+                except (WebSocketDisconnect, RuntimeError) as e:
+                    # WebSocket already closed, ignore silently
+                    logger.debug(f"Skipping result send - WebSocket closed: {e}")
+                except Exception as e:
+                    logger.error(f"Error in result handler: {e}", exc_info=True)
 
             # Wrap async callback for sync context
             def sync_result_callback(result_data: dict):
-                asyncio.create_task(result_handler(result_data))
+                task = asyncio.create_task(result_handler(result_data))
+                pending_tasks.append(task)
 
             video_job.result_callback = sync_result_callback
 
@@ -436,6 +450,18 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     try:
         await asyncio.gather(receive_loop(), send_loop())
     finally:
+        # Mark connection as inactive to stop result handler tasks
+        connection_active = False
+        
+        # Cancel any pending result handler tasks
+        for task in pending_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for all tasks to finish cancellation
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+        
         # CLEANUP: Stop and remove job when WebSocket disconnects
         try:
             await state.job_manager.stop_job(connection_job_id)
