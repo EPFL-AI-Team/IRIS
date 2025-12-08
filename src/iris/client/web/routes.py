@@ -102,7 +102,10 @@ async def start_streaming() -> dict[str, Any]:
     # Start streaming
     def store_result(result: dict[str, Any]) -> None:
         """Callback to store inference results."""
-        state.latest_result = result
+        state.results_history.append(result)
+        # Keep only the most recent results
+        if len(state.results_history) > state.max_results_history:
+            state.results_history.pop(0)
 
     state.streaming_client = StreamingClient(
         state.config.server.ws_url, state.camera, result_callback=store_result
@@ -230,14 +233,46 @@ async def results_websocket(websocket: WebSocket) -> None:
     state = get_app_state()
     await websocket.accept()
 
-    last_sent_result = None
+    last_sent_index = 0
 
     try:
         while True:
-            # Send new result if it has changed
-            if state.latest_result and state.latest_result != last_sent_result:
-                await websocket.send_json(state.latest_result)
-                last_sent_result = state.latest_result
+            # Send all new results since last check
+            current_count = len(state.results_history)
+            if current_count > last_sent_index:
+                # Send all new results
+                for i, result in enumerate(
+                    state.results_history[last_sent_index:], start=last_sent_index
+                ):
+                    try:
+                        await websocket.send_json(result)
+                        logger.debug(
+                            f"Sent result {i + 1}/{current_count}: {result.get('job_id')}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send result {i}: {e}")
+                        raise  # Re-raise to close connection
+                last_sent_index = current_count
             await asyncio.sleep(0.1)  # Check for new results 10 times per second
     except WebSocketDisconnect:
-        pass
+        logger.info("Results WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Results WebSocket error: {e}")
+
+
+@router.get("/results/history")
+async def get_results_history() -> dict[str, Any]:
+    """Get all stored inference results."""
+    state = get_app_state()
+    return {
+        "count": len(state.results_history),
+        "results": state.results_history,
+    }
+
+
+@router.post("/results/clear")
+async def clear_results_history() -> dict[str, str]:
+    """Clear stored inference results history."""
+    state = get_app_state()
+    state.results_history.clear()
+    return {"status": "ok", "message": "Results history cleared"}

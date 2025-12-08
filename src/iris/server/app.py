@@ -10,30 +10,27 @@ import uuid
 import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-
-# Suppress known warnings
-warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # Suppress tokenizers warning
 from io import BytesIO
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from PIL import Image
-from typing import Any
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
 from iris.server.jobs.config import JobConfig, VideoJobConfig
-from iris.server.jobs.types import TriggerMode
 from iris.server.jobs.manager import JobManager
+from iris.server.jobs.types import TriggerMode
 from iris.server.logging_handler import WebSocketLogHandler
 from iris.vlm.inference.queue.queue import InferenceQueue
 from iris.vlm.models import load_model_and_processor
 
+# Suppress known warnings
+warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # Suppress tokenizers warning
+
 # Configure logging - reduce noise from transformers/HF
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s:%(name)s:%(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
 # Reduce verbosity from external libraries
@@ -83,6 +80,19 @@ def handle_shutdown_signal(signum: int, frame: Any) -> None:
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 
+async def global_result_drainer(state: Any) -> None:
+    """Drain global results queue to prevent memory leaks."""
+    try:
+        while True:
+            job = await state.queue.results.get()
+            state.queue.results.task_done()
+            # Results are handled by per-job callbacks
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error(f"Global result drainer error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown."""
@@ -107,6 +117,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     )
     await state.queue.start()
 
+    # Start global result drainer
+    result_drainer_task = asyncio.create_task(global_result_drainer(state))
+
     # Initialize metrics collector if enabled
     if config.enable_metrics:
         from iris.server.metrics import MetricsCollector
@@ -129,6 +142,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Shutting down...")
+
+    # Stop global result drainer
+    result_drainer_task.cancel()
+    try:
+        await result_drainer_task
+    except asyncio.CancelledError:
+        pass
 
     # Close metrics collector
     if state.metrics:
@@ -330,12 +350,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
         # Register result callback for immediate broadcasting
         video_job = state.job_manager.get_job(job_id)
-        if video_job and hasattr(video_job, 'result_callback'):
+        if video_job and hasattr(video_job, "result_callback"):
+
             async def result_handler(result_data: dict):
                 """Handle result from VideoJob and broadcast via WebSocket."""
                 if not connection_active:
                     return  # Skip if connection is closed
-                
+
                 try:
                     # Send to WebSocket client
                     await websocket.send_json(result_data)
@@ -399,46 +420,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
             while True:
                 # Check for log messages (non-blocking)
                 try:
-                    log_msg = log_queue.get_nowait()
+                    log_msg = await log_queue.get()
                     await websocket.send_json(log_msg)
-                except asyncio.QueueEmpty:
-                    pass
-
-                # Check for job results (with short timeout to allow log checking)
-                try:
-                    result_job = await asyncio.wait_for(
-                        state.queue.results.get(), timeout=0.1
-                    )
-
-                    # Base response structure
-                    response = {
-                        "type": "result",
-                        "job_id": result_job.job_id,
-                        "job_type": result_job.job_type,
-                        "status": result_job.status.value,
-                    }
-
-                    # Add job-specific data via polymorphism
-                    response.update(result_job.to_response_dict())
-
-                    await websocket.send_json(response)
-                    state.queue.results.task_done()
-
-                    # Record job metrics (if applicable)
-                    if state.metrics and hasattr(result_job, "processing_time"):
-                        total_latency = getattr(
-                            result_job, "total_latency", result_job.processing_time
-                        )
-                        state.metrics.record_job(
-                            job_id=result_job.job_id,
-                            inference_time=result_job.processing_time,
-                            total_latency=total_latency,
-                            status=result_job.status.value,
-                            queue_depth=state.queue.queue.qsize(),
-                        )
-                except asyncio.TimeoutError:
-                    # No results ready, continue loop to check logs
-                    pass
+                except asyncio.CancelledError:
+                    break
 
         except WebSocketDisconnect:
             logger.info("Client disconnected (Send Loop)")
@@ -452,16 +437,16 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     finally:
         # Mark connection as inactive to stop result handler tasks
         connection_active = False
-        
+
         # Cancel any pending result handler tasks
         for task in pending_tasks:
             if not task.done():
                 task.cancel()
-        
+
         # Wait for all tasks to finish cancellation
         if pending_tasks:
             await asyncio.gather(*pending_tasks, return_exceptions=True)
-        
+
         # CLEANUP: Stop and remove job when WebSocket disconnects
         try:
             await state.job_manager.stop_job(connection_job_id)

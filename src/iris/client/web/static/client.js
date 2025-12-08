@@ -21,12 +21,12 @@ let resultsHistory = [];
 // Activity logging
 const LOG_MAX_ENTRIES = 100;
 
-function addLog(message, level = 'INFO') {
-  const container = document.getElementById('log-container');
+function addLog(message, level = "INFO") {
+  const container = document.getElementById("log-container");
   if (!container) return;
 
   const timestamp = new Date().toLocaleTimeString();
-  const entry = document.createElement('div');
+  const entry = document.createElement("div");
   entry.className = `log-entry log-level-${level}`;
   entry.innerHTML = `
     <span class="log-timestamp">[${timestamp}]</span>
@@ -37,7 +37,7 @@ function addLog(message, level = 'INFO') {
   container.appendChild(entry);
 
   // Limit entries
-  const entries = container.getElementsByClassName('log-entry');
+  const entries = container.getElementsByClassName("log-entry");
   if (entries.length > LOG_MAX_ENTRIES) {
     container.removeChild(entries[0]);
   }
@@ -47,11 +47,11 @@ function addLog(message, level = 'INFO') {
 }
 
 // Toast notification system
-function showToast(message, type = 'info', duration = 4000) {
-  const container = document.getElementById('toast-container');
+function showToast(message, type = "info", duration = 4000) {
+  const container = document.getElementById("toast-container");
   if (!container) return;
 
-  const toast = document.createElement('div');
+  const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
 
   toast.innerHTML = `
@@ -64,7 +64,7 @@ function showToast(message, type = 'info', duration = 4000) {
 
   // Auto-dismiss after duration
   setTimeout(() => {
-    toast.classList.add('removing');
+    toast.classList.add("removing");
     setTimeout(() => toast.remove(), 300); // Wait for animation
   }, duration);
 }
@@ -86,9 +86,9 @@ function initializeCanvas() {
     return false;
   }
 
-  previewCtx = previewCanvas.getContext('2d', {
-    alpha: false,  // No transparency needed for video
-    desynchronized: true  // Allow desynchronized rendering for better performance
+  previewCtx = previewCanvas.getContext("2d", {
+    alpha: false, // No transparency needed for video
+    desynchronized: true, // Allow desynchronized rendering for better performance
   });
 
   if (!previewCtx) {
@@ -117,19 +117,24 @@ async function renderFrameToCanvas(base64Data) {
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    const blob = new Blob([bytes], { type: "image/jpeg" });
 
     // Decode image asynchronously using createImageBitmap
     const imageBitmap = await createImageBitmap(blob);
 
     // Resize canvas if dimensions changed (first frame or camera change)
-    if (previewCanvas.width !== imageBitmap.width ||
-        previewCanvas.height !== imageBitmap.height) {
+    if (
+      previewCanvas.width !== imageBitmap.width ||
+      previewCanvas.height !== imageBitmap.height
+    ) {
       previewCanvas.width = imageBitmap.width;
       previewCanvas.height = imageBitmap.height;
-      console.log(`Canvas resized to ${imageBitmap.width}x${imageBitmap.height}`);
-      document.getElementById("preview-status").textContent =
-        `Camera active - ${imageBitmap.width}x${imageBitmap.height}`;
+      console.log(
+        `Canvas resized to ${imageBitmap.width}x${imageBitmap.height}`
+      );
+      document.getElementById(
+        "preview-status"
+      ).textContent = `Camera active - ${imageBitmap.width}x${imageBitmap.height}`;
     }
 
     // Draw the frame to canvas
@@ -146,7 +151,6 @@ async function renderFrameToCanvas(base64Data) {
       // console.log(`Preview FPS: ${fps.toFixed(1)}`);
     }
     lastFrameTime = now;
-
   } catch (error) {
     console.error("Error rendering frame to canvas:", error);
     // Don't throw - just skip this frame and continue
@@ -165,16 +169,18 @@ function checkBrowserSupport() {
     issues.push("WebSocket not supported");
   }
 
-  const testCanvas = document.createElement('canvas');
-  if (!testCanvas.getContext('2d')) {
+  const testCanvas = document.createElement("canvas");
+  if (!testCanvas.getContext("2d")) {
     issues.push("Canvas 2D context not supported");
   }
 
   if (issues.length > 0) {
-    const msg = `Browser compatibility issues: ${issues.join(', ')}`;
-    addLog(msg, 'ERROR');
+    const msg = `Browser compatibility issues: ${issues.join(", ")}`;
+    addLog(msg, "ERROR");
     console.error(msg);
-    alert('Your browser does not support required features for video preview. Please use a modern browser.');
+    alert(
+      "Your browser does not support required features for video preview. Please use a modern browser."
+    );
     return false;
   }
 
@@ -185,36 +191,45 @@ function checkBrowserSupport() {
 async function initClientCamera() {
   try {
     clientCameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480 }
+      video: { width: 640, height: 480 },
     });
 
     // Create hidden video element
-    clientCameraVideo = document.createElement('video');
+    clientCameraVideo = document.createElement("video");
     clientCameraVideo.srcObject = clientCameraStream;
     clientCameraVideo.autoplay = true;
     clientCameraVideo.play();
 
-    addLog('Browser camera initialized', 'INFO');
-    document.getElementById('camera-permission-status').textContent = 'Camera access granted';
-    document.getElementById('preview-status').textContent = 'Using: Browser Camera';
+    addLog("Browser camera initialized", "INFO");
+    document.getElementById("camera-permission-status").textContent =
+      "Camera access granted";
+    document.getElementById("preview-status").textContent =
+      "Using: Browser Camera";
 
     // Start capture loop
     startClientCameraCapture();
-
   } catch (error) {
-    addLog(`Camera access failed: ${error.message}`, 'ERROR');
-    document.getElementById('camera-permission-status').textContent = `Error: ${error.message}`;
-    document.getElementById('preview-status').textContent = 'Camera access denied';
+    addLog(`Camera access failed: ${error.message}`, "ERROR");
+    document.getElementById(
+      "camera-permission-status"
+    ).textContent = `Error: ${error.message}`;
+    document.getElementById("preview-status").textContent =
+      "Camera access denied";
   }
 }
 
 // Capture frames from client camera
 function startClientCameraCapture() {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
 
   clientCaptureInterval = setInterval(() => {
-    if (!clientCameraMode || !clientCameraVideo || clientCameraVideo.readyState < 2) return;
+    if (
+      !clientCameraMode ||
+      !clientCameraVideo ||
+      clientCameraVideo.readyState < 2
+    )
+      return;
 
     // Capture frame from video
     canvas.width = clientCameraVideo.videoWidth;
@@ -222,22 +237,25 @@ function startClientCameraCapture() {
     ctx.drawImage(clientCameraVideo, 0, 0);
 
     // Convert to JPEG and display
-    canvas.toBlob((blob) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result.split(',')[1];
-        renderFrameToCanvas(base64);
-      };
-      reader.readAsDataURL(blob);
-    }, 'image/jpeg', 0.8);
-
-  }, 100);  // 10 FPS
+    canvas.toBlob(
+      (blob) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result.split(",")[1];
+          renderFrameToCanvas(base64);
+        };
+        reader.readAsDataURL(blob);
+      },
+      "image/jpeg",
+      0.8
+    );
+  }, 100); // 10 FPS
 }
 
 // Stop client camera
 function stopClientCamera() {
   if (clientCameraStream) {
-    clientCameraStream.getTracks().forEach(track => track.stop());
+    clientCameraStream.getTracks().forEach((track) => track.stop());
     clientCameraStream = null;
   }
   if (clientCameraVideo) {
@@ -248,8 +266,8 @@ function stopClientCamera() {
     clearInterval(clientCaptureInterval);
     clientCaptureInterval = null;
   }
-  document.getElementById('preview-status').textContent = 'Camera inactive';
-  addLog('Client camera stopped', 'INFO');
+  document.getElementById("preview-status").textContent = "Camera inactive";
+  addLog("Client camera stopped", "INFO");
 }
 
 // Stop server preview WebSocket
@@ -262,66 +280,74 @@ function stopServerPreview() {
 
 // Initialize preview WebSocket
 function connectPreview() {
-  updateConnectionStatus('preview-connection', 'Connecting');
-  addLog('Connecting to preview WebSocket...', 'INFO');
+  updateConnectionStatus("preview-connection", "Connecting");
+  addLog("Connecting to preview WebSocket...", "INFO");
   previewWs = new WebSocket(`ws://${window.location.host}/preview`);
 
   previewWs.onopen = () => {
-    updateConnectionStatus('preview-connection', 'Connected');
-    addLog('Preview WebSocket connected', 'INFO');
+    updateConnectionStatus("preview-connection", "Connected");
+    addLog("Preview WebSocket connected", "INFO");
   };
 
   previewWs.onmessage = (event) => {
     renderFrameToCanvas(event.data);
     // Update status only once when first frame arrives
-    if (document.getElementById('preview-status').textContent === 'Camera inactive') {
-      const select = document.getElementById('server-camera-select');
+    if (
+      document.getElementById("preview-status").textContent ===
+      "Camera inactive"
+    ) {
+      const select = document.getElementById("server-camera-select");
       const selectedOption = select.options[select.selectedIndex];
-      const cameraName = selectedOption ? selectedOption.textContent : 'Server Camera';
-      document.getElementById('preview-status').textContent = `Using: ${cameraName}`;
+      const cameraName = selectedOption
+        ? selectedOption.textContent
+        : "Server Camera";
+      document.getElementById(
+        "preview-status"
+      ).textContent = `Using: ${cameraName}`;
     }
   };
 
   previewWs.onerror = () => {
-    updateConnectionStatus('preview-connection', 'Error');
+    updateConnectionStatus("preview-connection", "Error");
     document.getElementById("preview-status").textContent = "Preview error";
-    addLog('Preview WebSocket error', 'ERROR');
+    addLog("Preview WebSocket error", "ERROR");
   };
 
   previewWs.onclose = () => {
-    updateConnectionStatus('preview-connection', 'Disconnected');
+    updateConnectionStatus("preview-connection", "Disconnected");
     document.getElementById("preview-status").textContent = "Camera inactive";
-    addLog('Preview WebSocket closed, reconnecting...', 'WARNING');
+    addLog("Preview WebSocket closed, reconnecting...", "WARNING");
     setTimeout(connectPreview, 2000); // Reconnect
   };
 }
 
 // Initialize results WebSocket
 function connectResults() {
-  updateConnectionStatus('results-connection', 'Connecting');
-  addLog('Connecting to results WebSocket...', 'INFO');
+  updateConnectionStatus("results-connection", "Connecting");
+  addLog("Connecting to results WebSocket...", "INFO");
   resultsWs = new WebSocket(`ws://${window.location.host}/results`);
 
   resultsWs.onopen = () => {
-    updateConnectionStatus('results-connection', 'Connected');
-    addLog('Results WebSocket connected', 'INFO');
+    updateConnectionStatus("results-connection", "Connected");
+    addLog("Results WebSocket connected", "INFO");
   };
 
   resultsWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    addLog(`Received result: ${data.job_id} (${data.status})`, 'INFO');
+    console.log("Received result data:", data); // Debug log
+    addLog(`Received result: ${data.job_id} (${data.status})`, "INFO");
     displayResult(data);
   };
 
   resultsWs.onerror = (error) => {
-    updateConnectionStatus('results-connection', 'Error');
-    addLog('Results WebSocket error', 'ERROR');
+    updateConnectionStatus("results-connection", "Error");
+    addLog("Results WebSocket error", "ERROR");
     console.error("Results WebSocket error:", error);
   };
 
   resultsWs.onclose = () => {
-    updateConnectionStatus('results-connection', 'Disconnected');
-    addLog('Results WebSocket closed, reconnecting...', 'WARNING');
+    updateConnectionStatus("results-connection", "Disconnected");
+    addLog("Results WebSocket closed, reconnecting...", "WARNING");
     console.log("Results WebSocket closed, reconnecting...");
     setTimeout(connectResults, 2000); // Reconnect
   };
@@ -333,32 +359,43 @@ function displayResult(data) {
 
   // Add to history
   resultsHistory.push(data);
+  const resultNumber = resultsHistory.length; // Sequential result number
 
   // Remove placeholder on first result
-  const placeholder = container.querySelector('.results-placeholder');
+  const placeholder = container.querySelector(".results-placeholder");
   if (placeholder) {
     placeholder.remove();
   }
 
   // Create result element
-  const resultDiv = document.createElement('div');
-  resultDiv.className = 'result-item';
+  const resultDiv = document.createElement("div");
+  resultDiv.className = "result-item";
 
-  // Format timestamp
-  const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
+  // Format timestamp - handle missing or invalid timestamps
+  let timestamp = "Unknown time";
+  if (data.timestamp && !isNaN(data.timestamp)) {
+    timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
+  } else if (data.datetime) {
+    // Fallback to datetime string if available
+    timestamp = new Date(data.datetime).toLocaleTimeString();
+  }
 
-  // Build result HTML
+  // Build result HTML with result number
   resultDiv.innerHTML = `
     <div class="result-header">
+      <span class="result-number">#${resultNumber}</span>
       <span class="result-timestamp">${timestamp}</span>
-      <span class="result-job-id">${data.job_id}</span>
       <span class="result-frames">Frames: ${data.frames_processed || 0}</span>
     </div>
     <div class="result-text">
-      <p>${data.result || 'No result'}</p>
+      <p>${data.result || "No result"}</p>
     </div>
     <div class="result-metrics">
-      <span>Inference: ${(data.metrics?.inference_time || data.inference_time || 0).toFixed(3)}s</span>
+      <span>Inference: ${(
+        data.metrics?.inference_time ||
+        data.inference_time ||
+        0
+      ).toFixed(3)}s</span>
     </div>
   `;
 
@@ -387,13 +424,18 @@ async function updateStatus() {
 
     // Update tunnel hostname field if available
     if (data.config.ssh_tunnel && data.config.ssh_tunnel.remote_host) {
-      document.getElementById("tunnel-hostname").value = data.config.ssh_tunnel.remote_host;
+      document.getElementById("tunnel-hostname").value =
+        data.config.ssh_tunnel.remote_host;
     }
 
     // Update streaming server connection status
-    const streamingServerStatus = data.streaming_server_status || "disconnected";
-    updateConnectionStatus('streaming-server',
-      streamingServerStatus.charAt(0).toUpperCase() + streamingServerStatus.slice(1));
+    const streamingServerStatus =
+      data.streaming_server_status || "disconnected";
+    updateConnectionStatus(
+      "streaming-server",
+      streamingServerStatus.charAt(0).toUpperCase() +
+        streamingServerStatus.slice(1)
+    );
 
     // Update button states
     document.getElementById("start-btn").disabled = data.streaming_active;
@@ -444,20 +486,20 @@ document.getElementById("config-form").addEventListener("submit", async (e) => {
 // Start streaming
 document.getElementById("start-btn").addEventListener("click", async () => {
   try {
-    addLog('Starting streaming...', 'INFO');
+    addLog("Starting streaming...", "INFO");
     const response = await fetch("/start", { method: "POST" });
     const data = await response.json();
 
     if (data.status === "ok") {
-      addLog('Streaming started successfully', 'INFO');
-      showToast('Streaming started', 'success', 3000);
+      addLog("Streaming started successfully", "INFO");
+      showToast("Streaming started", "success", 3000);
       updateStatus();
     } else {
-      addLog(`Start failed: ${data.message}`, 'ERROR');
+      addLog(`Start failed: ${data.message}`, "ERROR");
       showToast(`Failed to start: ${data.message}`, "error");
     }
   } catch (error) {
-    addLog(`Failed to start streaming: ${error.message}`, 'ERROR');
+    addLog(`Failed to start streaming: ${error.message}`, "ERROR");
     showToast("Failed to start streaming", "error");
   }
 });
@@ -465,17 +507,17 @@ document.getElementById("start-btn").addEventListener("click", async () => {
 // Stop streaming
 document.getElementById("stop-btn").addEventListener("click", async () => {
   try {
-    addLog('Stopping streaming...', 'INFO');
+    addLog("Stopping streaming...", "INFO");
     const response = await fetch("/stop", { method: "POST" });
     const data = await response.json();
 
     if (data.status === "ok") {
-      addLog('Streaming stopped successfully', 'INFO');
-      showToast('Streaming stopped', 'info', 3000);
+      addLog("Streaming stopped successfully", "INFO");
+      showToast("Streaming stopped", "info", 3000);
       updateStatus();
     }
   } catch (error) {
-    addLog(`Failed to stop streaming: ${error.message}`, 'ERROR');
+    addLog(`Failed to stop streaming: ${error.message}`, "ERROR");
     showToast("Failed to stop streaming", "error");
   }
 });
@@ -483,52 +525,52 @@ document.getElementById("stop-btn").addEventListener("click", async () => {
 // Load available server cameras
 async function loadServerCameras() {
   try {
-    const response = await fetch('/cameras');
+    const response = await fetch("/cameras");
     const data = await response.json();
 
-    const select = document.getElementById('server-camera-select');
-    select.innerHTML = '';
+    const select = document.getElementById("server-camera-select");
+    select.innerHTML = "";
 
     if (data.cameras.length === 0) {
-      select.innerHTML = '<option>No cameras found</option>';
-      addLog('No server cameras found', 'WARNING');
+      select.innerHTML = "<option>No cameras found</option>";
+      addLog("No server cameras found", "WARNING");
       return;
     }
 
-    data.cameras.forEach(camera => {
-      const option = document.createElement('option');
+    data.cameras.forEach((camera) => {
+      const option = document.createElement("option");
       option.value = camera.index;
       option.textContent = `Camera ${camera.index} (${camera.resolution})`;
       select.appendChild(option);
     });
 
-    addLog(`Found ${data.cameras.length} server cameras`, 'INFO');
+    addLog(`Found ${data.cameras.length} server cameras`, "INFO");
   } catch (error) {
-    addLog(`Failed to load cameras: ${error.message}`, 'ERROR');
+    addLog(`Failed to load cameras: ${error.message}`, "ERROR");
   }
 }
 
 // Initialize clear log button
-document.addEventListener('DOMContentLoaded', () => {
-  const clearBtn = document.getElementById('clear-log-btn');
+document.addEventListener("DOMContentLoaded", () => {
+  const clearBtn = document.getElementById("clear-log-btn");
   if (clearBtn) {
-    clearBtn.addEventListener('click', () => {
-      document.getElementById('log-container').innerHTML = '';
-      addLog('Log cleared', 'INFO');
+    clearBtn.addEventListener("click", () => {
+      document.getElementById("log-container").innerHTML = "";
+      addLog("Log cleared", "INFO");
     });
   }
 
   // Camera mode toggle handler
-  document.getElementById('camera-mode').addEventListener('change', (e) => {
+  document.getElementById("camera-mode").addEventListener("change", (e) => {
     const mode = e.target.value;
-    clientCameraMode = (mode === 'client');
+    clientCameraMode = mode === "client";
 
-    document.getElementById('server-camera-options').style.display =
-      mode === 'server' ? 'block' : 'none';
-    document.getElementById('client-camera-options').style.display =
-      mode === 'client' ? 'block' : 'none';
+    document.getElementById("server-camera-options").style.display =
+      mode === "server" ? "block" : "none";
+    document.getElementById("client-camera-options").style.display =
+      mode === "client" ? "block" : "none";
 
-    if (mode === 'client') {
+    if (mode === "client") {
       stopServerPreview();
     } else {
       stopClientCamera();
@@ -537,41 +579,80 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Server camera selection handler
-  document.getElementById('server-camera-select').addEventListener('change', async (e) => {
-    const cameraIndex = parseInt(e.target.value);
+  document
+    .getElementById("server-camera-select")
+    .addEventListener("change", async (e) => {
+      const cameraIndex = parseInt(e.target.value);
 
-    try {
-      const response = await fetch('/camera/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ camera_index: cameraIndex })
-      });
-      const data = await response.json();
+      try {
+        const response = await fetch("/camera/select", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ camera_index: cameraIndex }),
+        });
+        const data = await response.json();
 
-      if (data.status === 'ok') {
-        const selectedOption = e.target.options[e.target.selectedIndex];
-        document.getElementById('preview-status').textContent = `Using: ${selectedOption.textContent}`;
-        addLog(`Switched to camera ${cameraIndex}`, 'INFO');
-      } else {
-        addLog(`Failed to switch camera: ${data.message}`, 'ERROR');
+        if (data.status === "ok") {
+          const selectedOption = e.target.options[e.target.selectedIndex];
+          document.getElementById(
+            "preview-status"
+          ).textContent = `Using: ${selectedOption.textContent}`;
+          addLog(`Switched to camera ${cameraIndex}`, "INFO");
+        } else {
+          addLog(`Failed to switch camera: ${data.message}`, "ERROR");
+        }
+      } catch (error) {
+        addLog(`Camera switch failed: ${error.message}`, "ERROR");
       }
-    } catch (error) {
-      addLog(`Camera switch failed: ${error.message}`, 'ERROR');
+    });
+
+  // Enable client camera button handler
+  document
+    .getElementById("enable-client-camera-btn")
+    .addEventListener("click", initClientCamera);
+
+  // Refresh cameras button handler
+  document
+    .getElementById("refresh-cameras-btn")
+    .addEventListener("click", loadServerCameras);
+
+  // Clear log button handler
+  document.getElementById("clear-log-btn").addEventListener("click", () => {
+    const container = document.getElementById("log-container");
+    if (container) {
+      container.innerHTML = "";
+      addLog("Log cleared", "INFO");
     }
   });
 
-  // Enable client camera button handler
-  document.getElementById('enable-client-camera-btn').addEventListener('click', initClientCamera);
+  // Clear results button handler
+  document
+    .getElementById("clear-results-btn")
+    .addEventListener("click", async () => {
+      try {
+        const response = await fetch("/results/clear", { method: "POST" });
+        const data = await response.json();
 
-  // Refresh cameras button handler
-  document.getElementById('refresh-cameras-btn').addEventListener('click', loadServerCameras);
+        if (data.status === "ok") {
+          const container = document.getElementById("results-container");
+          if (container) {
+            container.innerHTML =
+              '<div class="results-placeholder"><p>Results cleared. Start streaming to see new results.</p></div>';
+            resultsHistory = [];
+            addLog("Results history cleared", "INFO");
+          }
+        }
+      } catch (error) {
+        addLog(`Failed to clear results: ${error.message}`, "ERROR");
+      }
+    });
 });
 
 // Initialize
-addLog('IRIS Client initializing...', 'INFO');
+addLog("IRIS Client initializing...", "INFO");
 if (checkBrowserSupport()) {
   if (!initializeCanvas()) {
-    addLog('Failed to initialize canvas for preview', 'ERROR');
+    addLog("Failed to initialize canvas for preview", "ERROR");
   }
 
   // Set client camera as default mode

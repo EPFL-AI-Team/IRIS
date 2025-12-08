@@ -23,7 +23,10 @@
 
             <!-- Inference Results -->
             <div class="results-section">
-                <h2>Inference Results</h2>
+                <div class="log-header">
+                    <h2>Inference Results</h2>
+                    <button id="clear-results-btn" class="btn-clear">Clear Results</button>
+                </div>
                 <div id="results-container">
                     <div class="results-placeholder">
                         <p>No results yet. Start streaming to see inference results.</p>
@@ -53,7 +56,8 @@
                     <div class="form-group">
                         <label for="tunnel-hostname">IZAR Hostname (SSH Tunnel):</label>
                         <input type="text" id="tunnel-hostname" placeholder="i27 or icn042.iccluster">
-                        <small style="display: block; margin-top: 4px; color: #666;">Leave empty if not using IZAR</small>
+                        <small style="display: block; margin-top: 4px; color: #666;">Leave empty if not using
+                            IZAR</small>
                     </div>
                     <button type="submit">Update Config</button>
                 </form>
@@ -67,9 +71,12 @@
                     <p><strong>Streaming:</strong> <span id="streaming-status">Inactive</span></p>
                     <p><strong>FPS:</strong> <span id="fps">0.0</span></p>
                     <p><strong>Target:</strong> <span id="target">Not configured</span></p>
-                    <p><strong>Preview Connection:</strong> <span id="preview-connection" class="status-indicator">Disconnected</span></p>
-                    <p><strong>Results Connection:</strong> <span id="results-connection" class="status-indicator">Disconnected</span></p>
-                    <p><strong>Streaming Server:</strong> <span id="streaming-server" class="status-indicator">Disconnected</span></p>
+                    <p><strong>Preview Connection:</strong> <span id="preview-connection"
+                            class="status-indicator">Disconnected</span></p>
+                    <p><strong>Results Connection:</strong> <span id="results-connection"
+                            class="status-indicator">Disconnected</span></p>
+                    <p><strong>Streaming Server:</strong> <span id="streaming-server"
+                            class="status-indicator">Disconnected</span></p>
                 </div>
             </div>
         </div>

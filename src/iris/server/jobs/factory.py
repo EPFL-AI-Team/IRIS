@@ -2,7 +2,7 @@
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from iris.server.jobs.config import (
     JobConfig,
@@ -10,9 +10,9 @@ from iris.server.jobs.config import (
 )
 from iris.server.jobs.types import JobType
 
-if TYPE_CHECKING:
-    from iris.vlm.inference.queue.jobs import VideoJob
-    from iris.vlm.inference.queue.queue import InferenceQueue
+# if TYPE_CHECKING:
+#     from iris.vlm.inference.queue.jobs import VideoJob
+#     from iris.vlm.inference.queue.queue import InferenceQueue
 
 
 class JobFactory:
@@ -54,6 +54,8 @@ class JobFactory:
                 "Create it directly instead of using the factory."
             )
         elif config.job_type == JobType.VIDEO:
+            if not isinstance(config, VideoJobConfig):
+                raise ValueError("Invalid config type for VIDEO job")
             return JobFactory._create_video_job(
                 config, model, processor, executor, queue
             )
