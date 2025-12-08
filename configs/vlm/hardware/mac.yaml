@@ -1,0 +1,13 @@
+# Apple Silicon (M1/M2/M3) optimization
+# Uses Metal Performance Shaders (MPS) for GPU acceleration
+
+model:
+  torch_dtype: "float16"  # MPS works well with float16
+  attn_implementation: "sdpa"
+  low_cpu_mem_usage: true
+
+quantization:
+  load_in_8bit: false
+  load_in_4bit: false
+
+device: "mps"  # Metal Performance Shaders for Apple Silicon

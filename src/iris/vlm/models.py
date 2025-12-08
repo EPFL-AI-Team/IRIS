@@ -52,53 +52,37 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 
 
 def load_model_and_processor(
-    vlm_config_name: str = "serve",
+    model_id: str,
     hardware: str | None = None,
-    model_key: str | None = None,
 ) -> tuple[PreTrainedModel, ProcessorMixin]:
-    """Load model and processor using VLM config system.
+    """Load model and processor.
 
     Args:
-        vlm_config_name: Config name (e.g., "serve", "train") from configs/vlm/
-        hardware: Optional hardware override (e.g., "mac_m3", "v100", "a100")
-        model_key: Deprecated. Legacy support for MODEL_CONFIGS keys.
+        model_id: HuggingFace model ID or key from MODEL_CONFIGS (e.g., "qwen2.5-7b")
+        hardware: Optional hardware profile (e.g., "v100", "mac") from configs/vlm/hardware/
 
     Returns:
         Tuple of (model, processor)
     """
-    # Legacy support: if model_key is provided, use old system
-    if model_key is not None:
-        logger.warning(
-            f"model_key parameter is deprecated. Use vlm_config_name and hardware instead."
-        )
-        model_cfg = MODEL_CONFIGS[model_key]
-        logger.info(f"Loading model (legacy): {model_cfg.id}")
-        model = model_cfg.loader.from_pretrained(
-            model_cfg.id,
-            device_map="mps",
-            torch_dtype="auto",
-            attn_implementation="sdpa",
-            low_cpu_mem_usage=True,
-        )
-        processor = AutoProcessor.from_pretrained(model_cfg.id)
-        _log_model_info(model)
-        return model, processor
-
-    # New config-based system
-    from iris.vlm.config import load_config
-
-    cfg = load_config(vlm_config_name, hardware=hardware)
-
-    # Extract model configuration
-    model_id = cfg["model"]["model_id"]
+    # Resolve model_id if it's a key in MODEL_CONFIGS
+    resolved_model_id = model_id
     if model_id in MODEL_CONFIGS:
         logger.info(f"Resolving model key '{model_id}' from MODEL_CONFIGS")
-        model_id = MODEL_CONFIGS[model_id].id
-    
-    device = cfg.get("device", "auto")
-    torch_dtype = _parse_dtype(cfg.get("model", {}).get("torch_dtype", "auto"))
-    attn_implementation = cfg.get("model", {}).get("attn_implementation", "sdpa")
-    low_cpu_mem_usage = cfg.get("model", {}).get("low_cpu_mem_usage", True)
+        resolved_model_id = MODEL_CONFIGS[model_id].id
+
+    # Load hardware profile if specified
+    hw_config = {}
+    if hardware:
+        from iris.vlm.config import load_hardware_profile
+
+        hw_config = load_hardware_profile(hardware)
+        logger.info(f"Using hardware profile: {hardware}")
+
+    # Extract configuration with defaults
+    device = hw_config.get("device", "auto")
+    torch_dtype = _parse_dtype(hw_config.get("model", {}).get("torch_dtype", "auto"))
+    attn_implementation = hw_config.get("model", {}).get("attn_implementation", "sdpa")
+    low_cpu_mem_usage = hw_config.get("model", {}).get("low_cpu_mem_usage", True)
 
     # Build model loading kwargs
     model_kwargs = {
@@ -109,17 +93,14 @@ def load_model_and_processor(
     }
 
     # Add quantization config if specified
-    quantization_config = _build_quantization_config(cfg.get("quantization", {}))
+    quantization_config = _build_quantization_config(hw_config.get("quantization", {}))
     if quantization_config is not None:
         model_kwargs["quantization_config"] = quantization_config
 
     # Load model and processor
-    logger.info(f"Loading model: {model_id}")
-    if hardware:
-        logger.info(f"Hardware profile: {hardware}")
-
-    model = AutoModelForImageTextToText.from_pretrained(model_id, **model_kwargs)
-    processor = AutoProcessor.from_pretrained(model_id)
+    logger.info(f"Loading model: {resolved_model_id}")
+    model = AutoModelForImageTextToText.from_pretrained(resolved_model_id, **model_kwargs)
+    processor = AutoProcessor.from_pretrained(resolved_model_id)
 
     _log_model_info(model)
     return model, processor

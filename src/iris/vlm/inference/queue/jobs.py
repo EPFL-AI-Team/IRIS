@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 
 if TYPE_CHECKING:
-    from iris.server.jobs.config import TriggerConfig
+    from iris.server.jobs.config import TriggerMode
     from iris.vlm.inference.queue.queue import InferenceQueue
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ class VideoJob(Job):
         executor: ThreadPoolExecutor,
         queue: "InferenceQueue",
         prompt: str = "Describe what you see in the video.",
-        trigger_mode: "TriggerMode" = None,
+        trigger_mode: TriggerMode | None = None,
         buffer_size: int = 8,
         overlap_frames: int = 4,
     ):
@@ -292,6 +292,7 @@ class VideoJob(Job):
         # Import TriggerMode here to avoid circular import
         if trigger_mode is None:
             from iris.server.jobs.config import TriggerMode
+
             trigger_mode = TriggerMode.PERIODIC
         self.trigger_mode = trigger_mode
 
@@ -307,7 +308,9 @@ class VideoJob(Job):
         """This job accepts incoming frames."""
         return True
 
-    async def add_frame(self, frame: Image.Image, frame_id: int, timestamp: float) -> None:
+    async def add_frame(
+        self, frame: Image.Image, frame_id: int, timestamp: float
+    ) -> None:
         """Buffer frame and auto-trigger based on mode.
 
         PERIODIC: Auto-trigger when buffer reaches buffer_size
@@ -320,14 +323,18 @@ class VideoJob(Job):
 
         if self.trigger_mode == TriggerMode.PERIODIC:
             if len(self.frame_buffer) >= self.buffer_size:
-                self._send_log(f"Buffer full ({self.buffer_size} frames), running inference")
+                self._send_log(
+                    f"Buffer full ({self.buffer_size} frames), running inference"
+                )
                 await self._run_inference()
                 # Keep last N frames for overlap
-                self.frame_buffer = self.frame_buffer[-self.overlap_frames:]
+                self.frame_buffer = self.frame_buffer[-self.overlap_frames :]
                 self._send_log(f"Kept {self.overlap_frames} frames for overlap")
 
         elif self.trigger_mode == TriggerMode.MANUAL:
-            self._send_log(f"Buffered frame {len(self.frame_buffer)} (waiting for manual trigger)")
+            self._send_log(
+                f"Buffered frame {len(self.frame_buffer)} (waiting for manual trigger)"
+            )
 
         # DISABLED mode: just buffer, never process
 
@@ -376,14 +383,13 @@ class VideoJob(Job):
             return
 
         frames_to_process = self.frame_buffer.copy()
-        logger.info(f"[{self.job_id}] Running inference on {len(frames_to_process)} frames")
+        logger.info(
+            f"[{self.job_id}] Running inference on {len(frames_to_process)} frames"
+        )
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            self.executor,
-            self._sync_inference,
-            frames_to_process,
-            self.prompt
+            self.executor, self._sync_inference, frames_to_process, self.prompt
         )
 
         self.result = result
@@ -404,7 +410,9 @@ class VideoJob(Job):
 
         # Simple single-frame inference for now
         # TODO: Replace with proper video inference once Qwen template is figured out
-        logger.info(f"WORKER: VideoJob inference for {self.job_id} ({len(frames)} frames)")
+        logger.info(
+            f"WORKER: VideoJob inference for {self.job_id} ({len(frames)} frames)"
+        )
 
         with torch.no_grad():
             messages = [
@@ -412,7 +420,10 @@ class VideoJob(Job):
                     "role": "user",
                     "content": [
                         {"type": "image", "image": frames[0]},
-                        {"type": "text", "text": f"{prompt} (Processing {len(frames)} frames)"},
+                        {
+                            "type": "text",
+                            "text": f"{prompt} (Processing {len(frames)} frames)",
+                        },
                     ],
                 }
             ]

@@ -6,15 +6,15 @@ from iris.config import _yaml_config
 class ServerConfig(BaseModel):
     """Server inference configuration."""
 
-    model_key: str = Field(default=_yaml_config.get("server", {}).get("model_key", "smolvlm2"))
-    # VLM configuration (hybrid system)
-    vlm_config: str = Field(
-        default=_yaml_config.get("server", {}).get("vlm_config", "serve"),
-        description="VLM config name (references configs/vlm/{name}.yaml)"
+    # Model selection (direct from config.yaml)
+    model_id: str = Field(
+        default=_yaml_config.get("server", {}).get("model_id", "qwen2.5-7b"),
+        description="HuggingFace model ID or key from MODEL_CONFIGS"
     )
+    # Optional hardware optimization
     vlm_hardware: str | None = Field(
         default=_yaml_config.get("server", {}).get("vlm_hardware"),
-        description="Hardware profile override (mac_m3, v100, a100, h100, cpu)"
+        description="Hardware profile: v100, mac, or null for auto-detect"
     )
     max_queue_size: int = Field(default=_yaml_config.get("server", {}).get("max_queue_size", 10))
     num_workers: int = Field(default=_yaml_config.get("server", {}).get("num_workers", 1))

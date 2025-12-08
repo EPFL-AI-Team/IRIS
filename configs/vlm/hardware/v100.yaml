@@ -1,25 +1,13 @@
-training:
-#   batch_size: 8
-#   gradient_accumulation_steps: 4  # Effective batch = 32
+# V100 GPU optimization (16GB VRAM)
+# For inference use on IZAR cluster
 
-# model:
-#   torch_dtype: "float16"
+model:
+  torch_dtype: "float16"  # V100 doesn't support bfloat16
+  attn_implementation: "sdpa"  # V100 doesn't support flash_attention_2
+  low_cpu_mem_usage: true
 
-# accelerate:
-#   use_accelerate: true
-#   mixed_precision: "fp16"  # V100 supports fp16, NOT bf16
-#   gradient_checkpointing: true
+quantization:
+  load_in_8bit: false  # V100 has enough VRAM for float16
+  load_in_4bit: false
 
-# peft:
-#   use_peft: true
-#   peft_method: "lora"
-#   r: 8
-#   alpha: 16
-#   dropout: 0.1
-
-# quantization:
-#   load_in_4bit: true
-#   bnb_4bit_quant_type: "nf4"
-#   bnb_4bit_compute_dtype: "float16"
-
-# device: "cuda"
+device: "auto"

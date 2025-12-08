@@ -2,8 +2,8 @@
 # Override via environment variables: IRIS_SERVER__PORT=8002
 
 server:
-  vlm_config: "serve"  # References configs/vlm/serve.yaml
-  vlm_hardware: null   # Optional: Override with hardware profile (mac_m3, v100, cpu)
+  model_id: "unsloth/Qwen2-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
+  vlm_hardware: null      # Optional: Hardware profile (v100, mac, etc.)
   max_queue_size: 10
   num_workers: 1
   host: "0.0.0.0"

@@ -82,7 +82,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Loading model...")
 
     state.model, state.processor = load_model_and_processor(
-        vlm_config_name=config.vlm_config,
+        model_id=config.model_id,
         hardware=config.vlm_hardware,
     )
 
