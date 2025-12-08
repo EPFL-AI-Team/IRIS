@@ -38,8 +38,8 @@ class InferenceQueue:
 
         self._running = True
         for i in range(self.num_workers):
-            # Create a background task for each worker
-            worker_task = asyncio.create_task(self._worker(f"worker-{i}"))
+            # Create a background task for each worker (pass worker_id for GPU assignment)
+            worker_task = asyncio.create_task(self._worker(worker_id=i))
             self.workers.append(worker_task)
         logger.info(f"Started {self.num_workers} inference workers.")
 
@@ -53,13 +53,16 @@ class InferenceQueue:
 
         # Send a "None" signal for each worker to unblock and exit
         for _ in self.workers:
-            await self.queue.put(None)
+            try:
+                self.queue.put_nowait(None)  # Non-blocking
+            except asyncio.QueueFull:
+                pass  # Queue full, worker will exit when it drains
 
         # Wait for all worker tasks to complete
         await asyncio.gather(*self.workers, return_exceptions=True)
 
         # Shut down the thread pool
-        self.executor.shutdown(wait=True)
+        self.executor.shutdown(wait=False)  # Don't wait for GPU threads
         logger.info("Inference queue stopped.")
 
     async def submit(self, job: Job) -> bool:
@@ -85,9 +88,34 @@ class InferenceQueue:
         except TimeoutError:
             return None
 
-    async def _worker(self, name: str) -> None:
-        """The core consumer loop that processes jobs by executing them, and queuing results."""
-        logger.info(f"{name} has started.")
+    async def _worker(self, worker_id: int = 0) -> None:
+        """The core consumer loop that processes jobs by executing them, and queuing results.
+
+        Args:
+            worker_id: Worker index (0-indexed). Used for GPU assignment in multi-GPU setups.
+        """
+        worker_name = f"worker-{worker_id}"
+
+        # Assign GPU based on worker_id
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                device_count = torch.cuda.device_count()
+                assigned_gpu = worker_id % device_count
+                device = f"cuda:{assigned_gpu}"
+                logger.info(
+                    f"{worker_name} assigned to {device} "
+                    f"(GPU {assigned_gpu + 1}/{device_count})"
+                )
+            else:
+                device = "cpu"
+                logger.info(f"{worker_name} using CPU (no GPUs available)")
+        except ImportError:
+            device = "cpu"
+            logger.info(f"{worker_name} using CPU (torch not available)")
+
+        logger.info(f"{worker_name} has started.")
         while self._running:
             # Wait for a job to appear in the queue
             job: Job | None = await self.queue.get()
@@ -97,11 +125,20 @@ class InferenceQueue:
                 break
 
             try:
-                logger.info(f"{name} is processing {job}")
+                # Move model to this worker's GPU if needed
+                if hasattr(job, "model") and hasattr(job.model, "to") and device != "cpu":
+                    current_device = str(job.model.device) if hasattr(job.model, "device") else "unknown"
+                    if device not in current_device:
+                        logger.debug(
+                            f"{worker_name}: Moving model from {current_device} to {device}"
+                        )
+                        job.model.to(device)
+
+                logger.info(f"{worker_name} is processing {job}")
                 # Run the job. The job updates its own internal state.
                 await job.execute()
             except Exception as e:
-                logger.error(f"{name} failed on {job}: {e}", exc_info=True)
+                logger.error(f"{worker_name} failed on {job}: {e}", exc_info=True)
                 # If it fails, update the job's state
                 job.status = JobStatus.FAILED
                 job.error = str(e)
@@ -110,4 +147,4 @@ class InferenceQueue:
                 await self.results.put(job)
                 self.queue.task_done()
 
-        logger.info(f"{name} has stopped.")
+        logger.info(f"{worker_name} has stopped.")

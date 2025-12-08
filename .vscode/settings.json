@@ -31,17 +31,20 @@
         "reportUndefinedVariable": "error",
         "reportMissingImports": "warning"
     },
+    // Disable old linting system
+    "python.linting.enabled": false,
+    "python.linting.pylintEnabled": false,
     // Python Formatting with Ruff
     "[python]": {
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.codeActionsOnSave": {
-            "source.fixAll": "explicit",
-            "source.organizeImports": "explicit"
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
         }
     },
     // Ruff Settings
     "ruff.nativeServer": "on",
     // Other Extensions
-    "evenBetterToml.schema.enabled": false,
+    "evenBetterToml.schema.enabled": false
 }

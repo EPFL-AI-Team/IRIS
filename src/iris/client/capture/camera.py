@@ -52,6 +52,34 @@ class CameraCapture:
         ret, frame = self.cap.read()
         return frame if ret else None
 
+    def _crop_to_aspect_ratio(self, frame: np.ndarray) -> np.ndarray:
+        """Crop frame center to match configured aspect ratio.
+
+        Args:
+            frame: Input frame to crop.
+
+        Returns:
+            Cropped frame preserving aspect ratio.
+        """
+        h, w = frame.shape[:2]
+        target_ar = self.width / self.height
+        source_ar = w / h
+
+        # If aspect ratios are close enough (within 1%), skip crop
+        if abs(target_ar - source_ar) < 0.01:
+            return frame
+
+        if source_ar > target_ar:
+            # Source is wider - crop width (sides)
+            new_w = int(h * target_ar)
+            start_x = (w - new_w) // 2
+            return frame[:, start_x : start_x + new_w]
+        else:
+            # Source is taller - crop height (top/bottom)
+            new_h = int(w / target_ar)
+            start_y = (h - new_h) // 2
+            return frame[start_y : start_y + new_h, :]
+
     def get_frame_jpeg(self, quality: int = 80) -> bytes | None:
         """Capture a frame and encode it as JPEG.
 
@@ -64,6 +92,11 @@ class CameraCapture:
         frame = self.get_frame()
         if frame is None:
             return None
+
+        # Crop and resize frame if it doesn't match configured dimensions
+        if frame.shape[1] != self.width or frame.shape[0] != self.height:
+            frame = self._crop_to_aspect_ratio(frame)  # Crop first to preserve aspect ratio
+            frame = cv2.resize(frame, (self.width, self.height))  # Then resize
 
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]  # pylint: disable=no-member
         _, buffer = cv2.imencode(".jpg", frame, encode_param)  # pylint: disable=no-member

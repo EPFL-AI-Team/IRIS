@@ -3,6 +3,7 @@ Configuration of the state of the whole app, for dependency injection (avoids gl
 """
 
 import asyncio
+import subprocess
 
 from iris.client.capture.camera import CameraCapture
 from iris.client.config import ClientConfig
@@ -17,6 +18,9 @@ class AppState:
         self.camera: CameraCapture | None = None
         self.streaming_client: StreamingClient | None = None
         self.streaming_task: asyncio.Task | None = None
+        self.results_history: list[dict] = []
+        self.max_results_history: int = 100  # Keep last 100 results
+        self.tunnel_process: subprocess.Popen | None = None
 
 
 # Singleton instance

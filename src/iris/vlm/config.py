@@ -1,10 +1,42 @@
 """
-CLI entry for fine-tuning VLM with config-based setup
+VLM configuration loading utilities.
 """
 
 from pathlib import Path
 
 import yaml
+
+from iris.utils.logging import setup_logger
+
+logger = setup_logger(__name__)
+
+
+def load_hardware_profile(hardware: str) -> dict:
+    """Load hardware optimization profile.
+
+    Args:
+        hardware: Profile name (e.g., "v100", "mac")
+
+    Returns:
+        Dict with hardware-specific settings (model, quantization, etc.)
+
+    Example return:
+        {
+            "model": {"dtype": "bfloat16"},
+            "quantization": {"load_in_8bit": False}
+        }
+    """
+    profile_path = Path(f"configs/vlm/hardware/{hardware}.yaml")
+
+    if not profile_path.exists():
+        logger.warning(f"Hardware profile not found: {hardware}, using defaults")
+        return {}
+
+    with open(profile_path) as f:
+        config = yaml.safe_load(f)
+
+    logger.info(f"Loaded hardware profile: {hardware}")
+    return config or {}
 
 
 def load_config(config_name: str, hardware: str | None = None) -> dict:

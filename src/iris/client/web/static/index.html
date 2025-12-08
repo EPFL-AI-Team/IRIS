@@ -12,31 +12,73 @@
     <div class="container">
         <h1>IRIS Streaming Client</h1>
 
-        <!-- Video Preview -->
-        <div class="video-section">
-            <h2>Camera Preview</h2>
-            <img id="preview" src="" alt="Camera preview">
-            <div id="preview-status">Camera inactive</div>
+        <!-- Main Content: Side by Side -->
+        <div class="main-content">
+            <!-- Video Preview -->
+            <div class="video-section">
+                <h2>Camera Preview</h2>
+                <canvas id="preview"></canvas>
+                <div id="preview-status">Camera inactive</div>
+            </div>
+
+            <!-- Inference Results -->
+            <div class="results-section">
+                <div class="log-header">
+                    <h2>Inference Results</h2>
+                    <button id="clear-results-btn" class="btn-clear">Clear Results</button>
+                </div>
+                <div id="results-container">
+                    <div class="results-placeholder">
+                        <p>No results yet. Start streaming to see inference results.</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- Configuration -->
-        <div class="config-section">
-            <h2>Server Configuration</h2>
-            <form id="config-form">
-                <div class="form-group">
-                    <label for="host">Server Host:</label>
-                    <input type="text" id="host" value="localhost" required>
+        <!-- Configuration and Status Side by Side -->
+        <div class="config-status-row">
+            <!-- Configuration -->
+            <div class="config-section">
+                <h2>Server Configuration</h2>
+                <form id="config-form">
+                    <div class="form-group">
+                        <label for="host">Server Host:</label>
+                        <input type="text" id="host" value="localhost" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="port">Server Port:</label>
+                        <input type="number" id="port" value="8005" min="1024" max="65535" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="endpoint">Endpoint:</label>
+                        <input type="text" id="endpoint" value="/ws/stream" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="tunnel-hostname">IZAR Hostname (SSH Tunnel):</label>
+                        <input type="text" id="tunnel-hostname" placeholder="i27 or icn042.iccluster">
+                        <small style="display: block; margin-top: 4px; color: #666;">Leave empty if not using
+                            IZAR</small>
+                    </div>
+                    <button type="submit">Update Config</button>
+                </form>
+            </div>
+
+            <!-- Status Display -->
+            <div class="status-section">
+                <h2>Status</h2>
+                <div id="status">
+                    <p><strong>Camera:</strong> <span id="camera-status">Inactive</span></p>
+                    <p><strong>Streaming:</strong> <span id="streaming-status">Inactive</span></p>
+                    <p><strong>FPS:</strong> <span id="fps">0.0</span></p>
+                    <p><strong>Target:</strong> <span id="target">Not configured</span></p>
+                    <p><strong>Preview Connection:</strong> <span id="preview-connection"
+                            class="status-indicator">Disconnected</span></p>
+                    <p><strong>Results Connection:</strong> <span id="results-connection"
+                            class="status-indicator">Disconnected</span></p>
+                    <p><strong>Streaming Server:</strong> <span id="streaming-server"
+                            class="status-indicator">Disconnected</span></p>
                 </div>
-                <div class="form-group">
-                    <label for="port">Server Port:</label>
-                    <input type="number" id="port" value="8000" min="1024" max="65535" required>
-                </div>
-                <div class="form-group">
-                    <label for="endpoint">Endpoint:</label>
-                    <input type="text" id="endpoint" value="/ws/stream" required>
-                </div>
-                <button type="submit">Update Config</button>
-            </form>
+            </div>
         </div>
 
         <!-- Control Buttons -->
@@ -45,17 +87,51 @@
             <button id="stop-btn" class="btn-stop" disabled>Stop Streaming</button>
         </div>
 
-        <!-- Status Display -->
-        <div class="status-section">
-            <h2>Status</h2>
-            <div id="status">
-                <p><strong>Camera:</strong> <span id="camera-status">Inactive</span></p>
-                <p><strong>Streaming:</strong> <span id="streaming-status">Inactive</span></p>
-                <p><strong>FPS:</strong> <span id="fps">0.0</span></p>
-                <p><strong>Target:</strong> <span id="target">Not configured</span></p>
+        <!-- Activity Log -->
+        <div class="log-section">
+            <div class="log-header">
+                <h2>Activity Log</h2>
+                <button id="clear-log-btn" class="btn-clear">Clear Log</button>
+            </div>
+            <div id="log-container" class="log-container">
+                <!-- Logs will be added here dynamically -->
+            </div>
+        </div>
+
+        <!-- Camera Configuration -->
+        <div class="camera-config-section">
+            <h2>Camera Selection</h2>
+
+            <!-- Camera Mode Toggle -->
+            <div class="form-group">
+                <label for="camera-mode">Camera Source:</label>
+                <select id="camera-mode">
+                    <option value="client" selected>Browser Camera (This Device)</option>
+                    <option value="server">Server Camera</option>
+                </select>
+            </div>
+
+            <!-- Client Camera Options -->
+            <div id="client-camera-options">
+                <button type="button" id="enable-client-camera-btn">Enable Camera Access</button>
+                <div id="camera-permission-status"></div>
+            </div>
+
+            <!-- Server Camera Selection -->
+            <div id="server-camera-options" style="display: none;">
+                <div class="form-group">
+                    <label for="server-camera-select">Server Camera:</label>
+                    <select id="server-camera-select">
+                        <option>Loading...</option>
+                    </select>
+                </div>
+                <button type="button" id="refresh-cameras-btn">Refresh Cameras</button>
             </div>
         </div>
     </div>
+
+    <!-- Toast notification container -->
+    <div id="toast-container"></div>
 
     <script src="/static/client.js"></script>
 </body>

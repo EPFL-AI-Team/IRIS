@@ -3,7 +3,7 @@ training:
   learning_rate: 5e-5
 
 model:
-  model_id: "Qwen/Qwen2.5-VL"
+  model_id: "qwen2.5-7b"
 
 # data:
 
