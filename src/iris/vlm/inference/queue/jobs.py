@@ -462,7 +462,18 @@ class VideoJob(Job):
 
     def to_response_dict(self) -> dict:
         """Serialize VideoJob data for WebSocket response."""
-        return {
+        response = {
             "result": self.result,
             "frames_processed": len(self.frame_buffer),
         }
+
+        # Add metrics if available (after inference has run)
+        if self.processing_time is not None:
+            response["metrics"] = {
+                "inference_time": self.processing_time,
+                "total_latency": self.processing_time,
+            }
+            if self.started_at:
+                response["metrics"]["received_at"] = self.started_at
+
+        return response

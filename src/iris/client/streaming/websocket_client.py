@@ -110,10 +110,16 @@ class StreamingClient:
                 # Try to receive result (non-blocking)
                 try:
                     response = await asyncio.wait_for(ws.recv(), timeout=0.01)
-                    result = json.loads(response)
-                    logger.debug("Received result: %s", result)
-                    if self.result_callback:
-                        self.result_callback(result)
+                    message = json.loads(response)
+
+                    # Only store result-type messages (not log messages)
+                    if message.get("type") == "result":
+                        logger.debug("Received result: %s", message)
+                        if self.result_callback:
+                            self.result_callback(message)
+                    elif message.get("type") == "log":
+                        # Log messages from jobs (optional debug logging)
+                        logger.debug("Job log: [%s] %s", message.get("job_id"), message.get("message"))
                 except TimeoutError:
                     pass  # No result yet
 
