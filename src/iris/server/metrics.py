@@ -93,7 +93,9 @@ class MetricsCollector:
         if self.persist:
             self.log_dir.mkdir(parents=True, exist_ok=True)
             self.metrics_file = self.log_dir / f"session_{self.session_id}.jsonl"
+            self.results_file = self.log_dir / f"session_{self.session_id}_results.jsonl"
             logger.info("Metrics will be persisted to: %s", self.metrics_file)
+            logger.info("Results will be saved to: %s", self.results_file)
 
             # Write session header
             self._write_metrics({
@@ -147,6 +149,30 @@ class MetricsCollector:
                 "type": "job",
                 **asdict(job_metrics),
             })
+
+    def record_inference_result(self, result_data: dict) -> None:
+        """Record detailed inference result to results JSONL.
+
+        Args:
+            result_data: Full result dictionary with text, timing, frames
+        """
+        if not self.persist:
+            return
+
+        # Add session metadata
+        result_entry = {
+            "session_id": self.session_id,
+            "timestamp": time.time(),
+            "datetime": datetime.now().isoformat(),
+            **result_data,
+        }
+
+        # Write to results JSONL
+        try:
+            with open(self.results_file, "a") as f:
+                f.write(json.dumps(result_entry) + "\n")
+        except Exception as e:
+            logger.error(f"Failed to write result to JSONL: {e}")
 
     def record_dropped_frame(self) -> None:
         """Record a dropped frame."""

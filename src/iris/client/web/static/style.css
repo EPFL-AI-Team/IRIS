@@ -196,7 +196,11 @@ button:disabled {
     background: #f9f9f9;
     border-radius: 5px;
     padding: 15px;
-    min-height: 400px;
+    max-height: 600px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
 }
 
 .results-placeholder {
@@ -205,6 +209,44 @@ button:disabled {
     justify-content: center;
     height: 400px;
     color: #999;
+}
+
+/* Individual result items */
+.result-item {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 12px;
+    margin-bottom: 10px;
+}
+
+.result-item:last-child {
+    margin-bottom: 0;
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.85em;
+    color: #666;
+}
+
+.result-timestamp {
+    font-weight: bold;
+    color: #333;
+}
+
+.result-job-id {
+    font-family: monospace;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.result-frames {
+    color: #888;
 }
 
 .result-content {

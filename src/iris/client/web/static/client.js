@@ -15,6 +15,9 @@ let clientCameraVideo = null;
 let clientCameraMode = false;
 let clientCaptureInterval = null;
 
+// Results history
+let resultsHistory = [];
+
 // Activity logging
 const LOG_MAX_ENTRIES = 100;
 
@@ -328,43 +331,42 @@ function connectResults() {
 function displayResult(data) {
   const container = document.getElementById("results-container");
 
+  // Add to history
+  resultsHistory.push(data);
+
+  // Remove placeholder on first result
+  const placeholder = container.querySelector('.results-placeholder');
+  if (placeholder) {
+    placeholder.remove();
+  }
+
+  // Create result element
+  const resultDiv = document.createElement('div');
+  resultDiv.className = 'result-item';
+
   // Format timestamp
-  const timestamp = new Date(data.metrics.received_at * 1000).toLocaleTimeString();
+  const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
 
-  container.innerHTML = `
-    <div class="result-content">
-      <img class="result-frame" src="data:image/jpeg;base64,${data.frame}" alt="Analyzed frame">
-
-      <div class="result-text">
-        <h3>Description</h3>
-        <p>${data.result}</p>
-      </div>
-
-      <div class="result-metrics">
-        <h3>Metrics</h3>
-        <div class="metric-row">
-          <span class="metric-label">Job ID:</span>
-          <span class="metric-value">${data.job_id}</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Status:</span>
-          <span class="metric-value">${data.status}</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Inference Time:</span>
-          <span class="metric-value">${data.metrics.inference_time.toFixed(3)}s</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Total Latency:</span>
-          <span class="metric-value">${data.metrics.total_latency.toFixed(3)}s</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Timestamp:</span>
-          <span class="metric-value">${timestamp}</span>
-        </div>
-      </div>
+  // Build result HTML
+  resultDiv.innerHTML = `
+    <div class="result-header">
+      <span class="result-timestamp">${timestamp}</span>
+      <span class="result-job-id">${data.job_id}</span>
+      <span class="result-frames">Frames: ${data.frames_processed}</span>
+    </div>
+    <div class="result-text">
+      <p>${data.result}</p>
+    </div>
+    <div class="result-metrics">
+      <span>Inference: ${data.inference_time?.toFixed(3)}s</span>
     </div>
   `;
+
+  // APPEND to container (not replace!)
+  container.appendChild(resultDiv);
+
+  // Auto-scroll to bottom
+  container.scrollTop = container.scrollHeight;
 }
 
 // Update status display

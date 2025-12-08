@@ -302,6 +302,7 @@ class VideoJob(Job):
         self.frame_buffer: list[Image.Image] = []
         self.stop_event = asyncio.Event()
         self.log_callback: Any = None  # Callable[[dict], None]
+        self.result_callback: Any = None  # Callable[[dict], None] - for real-time result broadcasting
 
     def accepts_frames(self) -> bool:
         """This job accepts incoming frames."""
@@ -378,18 +379,41 @@ class VideoJob(Job):
             return
 
         frames_to_process = self.frame_buffer.copy()
-        logger.info(
-            f"[{self.job_id}] Running inference on {len(frames_to_process)} frames"
-        )
+        frame_count = len(frames_to_process)
+
+        # Track timing
+        start_time = time.time()
+
+        logger.info(f"[{self.job_id}] Running inference on {frame_count} frames")
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             self.executor, self._sync_inference, frames_to_process, self.prompt
         )
 
+        # Calculate timing
+        inference_time = time.time() - start_time
+
+        # Update state
         self.result = result
+        self.processing_time = inference_time
+
         logger.info(f"[{self.job_id}] Inference complete: {result[:100]}")
         self._send_log(f"Inference result: {result[:100]}...")
+
+        # Broadcast result immediately via callback
+        if self.result_callback:
+            result_data = {
+                "type": "result",
+                "job_id": self.job_id,
+                "job_type": self.job_type,
+                "status": "completed",
+                "result": result,
+                "frames_processed": frame_count,
+                "inference_time": inference_time,
+                "timestamp": time.time(),
+            }
+            self.result_callback(result_data)
 
     def _sync_inference(self, frames: list[Image.Image], prompt: str) -> str:
         """Blocking GPU inference (runs in ThreadPoolExecutor).

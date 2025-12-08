@@ -323,6 +323,34 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     try:
         job_id = await state.job_manager.start_job(job_config)
         logger.info(f"Auto-created VideoJob for connection: {job_id}")
+
+        # Register result callback for immediate broadcasting
+        video_job = state.job_manager.get_job(job_id)
+        if video_job and hasattr(video_job, 'result_callback'):
+            async def result_handler(result_data: dict):
+                """Handle result from VideoJob and broadcast via WebSocket."""
+                # Send to WebSocket client
+                await websocket.send_json(result_data)
+
+                # Record metrics
+                if state.metrics:
+                    state.metrics.record_job(
+                        job_id=result_data["job_id"],
+                        inference_time=result_data.get("inference_time", 0.0),
+                        total_latency=result_data.get("inference_time", 0.0),
+                        status="completed",
+                        queue_depth=state.queue.queue.qsize(),
+                    )
+
+                    # Save detailed result to session results file
+                    state.metrics.record_inference_result(result_data)
+
+            # Wrap async callback for sync context
+            def sync_result_callback(result_data: dict):
+                asyncio.create_task(result_handler(result_data))
+
+            video_job.result_callback = sync_result_callback
+
     except Exception as e:
         logger.error(f"Failed to auto-create VideoJob: {e}")
         await websocket.close(code=1011, reason="Failed to create video job")

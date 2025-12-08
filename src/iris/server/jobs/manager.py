@@ -83,6 +83,17 @@ class JobManager:
             logger.info(f"Started job: {job.job_id} ({config.job_type})")
             return job.job_id
 
+    def get_job(self, job_id: str) -> Job | None:
+        """Get job instance by ID.
+
+        Args:
+            job_id: Job identifier
+
+        Returns:
+            Job instance or None if not found
+        """
+        return self.active_jobs.get(job_id)
+
     async def stop_job(self, job_id: str) -> bool:
         """Stop a running job.
 
