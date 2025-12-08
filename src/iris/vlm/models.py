@@ -91,6 +91,10 @@ def load_model_and_processor(
 
     # Extract model configuration
     model_id = cfg["model"]["model_id"]
+    if model_id in MODEL_CONFIGS:
+        logger.info(f"Resolving model key '{model_id}' from MODEL_CONFIGS")
+        model_id = MODEL_CONFIGS[model_id].id
+    
     device = cfg.get("device", "auto")
     torch_dtype = _parse_dtype(cfg.get("model", {}).get("torch_dtype", "auto"))
     attn_implementation = cfg.get("model", {}).get("attn_implementation", "sdpa")

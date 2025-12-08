@@ -6,7 +6,7 @@ module load gcc
 
 # 2. Set Environment Variables
 # Critical: Keep heavy model weights in /scratch, not /home
-export HF_HOME="/scratch/mhamelin/hf_cache"
+export HF_HOME="/scratch/izar/mhamelin/hf_cache"
 
 # Optional: Helps with "CUDA out of memory" fragmentation if you hit it again
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True

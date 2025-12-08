@@ -1,7 +1,7 @@
 # Configurations for serving the app
 
 model:
-  model_id: "Qwen/Qwen2.5-VL"
+  model_id: "qwen2.5-7b"
 
 inference:
   batch_size: 4

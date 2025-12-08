@@ -12,6 +12,7 @@ from io import BytesIO
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from PIL import Image
+from typing import Any
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
@@ -42,7 +43,7 @@ force_shutdown_event = asyncio.Event()
 shutdown_count = 0
 
 
-def handle_shutdown_signal(signum: int, frame: any) -> None:
+def handle_shutdown_signal(signum: int, frame: Any) -> None:
     """Handle SIGINT/SIGTERM for graceful shutdown."""
     global shutdown_count
     shutdown_count += 1
@@ -159,7 +160,7 @@ async def health() -> dict[str, str | bool]:
 
 
 @app.post("/jobs/start")
-async def start_job(config: JobConfig) -> dict[str, any]:
+async def start_job(config: JobConfig) -> dict[str, Any]:
     """Start a new job with specified configuration.
 
     Args:
@@ -184,7 +185,7 @@ async def start_job(config: JobConfig) -> dict[str, any]:
 
 
 @app.delete("/jobs/{job_id}/stop")
-async def stop_job(job_id: str) -> dict[str, any]:
+async def stop_job(job_id: str) -> dict[str, Any]:
     """Stop a running job.
 
     Args:
@@ -215,7 +216,7 @@ async def stop_job(job_id: str) -> dict[str, any]:
 
 
 @app.get("/jobs/{job_id}/status")
-async def get_job_status(job_id: str) -> dict[str, any]:
+async def get_job_status(job_id: str) -> dict[str, Any]:
     """Get status of a specific job.
 
     Args:
@@ -265,7 +266,7 @@ async def trigger_job(job_id: str) -> dict[str, str]:
 
 
 @app.get("/jobs/active")
-async def list_active_jobs() -> dict[str, any]:
+async def list_active_jobs() -> dict[str, Any]:
     """List all active jobs.
 
     Returns:
@@ -436,7 +437,7 @@ async def log_streaming_endpoint(websocket: WebSocket) -> None:
 
 
 @app.get("/metrics")
-async def metrics_endpoint() -> dict[str, any]:
+async def metrics_endpoint() -> dict[str, Any]:
     """Get current metrics and statistics."""
     state = get_server_state()
 

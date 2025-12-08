@@ -36,3 +36,7 @@ class ServerConfig(BaseModel):
         default=_yaml_config.get("server", {}).get("enable_metrics", True),
         description="Collect and persist metrics"
     )
+    jobs: dict = Field(
+        default_factory=lambda: _yaml_config.get("jobs", {}),
+        description="Job configurations (video, etc.)"
+    )
