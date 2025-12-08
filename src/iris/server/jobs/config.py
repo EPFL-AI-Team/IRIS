@@ -1,26 +1,11 @@
 """Job configuration system with flexible trigger logic."""
 
-from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from iris.config import _yaml_config
-
-
-class TriggerMode(str, Enum):
-    """Trigger modes for video jobs."""
-
-    PERIODIC = "periodic"  # Automatic (buffer_size frames)
-    MANUAL = "manual"      # API call to /jobs/{id}/trigger
-    DISABLED = "disabled"  # Buffering only, never triggers
-
-
-class JobType(str, Enum):
-    """Available job types in the system."""
-
-    SINGLE_FRAME = "single_frame"
-    VIDEO = "video"
+from iris.server.jobs.types import JobType, TriggerMode
 
 
 class JobConfig(BaseModel):

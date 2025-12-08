@@ -2,15 +2,17 @@
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from iris.server.jobs.config import (
     JobConfig,
-    JobType,
     VideoJobConfig,
 )
-from iris.vlm.inference.queue.jobs import VideoJob
-from iris.vlm.inference.queue.queue import InferenceQueue
+from iris.server.jobs.types import JobType
+
+if TYPE_CHECKING:
+    from iris.vlm.inference.queue.jobs import VideoJob
+    from iris.vlm.inference.queue.queue import InferenceQueue
 
 
 class JobFactory:
@@ -22,8 +24,8 @@ class JobFactory:
         model: Any,
         processor: Any,
         executor: ThreadPoolExecutor,
-        queue: InferenceQueue,
-    ) -> VideoJob:
+        queue: Any,  # InferenceQueue
+    ) -> Any:
         """Create job instance based on config.job_type.
 
         Args:
@@ -64,8 +66,8 @@ class JobFactory:
         model: Any,
         processor: Any,
         executor: ThreadPoolExecutor,
-        queue: InferenceQueue,
-    ):
+        queue: Any,  # InferenceQueue
+    ) -> Any:
         """Create VideoJob from simplified configuration."""
         # Import here to avoid circular dependencies
         from iris.vlm.inference.queue.jobs import VideoJob

@@ -3,11 +3,17 @@
 import asyncio
 import base64
 import logging
+import os
 import signal
 import time
 import uuid
+import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+
+# Suppress known warnings
+warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # Suppress tokenizers warning
 from io import BytesIO
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -16,14 +22,23 @@ from typing import Any
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
-from iris.server.jobs.config import JobConfig, TriggerMode, VideoJobConfig
+from iris.server.jobs.config import JobConfig, VideoJobConfig
+from iris.server.jobs.types import TriggerMode
 from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
 from iris.vlm.inference.queue.queue import InferenceQueue
 from iris.vlm.models import load_model_and_processor
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging - reduce noise from transformers/HF
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(name)s:%(message)s"
+)
 logger = logging.getLogger(__name__)
+
+# Reduce verbosity from external libraries
+logging.getLogger("transformers").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 config = ServerConfig()
 

@@ -12,8 +12,9 @@ import torch
 from PIL import Image
 
 if TYPE_CHECKING:
-    from iris.server.jobs.config import TriggerMode
     from iris.vlm.inference.queue.queue import InferenceQueue
+
+from iris.server.jobs.types import TriggerMode
 
 logger = logging.getLogger(__name__)
 
@@ -289,10 +290,8 @@ class VideoJob(Job):
         self.queue = queue
         self.prompt = prompt
 
-        # Import TriggerMode here to avoid circular import
+        # Set default trigger mode if not provided
         if trigger_mode is None:
-            from iris.server.jobs.config import TriggerMode
-
             trigger_mode = TriggerMode.PERIODIC
         self.trigger_mode = trigger_mode
 
@@ -317,8 +316,6 @@ class VideoJob(Job):
         MANUAL: Buffer and wait for API trigger
         DISABLED: Buffer but never process
         """
-        from iris.server.jobs.config import TriggerMode
-
         self.frame_buffer.append(frame.copy())
 
         if self.trigger_mode == TriggerMode.PERIODIC:
@@ -343,8 +340,6 @@ class VideoJob(Job):
 
         Only works in MANUAL mode.
         """
-        from iris.server.jobs.config import TriggerMode
-
         if self.trigger_mode != TriggerMode.MANUAL:
             self._send_log(f"Cannot trigger: mode is {self.trigger_mode.value}")
             return
