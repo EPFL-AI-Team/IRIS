@@ -86,48 +86,84 @@ class StreamingClient:
 
     async def _stream_loop(self, ws: WebSocketClientProtocol) -> None:
         """Main streaming loop once connected."""
+        # Run send and receive loops concurrently
+        send_task = asyncio.create_task(self._send_loop(ws))
+        recv_task = asyncio.create_task(self._recv_loop(ws))
+
+        try:
+            # Wait for either to finish (e.g. on error or stop)
+            done, pending = await asyncio.wait(
+                [send_task, recv_task], return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # Cancel the other task
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+            # Re-raise exception if any
+            for task in done:
+                if task.exception():
+                    raise task.exception()
+
+        except Exception as e:
+            # Ensure both are cancelled on external error
+            send_task.cancel()
+            recv_task.cancel()
+            raise e
+
+    async def _send_loop(self, ws: WebSocketClientProtocol) -> None:
+        """Loop for sending frames."""
+        while self.running:
+            frame_jpeg = self.camera.get_frame_jpeg(quality=self.jpeg_quality)
+            if frame_jpeg is None:
+                await asyncio.sleep(0.1)
+                continue
+
+            # Calculate FPS
+            elapsed = time.time() - self.start_time
+            fps = self.frame_count / elapsed if elapsed > 0 else 0.0
+
+            message = {
+                "timestamp": time.time(),
+                "frame_id": self.frame_count,
+                "fps": fps,
+                "frame": base64.b64encode(frame_jpeg).decode("utf-8"),
+            }
+
+            await ws.send(json.dumps(message))
+            self.frame_count += 1
+            await asyncio.sleep(0.01)
+
+    async def _recv_loop(self, ws: WebSocketClientProtocol) -> None:
+        """Loop for receiving results."""
         while self.running:
             try:
-                frame_jpeg = self.camera.get_frame_jpeg(quality=self.jpeg_quality)
-                if frame_jpeg is None:
-                    await asyncio.sleep(0.1)
-                    continue
+                response = await ws.recv()
+                message = json.loads(response)
 
-                # Calculate FPS
-                elapsed = time.time() - self.start_time
-                fps = self.frame_count / elapsed if elapsed > 0 else 0.0
-
-                message = {
-                    "timestamp": time.time(),
-                    "frame_id": self.frame_count,
-                    "fps": fps,
-                    "frame": base64.b64encode(frame_jpeg).decode("utf-8"),
-                }
-
-                await ws.send(json.dumps(message))
-                self.frame_count += 1
-
-                # Try to receive result (non-blocking)
-                try:
-                    response = await asyncio.wait_for(ws.recv(), timeout=0.01)
-                    message = json.loads(response)
-
-                    # Only store result-type messages (not log messages)
-                    if message.get("type") == "result":
-                        logger.debug("Received result: %s", message)
-                        if self.result_callback:
-                            self.result_callback(message)
-                    elif message.get("type") == "log":
-                        # Log messages from jobs (optional debug logging)
-                        logger.debug("Job log: [%s] %s", message.get("job_id"), message.get("message"))
-                except TimeoutError:
-                    pass  # No result yet
-
-                await asyncio.sleep(0.01)
-
-            except websockets.exceptions.ConnectionClosed:
-                logger.info("Connection closed by server")
-                break
+                # Only store result-type messages (not log messages)
+                if message.get("type") == "result":
+                    logger.debug("Received result: %s", message)
+                    if self.result_callback:
+                        self.result_callback(message)
+                elif message.get("type") == "log":
+                    # Log messages from jobs (optional debug logging)
+                    logger.debug(
+                        "Job log: [%s] %s",
+                        message.get("job_id"),
+                        message.get("message"),
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error("Error receiving message: %s", e)
+                # Don't break loop on parse error, but break on connection error
+                if isinstance(e, websockets.exceptions.ConnectionClosed):
+                    raise e
 
     def stop(self) -> None:
         """Stop streaming."""

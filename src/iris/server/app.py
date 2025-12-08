@@ -320,12 +320,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     state = get_server_state()
     logger.info("Client connected")
 
-    # Log queue for this connection
-    log_queue = asyncio.Queue()
+    # Outgoing message queue for this connection (logs + results)
+    outgoing_queue = asyncio.Queue()
 
     def log_callback(msg: dict) -> None:
         """Callback to receive log messages from jobs."""
-        asyncio.create_task(log_queue.put(msg))
+        task = asyncio.create_task(outgoing_queue.put(msg))
+        pending_tasks.append(task)
 
     # Register log callback with JobManager
     state.job_manager.register_log_callback(log_callback)
@@ -353,14 +354,11 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         if video_job and hasattr(video_job, "result_callback"):
 
             async def result_handler(result_data: dict):
-                """Handle result from VideoJob and broadcast via WebSocket."""
+                """Handle result from VideoJob and queue for sending."""
                 if not connection_active:
                     return  # Skip if connection is closed
 
                 try:
-                    # Send to WebSocket client
-                    await websocket.send_json(result_data)
-
                     # Record metrics
                     if state.metrics:
                         state.metrics.record_job(
@@ -373,9 +371,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
                         # Save detailed result to session results file
                         state.metrics.record_inference_result(result_data)
-                except (WebSocketDisconnect, RuntimeError) as e:
-                    # WebSocket already closed, ignore silently
-                    logger.debug(f"Skipping result send - WebSocket closed: {e}")
+
+                    # Queue for sending
+                    await outgoing_queue.put(result_data)
+
                 except Exception as e:
                     logger.error(f"Error in result handler: {e}", exc_info=True)
 
@@ -395,7 +394,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     async def receive_loop() -> None:
         try:
             while True:
-                data = await websocket.receive_json()
+                try:
+                    data = await websocket.receive_json()
+                except RuntimeError as e:
+                    if "WebSocket is not connected" in str(e):
+                        raise WebSocketDisconnect() from e
+                    raise e
+
                 arrival_time = time.time()
 
                 frame_b64 = data["frame"]
@@ -418,10 +423,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     async def send_loop() -> None:
         try:
             while True:
-                # Check for log messages (non-blocking)
+                # Check for log messages or results (non-blocking)
                 try:
-                    log_msg = await log_queue.get()
-                    await websocket.send_json(log_msg)
+                    msg = await outgoing_queue.get()
+                    await websocket.send_json(msg)
                 except asyncio.CancelledError:
                     break
 
