@@ -80,14 +80,14 @@ def load_model_and_processor(
 
     # Extract configuration with defaults
     device = hw_config.get("device", "auto")
-    torch_dtype = _parse_dtype(hw_config.get("model", {}).get("torch_dtype", "auto"))
+    dtype = _parse_dtype(hw_config.get("model", {}).get("dtype", "auto"))
     attn_implementation = hw_config.get("model", {}).get("attn_implementation", "sdpa")
     low_cpu_mem_usage = hw_config.get("model", {}).get("low_cpu_mem_usage", True)
 
     # Build model loading kwargs
     model_kwargs = {
         "device_map": device,
-        "torch_dtype": torch_dtype,
+        "dtype": dtype,
         "attn_implementation": attn_implementation,
         "low_cpu_mem_usage": low_cpu_mem_usage,
     }

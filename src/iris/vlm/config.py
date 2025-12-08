@@ -22,7 +22,7 @@ def load_hardware_profile(hardware: str) -> dict:
 
     Example return:
         {
-            "model": {"torch_dtype": "bfloat16"},
+            "model": {"dtype": "bfloat16"},
             "quantization": {"load_in_8bit": False}
         }
     """

@@ -2,7 +2,7 @@
 # Uses Metal Performance Shaders (MPS) for GPU acceleration
 
 model:
-  torch_dtype: "float16"  # MPS works well with float16
+  dtype: "float16"  # MPS works well with float16
   attn_implementation: "sdpa"
   low_cpu_mem_usage: true
 

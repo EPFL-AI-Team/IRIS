@@ -27,6 +27,20 @@ Run `uv run iris-client` to start a client instance.
 
 ### Server
 
+```bash
+uv sync
+uv sync --group server
+
+```
+
+#### For training (unsloth)
+
+```bash
+uv pip install unsloth
+```
+
+#### Running the pipeline
+
 Run `uv run iris-server` to start a server instance.
 
 

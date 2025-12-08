@@ -2,7 +2,7 @@
 # For inference use on IZAR cluster
 
 model:
-  torch_dtype: "float16"  # V100 doesn't support bfloat16
+  dtype: "float16"  # V100 doesn't support bfloat16
   attn_implementation: "sdpa"  # V100 doesn't support flash_attention_2
   low_cpu_mem_usage: true
 
