@@ -3,6 +3,8 @@ models/**/*.pth
 !**/.gitkeep
 uv.lock
 
+benchmark*.json
+
 .claude/
 
 # Created by https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
