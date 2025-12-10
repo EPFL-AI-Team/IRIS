@@ -234,9 +234,14 @@ async def results_websocket(websocket: WebSocket) -> None:
     await websocket.accept()
 
     last_sent_index = 0
+    loop = asyncio.get_event_loop()
+    last_keepalive = loop.time()
+    keepalive_interval = 15.0  # seconds
 
     try:
         while True:
+            now = loop.time()
+
             # Send all new results since last check
             current_count = len(state.results_history)
             if current_count > last_sent_index:
@@ -256,6 +261,16 @@ async def results_websocket(websocket: WebSocket) -> None:
                         logger.error(f"Failed to send result {i}: {e}")
                         raise  # Re-raise to close connection
                 last_sent_index = current_count
+                last_keepalive = now  # Reset timer when data sent
+
+            # Keepalive ping when idle
+            elif now - last_keepalive > keepalive_interval:
+                try:
+                    await websocket.send_json({"type": "keepalive", "timestamp": now})
+                    last_keepalive = now
+                except WebSocketDisconnect:
+                    logger.info("Results WebSocket disconnected during keepalive")
+                    raise
             await asyncio.sleep(0.1)  # Check for new results 10 times per second
     except asyncio.CancelledError:
         logger.debug("Results WebSocket cancelled during shutdown")

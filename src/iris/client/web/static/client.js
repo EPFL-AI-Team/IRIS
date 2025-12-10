@@ -363,6 +363,9 @@ function connectResults() {
 
   resultsWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
+    if (data.type === "keepalive") {
+      return; // Ignore keepalive pings
+    }
     console.log("Received result data:", data); // Debug log
     addLog(`Received result: ${data.job_id} (${data.status})`, "INFO");
     addLog(data, "INFO");
