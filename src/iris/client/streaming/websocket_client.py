@@ -48,7 +48,15 @@ class StreamingClient:
         while self.running:
             try:
                 self.connection_state = "connecting"
-                async with websockets.connect(self.ws_url) as ws:
+                # Disable client-side pings; let server handle keepalive. This avoids
+                # spurious timeouts (1011) on slow or bursty networks/inference.
+                async with websockets.connect(
+                    self.ws_url,
+                    ping_interval=None,
+                    ping_timeout=None,
+                    close_timeout=30.0,
+                    max_queue=None,  # Avoid backpressure disconnects
+                ) as ws:
                     logger.info("Connected to %s", self.ws_url)
                     self.connection_state = "connected"
                     retry_delay = 1.0  # Reset on successful connection

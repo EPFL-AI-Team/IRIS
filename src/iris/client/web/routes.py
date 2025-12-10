@@ -249,6 +249,9 @@ async def results_websocket(websocket: WebSocket) -> None:
                         logger.debug(
                             f"Sent result {i + 1}/{current_count}: {result.get('job_id')}"
                         )
+                    except WebSocketDisconnect:
+                        logger.info("Results WebSocket disconnected during send")
+                        raise
                     except Exception as e:
                         logger.error(f"Failed to send result {i}: {e}")
                         raise  # Re-raise to close connection
