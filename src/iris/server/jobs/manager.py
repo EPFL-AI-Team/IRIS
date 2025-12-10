@@ -119,11 +119,13 @@ class JobManager:
         async with self.lock:
             job = self.active_jobs.get(job_id)
             if not job:
+                logger.warning(f"Job {job_id} not found in active_jobs")
                 return False
 
             # Stop the job
             if hasattr(job, "stop"):
                 job.stop()
+                logger.info(f"Called stop() on {job_id}")
 
             # CRITICAL: Remove from active_jobs immediately
             del self.active_jobs[job_id]

@@ -534,6 +534,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     try:
         await asyncio.gather(receive_loop(), send_loop())
     finally:
+        logger.info(f"Entering finally block for {connection_job_id}")  # ADD THIS
+        
         # Mark connection as inactive to stop result handler tasks
         connection_active = False
 
@@ -548,10 +550,11 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
         # CLEANUP: Stop and remove job when WebSocket disconnects
         try:
+            logger.info(f"Attempting to stop job {connection_job_id}")  # ADD THIS
             await state.job_manager.stop_job(connection_job_id)
             logger.info(f"Cleaned up VideoJob on disconnect: {connection_job_id}")
         except Exception as e:
-            logger.error(f"Failed to clean up job {connection_job_id}: {e}")
+            logger.error(f"Failed to clean up job {connection_job_id}: {e}", exc_info=True)
 
 
 @app.websocket("/ws/logs")

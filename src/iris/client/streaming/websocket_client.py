@@ -53,7 +53,7 @@ class StreamingClient:
                 async with websockets.connect(
                     self.ws_url,
                     ping_interval=20,  # Send ping every 20s (was: None)
-                    ping_timeout=10,  # Timeout after 10s (was: None)
+                    ping_timeout=30,  # Timeout after 10s (was: None)
                     close_timeout=30.0,
                     max_queue=None,
                 ) as ws:
