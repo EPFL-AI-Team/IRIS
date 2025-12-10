@@ -332,6 +332,11 @@ class VideoJob(Job):
         MANUAL: Buffer and wait for API trigger
         DISABLED: Buffer but never process
         """
+        # Early exit if job is stopped
+
+        if self.stop_event.is_set():
+            return
+        
         # Update client FPS if provided; fallback to previous or default
         if client_fps is not None:
             self.client_fps = float(client_fps)

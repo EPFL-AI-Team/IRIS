@@ -85,14 +85,12 @@ class JobManager:
             logger.info(f"Started job: {job.job_id} ({config.job_type})")
 
             # Broadcast job start to any WebSocket listeners
-            self._broadcast_log(
-                {
-                    "type": "log",
-                    "job_id": job.job_id,
-                    "message": f"Job started: {job.job_id} ({config.job_type})",
-                    "timestamp": time.time(),
-                }
-            )
+            self._broadcast_log({
+                "type": "log",
+                "job_id": job.job_id,
+                "message": f"Job started: {job.job_id} ({config.job_type})",
+                "timestamp": time.time(),
+            })
             return job.job_id
 
     def get_job(self, job_id: str) -> Job | None:
@@ -123,15 +121,14 @@ class JobManager:
             if not job:
                 return False
 
-            # Only collection jobs can be stopped mid-execution
+            # Stop the job
             if hasattr(job, "stop"):
                 job.stop()
-                logger.info(f"Stopped job: {job_id}")
-                return True
-            else:
-                raise ValueError(
-                    f"Job {job_id} cannot be stopped (already queued for execution)"
-                )
+
+            # CRITICAL: Remove from active_jobs immediately
+            del self.active_jobs[job_id]
+            logger.info(f"Stopped job: {job_id}")
+            return True
 
     async def route_frame(
         self,
