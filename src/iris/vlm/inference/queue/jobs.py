@@ -423,8 +423,14 @@ class VideoJob(Job):
         self.result = result
         self.processing_time = inference_time
 
-        logger.info(f"[{self.job_id}] Inference complete: {result[:100]}")
-        self._send_log(f"Inference result: {result[:100]}...")
+        frames_per_second = frame_count / inference_time if inference_time > 0 else 0.0
+        summary = (
+            f"Inference complete | frames={frame_count} "
+            f"time={inference_time:.3f}s fps={frames_per_second:.2f}"
+        )
+
+        logger.info(f"[{self.job_id}] {summary}")
+        self._send_log(summary)
 
         # Broadcast result immediately via callback
         if self.result_callback:

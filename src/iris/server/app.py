@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import signal
@@ -329,6 +330,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
     # Outgoing message queue for this connection (logs + results)
     outgoing_queue = asyncio.Queue()
+    pending_tasks: list[asyncio.Task] = []
 
     def log_callback(msg: dict) -> None:
         """Callback to receive log messages from jobs."""
@@ -361,7 +363,6 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
         # Track WebSocket connection state
         connection_active = True
-        pending_tasks = []
 
         # Register result callback for immediate broadcasting
         video_job = state.job_manager.get_job(job_id)
@@ -408,12 +409,35 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     async def receive_loop() -> None:
         try:
             while True:
+                # Support both text and binary JSON payloads from clients
                 try:
-                    data = await websocket.receive_json()
+                    message = await websocket.receive()
+                    if message.get("type") == "websocket.disconnect":
+                        raise WebSocketDisconnect()
+
+                    raw_payload = message.get("text")
+                    if raw_payload is None:
+                        raw_bytes = message.get("bytes")
+                        if raw_bytes is None:
+                            continue  # Ignore keepalives without payload
+                        try:
+                            raw_payload = raw_bytes.decode("utf-8")
+                        except UnicodeDecodeError:
+                            logger.error(
+                                "Received non-UTF8 binary payload; dropping frame"
+                            )
+                            continue
+
+                    data = json.loads(raw_payload)
                 except RuntimeError as e:
                     if "WebSocket is not connected" in str(e):
                         raise WebSocketDisconnect() from e
                     raise e
+                except json.JSONDecodeError:
+                    logger.error(
+                        "Invalid JSON payload received on /ws/stream; dropping frame"
+                    )
+                    continue
 
                 frame_id = data["frame_id"]
                 capture_time = data.get("timestamp")
@@ -435,7 +459,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
                 if "measured_fps" in data:
                     deviation = abs(data.get("fps", 0) - data.get("measured_fps", 0))
-                    if deviation > 10.0:
+                    if deviation > 100.0:
                         logger.warning(
                             "Network/processing lag detected: capture=%s, actual=%.1f",
                             data.get("fps"),
@@ -470,8 +494,14 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     client_fps=client_fps,
                 )
 
-        except WebSocketDisconnect:
-            logger.info("Client disconnected (Receive Loop)")
+        except WebSocketDisconnect as e:
+            code = getattr(e, "code", None)
+            reason = getattr(e, "reason", None)
+            logger.info(
+                "Client disconnected (Receive Loop) code=%s reason=%s",
+                code,
+                reason,
+            )
         except Exception as e:
             logger.error("Receive loop error: %s", e, exc_info=True)
 
@@ -488,8 +518,14 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         except asyncio.CancelledError:
             logger.debug("Send loop cancelled during shutdown")
             # Don't raise - allow graceful cleanup
-        except WebSocketDisconnect:
-            logger.info("Client disconnected (Send Loop)")
+        except WebSocketDisconnect as e:
+            code = getattr(e, "code", None)
+            reason = getattr(e, "reason", None)
+            logger.info(
+                "Client disconnected (Send Loop) code=%s reason=%s",
+                code,
+                reason,
+            )
         except Exception as e:
             logger.error("Send loop error: %s", e, exc_info=True)
 

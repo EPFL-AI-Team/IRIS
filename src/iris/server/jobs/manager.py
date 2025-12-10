@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -82,6 +83,16 @@ class JobManager:
                 raise RuntimeError("Failed to submit job: queue full")
 
             logger.info(f"Started job: {job.job_id} ({config.job_type})")
+
+            # Broadcast job start to any WebSocket listeners
+            self._broadcast_log(
+                {
+                    "type": "log",
+                    "job_id": job.job_id,
+                    "message": f"Job started: {job.job_id} ({config.job_type})",
+                    "timestamp": time.time(),
+                }
+            )
             return job.job_id
 
     def get_job(self, job_id: str) -> Job | None:
