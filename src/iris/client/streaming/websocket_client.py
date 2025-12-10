@@ -157,7 +157,9 @@ class StreamingClient:
 
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(
-                    "Send loop closed: code=%s reason=%s", getattr(e, "code", None), getattr(e, "reason", None)
+                    "Send loop closed: code=%s reason=%s",
+                    getattr(e, "code", None),
+                    getattr(e, "reason", None),
                 )
                 raise
 
@@ -193,7 +195,9 @@ class StreamingClient:
                 raise
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(
-                    "Receive loop closed: code=%s reason=%s", getattr(e, "code", None), getattr(e, "reason", None)
+                    "Receive loop closed: code=%s reason=%s",
+                    getattr(e, "code", None),
+                    getattr(e, "reason", None),
                 )
                 raise
             except Exception as e:
