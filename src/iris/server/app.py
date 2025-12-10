@@ -344,7 +344,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         trigger_mode=trigger_mode_val,
         buffer_size=video_cfg.get("buffer_size", 8),
         overlap_frames=video_cfg.get("overlap_frames", 4),
-        sample_fps=video_cfg.get("sample_fps", 5),
+        default_fps=video_cfg.get("default_fps", 5),
         max_new_tokens=video_cfg.get("max_new_tokens", 128),
     )
 
@@ -360,7 +360,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         video_job = state.job_manager.get_job(job_id)
         if video_job and hasattr(video_job, "result_callback"):
 
-            async def result_handler(result_data: dict):
+            async def result_handler(result_data: dict) -> None:
                 """Handle result from VideoJob and queue for sending."""
                 if not connection_active:
                     return  # Skip if connection is closed
@@ -386,7 +386,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     logger.error(f"Error in result handler: {e}", exc_info=True)
 
             # Wrap async callback for sync context
-            def sync_result_callback(result_data: dict):
+            def sync_result_callback(result_data: dict) -> None:
                 task = asyncio.create_task(result_handler(result_data))
                 pending_tasks.append(task)
 
@@ -408,17 +408,59 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         raise WebSocketDisconnect() from e
                     raise e
 
-                arrival_time = data.get("timestamp", time.time())
+                frame_id = data["frame_id"]
+                capture_time = data.get("timestamp")
+                arrival_time = time.time()
+
+                if capture_time is not None:
+                    latency_ms = (arrival_time - capture_time) * 1000.0
+                    msg = (
+                        f"Frame {frame_id} timing: capture={capture_time:.3f}s, "
+                        f"arrival={arrival_time:.3f}s, latency={latency_ms:.1f}ms"
+                    )
+                    logger.debug(msg)
+                    await outgoing_queue.put({
+                        "type": "log",
+                        "job_id": connection_job_id,
+                        "message": msg,
+                        "timestamp": time.time(),
+                    })
+
+                if "measured_fps" in data:
+                    deviation = abs(data.get("fps", 0) - data.get("measured_fps", 0))
+                    if deviation > 5.0:
+                        logger.warning(
+                            "Network/processing lag detected: capture=%s, actual=%.1f",
+                            data.get("fps"),
+                            data.get("measured_fps"),
+                        )
+                        await outgoing_queue.put({
+                            "type": "log",
+                            "job_id": connection_job_id,
+                            "message": (
+                                f"Network/processing lag detected: capture={data.get('fps')}, "
+                                f"actual={data.get('measured_fps'):.1f}"
+                            ),
+                            "timestamp": time.time(),
+                        })
 
                 frame_b64 = data["frame"]
-                frame_id = data["frame_id"]
 
                 image_data = base64.b64decode(frame_b64)
                 image = Image.open(BytesIO(image_data))
 
                 # Route frame to active jobs (decoupled from job creation)
+                # Prefer capture timestamp if provided; fallback to arrival time
+                route_timestamp = (
+                    capture_time if capture_time is not None else arrival_time
+                )
+                client_fps = data.get("fps") or job_config.default_fps
+
                 await state.job_manager.route_frame(
-                    frame=image, frame_id=frame_id, timestamp=arrival_time
+                    frame=image,
+                    frame_id=frame_id,
+                    timestamp=route_timestamp,
+                    client_fps=client_fps,
                 )
 
         except WebSocketDisconnect:

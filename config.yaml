@@ -15,7 +15,7 @@ jobs:
   video:
     buffer_size: 8
     overlap_frames: 4
-    sample_fps: 5
+    default_fps: 5
     max_new_tokens: 128
     trigger_mode: "periodic"  # "periodic" | "manual" | "disabled"
 
@@ -23,7 +23,7 @@ client:
   video:
     width: 640
     height: 480
-    capture_fps: 10
+    capture_fps: 5
     jpeg_quality: 80
     camera_index: 0
   server:

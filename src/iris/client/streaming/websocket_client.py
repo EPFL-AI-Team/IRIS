@@ -34,6 +34,8 @@ class StreamingClient:
         self.result_callback = result_callback
         self.connection_state = "disconnected"  # Track connection state
 
+        self.capture_fps: float = float(camera.fps)
+
     async def stream(self) -> None:
         """Connect and stream frames with auto-reconnect."""
         self.running = True
@@ -123,15 +125,16 @@ class StreamingClient:
                 await asyncio.sleep(0.1)
                 continue
 
-            # Calculate FPS
+            # Calculate send rate FPS (for monitoring)
             elapsed = time.time() - self.start_time
-            fps = self.frame_count / elapsed if elapsed > 0 else 0.0
+            measured_fps = self.frame_count / elapsed if elapsed > 0 else 0.0
 
             message = {
-                "timestamp": time.time(),
-                "frame_id": self.frame_count,
-                "fps": fps,
                 "frame": base64.b64encode(frame_jpeg).decode("utf-8"),
+                "frame_id": self.frame_count,
+                "timestamp": time.time(),
+                "fps": self.capture_fps,  # For model inference
+                "measured_fps": measured_fps,  # For network monitoring
             }
 
             await ws.send(json.dumps(message))

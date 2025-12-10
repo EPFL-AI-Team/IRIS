@@ -21,7 +21,7 @@ class VideoConfig(BaseModel):
         ge=240,
         le=1080,
     )
-    capture_fps: int = Field(
+    capture_fps: float = Field(
         default=_yaml_config.get("client", {}).get("video", {}).get("capture_fps", 10),
         ge=1,
         le=30,

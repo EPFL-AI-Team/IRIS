@@ -283,8 +283,9 @@ class VideoJob(Job):
         trigger_mode: TriggerMode | None = None,
         buffer_size: int = 8,
         overlap_frames: int = 4,
-        sample_fps: int = 5,
+        default_fps: float = 5.0,
         max_new_tokens: int = 128,
+        client_fps: float | None = None,
     ):
         super().__init__(job_id)
         self.model = model
@@ -300,7 +301,10 @@ class VideoJob(Job):
 
         self.buffer_size = buffer_size
         self.overlap_frames = overlap_frames
-        self.sample_fps = sample_fps
+        self.default_fps = float(default_fps)
+        self.client_fps = (
+            float(client_fps) if client_fps is not None else self.default_fps
+        )
         self.max_new_tokens = max_new_tokens
 
         # Minimal state
@@ -316,7 +320,11 @@ class VideoJob(Job):
         return True
 
     async def add_frame(
-        self, frame: Image.Image, frame_id: int, timestamp: float
+        self,
+        frame: Image.Image,
+        frame_id: int,
+        timestamp: float,
+        client_fps: float | None = None,
     ) -> None:
         """Buffer frame and auto-trigger based on mode.
 
@@ -324,6 +332,11 @@ class VideoJob(Job):
         MANUAL: Buffer and wait for API trigger
         DISABLED: Buffer but never process
         """
+        # Update client FPS if provided; fallback to previous or default
+        if client_fps is not None:
+            self.client_fps = float(client_fps)
+        elif self.client_fps is None:
+            self.client_fps = self.default_fps
         self.frame_buffer.append(frame.copy())
 
         if self.trigger_mode == TriggerMode.PERIODIC:
@@ -425,6 +438,8 @@ class VideoJob(Job):
                 "inference_time": inference_time,
                 "buffer_size": self.buffer_size,
                 "overlap_frames": self.overlap_frames,
+                "client_fps": self.client_fps,
+                "sample_fps": self.client_fps,
                 "timestamp": time.time(),
             }
             self.result_callback(result_data)
@@ -452,7 +467,7 @@ class VideoJob(Job):
                         {
                             "type": "video",
                             "video": frames,  # List[PIL.Image]
-                            "sample_fps": str(self.sample_fps),  # Frame rate
+                            "sample_fps": str(self.client_fps),  # Frame rate
                         },
                         {"type": "text", "text": prompt},
                     ],
@@ -507,6 +522,8 @@ class VideoJob(Job):
             "trigger_mode": str(self.trigger_mode.value),
             "buffer_size": self.buffer_size,
             "overlap_frames": self.overlap_frames,
+            "client_fps": self.client_fps,
+            "default_fps": self.default_fps,
         }
 
     def to_response_dict(self) -> dict:

@@ -87,6 +87,7 @@ class JobFactory:
             trigger_mode=config.trigger_mode,
             buffer_size=config.buffer_size,
             overlap_frames=config.overlap_frames,
-            sample_fps=config.sample_fps,
+            default_fps=config.default_fps,
+            client_fps=config.default_fps,
             max_new_tokens=config.max_new_tokens,
         )

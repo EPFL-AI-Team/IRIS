@@ -50,10 +50,10 @@ class VideoJobConfig(JobConfig):
         ge=0,
         description="Frames to keep after inference",
     )
-    sample_fps: int = Field(
-        default=_jobs_video_cfg.get("sample_fps", 5),
+    default_fps: float = Field(
+        default=_jobs_video_cfg.get("default_fps", 5),
         ge=0,
-        description="Video sampling rate (frames per second) fed to the VLM",
+        description="Fallback FPS if client does not send capture_fps",
     )
     max_new_tokens: int = Field(
         default=_jobs_video_cfg.get("max_new_tokens", 128),

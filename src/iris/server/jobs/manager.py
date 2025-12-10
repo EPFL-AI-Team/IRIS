@@ -69,7 +69,7 @@ class JobManager:
             )
 
             # Set log callback if job supports it
-            if hasattr(job, 'log_callback'):
+            if hasattr(job, "log_callback"):
                 job.log_callback = lambda msg: self._broadcast_log(msg)
 
             # Add to active jobs
@@ -113,31 +113,42 @@ class JobManager:
                 return False
 
             # Only collection jobs can be stopped mid-execution
-            if hasattr(job, 'stop'):
+            if hasattr(job, "stop"):
                 job.stop()
                 logger.info(f"Stopped job: {job_id}")
                 return True
             else:
-                raise ValueError(f"Job {job_id} cannot be stopped (already queued for execution)")
+                raise ValueError(
+                    f"Job {job_id} cannot be stopped (already queued for execution)"
+                )
 
-    async def route_frame(self, frame: Image.Image, frame_id: int, timestamp: float) -> None:
+    async def route_frame(
+        self,
+        frame: Image.Image,
+        frame_id: int,
+        timestamp: float,
+        client_fps: float | None = None,
+    ) -> None:
         """Route incoming frame to all active jobs that accept frames.
 
         Args:
             frame: PIL Image to route
             frame_id: Frame identifier for logging
             timestamp: Frame arrival timestamp
+            client_fps: Capture FPS reported by client (optional)
         """
         async with self.lock:
             for job_id, job in list(self.active_jobs.items()):
                 # Only route to jobs that accept frames
                 if job.accepts_frames():
                     try:
-                        await job.add_frame(frame, frame_id, timestamp)
+                        await job.add_frame(
+                            frame, frame_id, timestamp, client_fps=client_fps
+                        )
                     except Exception as e:
                         logger.error(
                             f"Error routing frame {frame_id} to job {job_id}: {e}",
-                            exc_info=True
+                            exc_info=True,
                         )
 
     async def get_job_status(self, job_id: str) -> dict | None:
@@ -162,7 +173,7 @@ class JobManager:
             }
 
             # Add job-specific status info if available
-            if hasattr(job, 'get_status_dict'):
+            if hasattr(job, "get_status_dict"):
                 status.update(job.get_status_dict())
 
             return status
@@ -191,8 +202,10 @@ class JobManager:
         """
         async with self.lock:
             completed = [
-                job_id for job_id, job in self.active_jobs.items()
-                if job.status.value in ["completed", "failed"] and not job.accepts_frames()
+                job_id
+                for job_id, job in self.active_jobs.items()
+                if job.status.value in ["completed", "failed"]
+                and not job.accepts_frames()
             ]
             for job_id in completed:
                 del self.active_jobs[job_id]
