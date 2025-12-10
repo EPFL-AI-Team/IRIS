@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -37,7 +38,7 @@ class JobManager:
         self.lock = asyncio.Lock()
         self.log_callbacks: list = []  # Callable[[dict], None]
 
-    def register_log_callback(self, callback) -> None:
+    def register_log_callback(self, callback: Callable[[dict], None]) -> None:
         """Register callback for WebSocket logging.
 
         Args:

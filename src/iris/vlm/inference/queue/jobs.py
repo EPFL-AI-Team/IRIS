@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from PIL import Image
+from qwen_vl_utils import process_vision_info
 
 if TYPE_CHECKING:
     from iris.vlm.inference.queue.queue import InferenceQueue
@@ -40,7 +41,7 @@ class Job(ABC):
         self.status = JobStatus.PENDING
         self.submitted_at = time.time()
         self.started_at: float | None = None
-        self.completed_at: float | None
+        self.completed_at: float | None = None
         self.result: Any = None
         self.error: str | None = None
         self.processing_time: float = 0.0
@@ -278,10 +279,12 @@ class VideoJob(Job):
         processor: Any,
         executor: ThreadPoolExecutor,
         queue: "InferenceQueue",
-        prompt: str = "Describe what you see in the video.",
+        prompt: str = """<video>\nAnalyze this video segment of a biological experiment. Output a valid JSON object with the following keys:\n- action: The specific movement (e.g., streaking, inspecting).\n- tool: The active instrument.\n- target: The object being acted upon.\n- context: The protocol step.\n- hand: Active hand (left/right).\n- sample_id: Any handwritten text or labels visible on the object (or "none").\n- notes: Visual details like agar color or colony presence.""",
         trigger_mode: TriggerMode | None = None,
         buffer_size: int = 8,
         overlap_frames: int = 4,
+        sample_fps: int = 5,
+        max_new_tokens: int = 128,
     ):
         super().__init__(job_id)
         self.model = model
@@ -297,12 +300,16 @@ class VideoJob(Job):
 
         self.buffer_size = buffer_size
         self.overlap_frames = overlap_frames
+        self.sample_fps = sample_fps
+        self.max_new_tokens = max_new_tokens
 
         # Minimal state
         self.frame_buffer: list[Image.Image] = []
         self.stop_event = asyncio.Event()
         self.log_callback: Any = None  # Callable[[dict], None]
-        self.result_callback: Any = None  # Callable[[dict], None] - for real-time result broadcasting
+        self.result_callback: Any = (
+            None  # Callable[[dict], None] - for real-time result broadcasting
+        )
 
     def accepts_frames(self) -> bool:
         """This job accepts incoming frames."""
@@ -381,6 +388,11 @@ class VideoJob(Job):
         frames_to_process = self.frame_buffer.copy()
         frame_count = len(frames_to_process)
 
+        # Log the batch details
+        self._send_log(
+            f"Starting inference: {frame_count} frames | buffer={self.buffer_size} overlap={self.overlap_frames}"
+        )
+
         # Track timing
         start_time = time.time()
 
@@ -411,6 +423,8 @@ class VideoJob(Job):
                 "result": result,
                 "frames_processed": frame_count,
                 "inference_time": inference_time,
+                "buffer_size": self.buffer_size,
+                "overlap_frames": self.overlap_frames,
                 "timestamp": time.time(),
             }
             self.result_callback(result_data)
@@ -418,49 +432,54 @@ class VideoJob(Job):
     def _sync_inference(self, frames: list[Image.Image], prompt: str) -> str:
         """Blocking GPU inference (runs in ThreadPoolExecutor).
 
-        TODO: User needs to explore Qwen video prompt template.
-        Current implementation is placeholder - may need different format for video.
-        Qwen2.5-VL might have native video support with special tokens.
-
-        For now, processes only the first frame as a simple baseline.
+        Processes frames as a video sequence with temporal understanding.
+        Qwen2.5-VL uses sample_fps to understand frame timing.
         """
         if not frames:
             return "No frames to process"
 
-        # Simple single-frame inference for now
-        # TODO: Replace with proper video inference once Qwen template is figured out
+        frame_count = len(frames)
         logger.info(
-            f"WORKER: VideoJob inference for {self.job_id} ({len(frames)} frames)"
+            f"WORKER: VideoJob inference for {self.job_id} ({frame_count} frames)"
         )
 
         with torch.no_grad():
+            # Format as video with temporal information
             messages = [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": frames[0]},
                         {
-                            "type": "text",
-                            "text": f"{prompt} (Processing {len(frames)} frames)",
+                            "type": "video",
+                            "video": frames,  # List[PIL.Image]
+                            "sample_fps": str(self.sample_fps),  # Frame rate
                         },
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ]
 
+            # Extract vision inputs - handles video properly (ignore audio output)
+            image_inputs, video_inputs, _ = process_vision_info(messages)
+
+            # Apply chat template
             text = self.processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
 
+            # Process inputs
             inputs = self.processor(
-                text=[text], images=[frames[0]], return_tensors="pt"
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                return_tensors="pt",
             ).to(self.model.device)
 
-            outputs = self.model.generate(**inputs, max_new_tokens=128)
+            # Generate
+            outputs = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
 
-            # Slice the output to remove input tokens
+            # Decode only new tokens
             generated_ids = outputs[0][len(inputs.input_ids[0]) :]
-
-            # Decode only the new tokens
             result = self.processor.decode(generated_ids, skip_special_tokens=True)
 
         logger.info(f"WORKER: Finished VideoJob inference for {self.job_id}")

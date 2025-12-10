@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
 
 
 def load_yaml_config(config_path: str = "config.yaml") -> dict[str, Any]:

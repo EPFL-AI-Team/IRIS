@@ -21,8 +21,8 @@ class VideoConfig(BaseModel):
         ge=240,
         le=1080,
     )
-    fps: int = Field(
-        default=_yaml_config.get("client", {}).get("video", {}).get("fps", 10),
+    capture_fps: int = Field(
+        default=_yaml_config.get("client", {}).get("video", {}).get("capture_fps", 10),
         ge=1,
         le=30,
     )
@@ -41,7 +41,9 @@ class ServerConfig(BaseSettings):
     """Target server configuration."""
 
     host: str = Field(
-        default=_yaml_config.get("client", {}).get("server", {}).get("host", "localhost")
+        default=_yaml_config.get("client", {})
+        .get("server", {})
+        .get("host", "localhost")
     )
     port: int = Field(
         default=_yaml_config.get("client", {}).get("server", {}).get("port", 8001),

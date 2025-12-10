@@ -6,24 +6,24 @@ server:
   vlm_hardware: null      # Optional: Hardware profile (v100, mac, etc.)
   max_queue_size: 10
   num_workers: 1
-  host: "0.0.0.0"
   port: 8001
   graceful_shutdown_timeout: 30.0
   enable_log_streaming: true
   log_streaming_min_level: "INFO"
   enable_metrics: true
-
 jobs:
   video:
-    trigger_mode: "periodic"  # "periodic" | "manual" | "disabled"
     buffer_size: 8
     overlap_frames: 4
+    sample_fps: 5
+    max_new_tokens: 128
+    trigger_mode: "periodic"  # "periodic" | "manual" | "disabled"
 
 client:
   video:
     width: 640
     height: 480
-    fps: 10
+    capture_fps: 10
     jpeg_quality: 80
     camera_index: 0
   server:

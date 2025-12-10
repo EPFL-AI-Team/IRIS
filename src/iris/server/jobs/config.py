@@ -33,7 +33,30 @@ class VideoJobConfig(JobConfig):
 
     job_type: Literal[JobType.VIDEO] = JobType.VIDEO
 
-    # Core parameters (only 3!)
-    trigger_mode: TriggerMode = Field(default=TriggerMode.PERIODIC)
-    buffer_size: int = Field(default=8, ge=1, description="Frames before inference")
-    overlap_frames: int = Field(default=4, ge=0, description="Frames to keep after inference")
+    # Load defaults from project root config.yaml (YAML-only, no env overrides)
+    _jobs_video_cfg = _yaml_config.get("jobs", {}).get("video", {})
+
+    trigger_mode: TriggerMode = Field(
+        default=_jobs_video_cfg.get("trigger_mode", TriggerMode.PERIODIC),
+        description="When to run inference",
+    )
+    buffer_size: int = Field(
+        default=_jobs_video_cfg.get("buffer_size", 8),
+        ge=1,
+        description="Frames before inference",
+    )
+    overlap_frames: int = Field(
+        default=_jobs_video_cfg.get("overlap_frames", 4),
+        ge=0,
+        description="Frames to keep after inference",
+    )
+    sample_fps: int = Field(
+        default=_jobs_video_cfg.get("sample_fps", 5),
+        ge=0,
+        description="Video sampling rate (frames per second) fed to the VLM",
+    )
+    max_new_tokens: int = Field(
+        default=_jobs_video_cfg.get("max_new_tokens", 128),
+        ge=1,
+        description="Generation length for VLM outputs",
+    )

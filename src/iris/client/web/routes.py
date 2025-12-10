@@ -94,7 +94,7 @@ async def start_streaming() -> dict[str, Any]:
             camera_index=state.config.video.camera_index,
             width=state.config.video.width,
             height=state.config.video.height,
-            fps=state.config.video.fps,
+            fps=state.config.video.capture_fps,
         )
         if not state.camera.start():
             return {"status": "error", "message": "Failed to start camera"}
@@ -180,7 +180,7 @@ async def select_camera(request: dict[str, int]) -> dict[str, Any]:
         camera_index=camera_index,
         width=state.config.video.width,
         height=state.config.video.height,
-        fps=state.config.video.fps,
+        fps=state.config.video.capture_fps,
     )
 
     if not state.camera.start():
@@ -202,7 +202,7 @@ async def preview_websocket(websocket: WebSocket) -> None:
             camera_index=state.config.video.camera_index,
             width=state.config.video.width,
             height=state.config.video.height,
-            fps=state.config.video.fps,
+            fps=state.config.video.capture_fps,
         )
         if not state.camera.start():
             state.camera = None

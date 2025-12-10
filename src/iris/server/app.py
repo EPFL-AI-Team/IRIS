@@ -333,12 +333,19 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
     # AUTO-CREATE VIDEO JOB WITH UNIQUE ID PER CONNECTION
     connection_job_id = f"video_job_{uuid.uuid4().hex[:8]}"
+    video_cfg = config.jobs.get("video", {})
+    trigger_mode_val = video_cfg.get("trigger_mode", TriggerMode.PERIODIC)
+    if isinstance(trigger_mode_val, str):
+        trigger_mode_val = TriggerMode(trigger_mode_val)
+
     job_config = VideoJobConfig(
         job_id=connection_job_id,
-        prompt="Describe what you see in the video.",
-        trigger_mode=TriggerMode.PERIODIC,
-        buffer_size=config.jobs.get("video", {}).get("buffer_size", 8),
-        overlap_frames=config.jobs.get("video", {}).get("overlap_frames", 4),
+        prompt=video_cfg.get("prompt", "Describe what you see in the video."),
+        trigger_mode=trigger_mode_val,
+        buffer_size=video_cfg.get("buffer_size", 8),
+        overlap_frames=video_cfg.get("overlap_frames", 4),
+        sample_fps=video_cfg.get("sample_fps", 5),
+        max_new_tokens=video_cfg.get("max_new_tokens", 128),
     )
 
     try:
@@ -401,7 +408,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         raise WebSocketDisconnect() from e
                     raise e
 
-                arrival_time = time.time()
+                arrival_time = data.get("timestamp", time.time())
 
                 frame_b64 = data["frame"]
                 frame_id = data["frame_id"]
