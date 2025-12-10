@@ -127,7 +127,8 @@ class StreamingClient:
 
             # Calculate send rate FPS (for monitoring)
             elapsed = time.time() - self.start_time
-            measured_fps = self.frame_count / elapsed if elapsed > 0 else 0.0
+            measured_fps = 1.0 / elapsed if self.last_frame_time else 0.0
+            self.last_frame_time = time.time()
 
             message = {
                 "frame": base64.b64encode(frame_jpeg).decode("utf-8"),

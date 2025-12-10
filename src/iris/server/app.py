@@ -75,6 +75,14 @@ def handle_shutdown_signal(signum: int, frame: Any) -> None:
         )
         force_shutdown_event.set()
 
+        # Cancel all running tasks to trigger shutdown
+        try:
+            loop = asyncio.get_running_loop()
+            for task in asyncio.all_tasks(loop):
+                task.cancel()
+        except RuntimeError:
+            pass  # No loop running
+
         # Unregister handlers to allow default behavior (immediate exit on next signal)
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
@@ -159,7 +167,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         if force_shutdown_event.is_set():
             logger.warning("Force shutdown - terminating all jobs immediately")
             await state.queue.stop()
-            logger.warning("Exiting now")
             import sys
 
             sys.exit(1)  # Force exit if still running
@@ -428,7 +435,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
                 if "measured_fps" in data:
                     deviation = abs(data.get("fps", 0) - data.get("measured_fps", 0))
-                    if deviation > 5.0:
+                    if deviation > 10.0:
                         logger.warning(
                             "Network/processing lag detected: capture=%s, actual=%.1f",
                             data.get("fps"),
@@ -478,7 +485,9 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     await websocket.send_json(msg)
                 except asyncio.CancelledError:
                     break
-
+        except asyncio.CancelledError:
+            logger.debug("Send loop cancelled during shutdown")
+            # Don't raise - allow graceful cleanup
         except WebSocketDisconnect:
             logger.info("Client disconnected (Send Loop)")
         except Exception as e:

@@ -467,7 +467,7 @@ class VideoJob(Job):
                         {
                             "type": "video",
                             "video": frames,  # List[PIL.Image]
-                            "sample_fps": str(self.client_fps),  # Frame rate
+                            "sample_fps": self.client_fps,  # Frame rate
                         },
                         {"type": "text", "text": prompt},
                     ],
@@ -475,7 +475,9 @@ class VideoJob(Job):
             ]
 
             # Extract vision inputs - handles video properly (ignore audio output)
-            image_inputs, video_inputs, _ = process_vision_info(messages)
+            image_inputs, video_inputs, video_kwargs = process_vision_info(
+                messages, return_video_kwargs=True
+            )
 
             # Apply chat template
             text = self.processor.apply_chat_template(
@@ -488,6 +490,7 @@ class VideoJob(Job):
                 images=image_inputs,
                 videos=video_inputs,
                 return_tensors="pt",
+                **(video_kwargs or {}),
             ).to(self.model.device)
 
             # Generate

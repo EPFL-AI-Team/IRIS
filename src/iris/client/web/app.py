@@ -25,28 +25,34 @@ def main() -> None:
     web_config = state.config.web
 
     # Check if SSL is enabled and certificates exist
-    if web_config.use_ssl and web_config.ssl_keyfile.exists() and web_config.ssl_certfile.exists():
-        print(f"Starting HTTPS server on {web_config.host}:{web_config.port}")
+    if (
+        web_config.use_ssl
+        and web_config.ssl_keyfile.exists()
+        and web_config.ssl_certfile.exists()
+    ):
         print(f"Using certificates from {web_config.cert_path}")
         uvicorn.run(
             "iris.client.web.app:app",
             host=web_config.host,
             port=web_config.port,
             reload=True,
+            log_level="warning",
             ssl_keyfile=str(web_config.ssl_keyfile),
             ssl_certfile=str(web_config.ssl_certfile),
         )
+        print(f"Started HTTPS server on {web_config.host}:{web_config.port}")
     else:
         if web_config.use_ssl:
             print(f"SSL enabled but certificates not found at: {web_config.cert_path}")
             print("Falling back to HTTP server")
-        print(f"Starting HTTP server on {web_config.host}:{web_config.port}")
         uvicorn.run(
             "iris.client.web.app:app",
             host=web_config.host,
             port=web_config.port,
             reload=True,
+            log_level="warning",
         )
+        print(f"Started HTTP server on {web_config.host}:{web_config.port}")
 
 
 if __name__ == "__main__":

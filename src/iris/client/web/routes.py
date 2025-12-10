@@ -254,6 +254,9 @@ async def results_websocket(websocket: WebSocket) -> None:
                         raise  # Re-raise to close connection
                 last_sent_index = current_count
             await asyncio.sleep(0.1)  # Check for new results 10 times per second
+    except asyncio.CancelledError:
+        logger.debug("Results WebSocket cancelled during shutdown")
+        # Don't raise - let it close gracefully
     except WebSocketDisconnect:
         logger.info("Results WebSocket disconnected")
     except Exception as e:
