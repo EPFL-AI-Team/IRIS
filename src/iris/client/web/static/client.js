@@ -21,6 +21,35 @@ let resultsHistory = [];
 // Activity logging
 const LOG_MAX_ENTRIES = 100;
 
+function formatLogMessage(message) {
+  // Pretty-print JSON payloads for readability
+  if (typeof message === "object" && message !== null) {
+    try {
+      return `<pre class="log-json">${JSON.stringify(message, null, 2)}</pre>`;
+    } catch (err) {
+      return String(message);
+    }
+  }
+
+  if (typeof message === "string") {
+    const trimmed = message.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return `<pre class="log-json">${JSON.stringify(parsed, null, 2)}</pre>`;
+      } catch (err) {
+        // Fall back to raw string below
+      }
+    }
+    return trimmed;
+  }
+
+  return String(message);
+}
+
 function addLog(message, level = "INFO") {
   const container = document.getElementById("log-container");
   if (!container) return;
@@ -31,7 +60,7 @@ function addLog(message, level = "INFO") {
   entry.innerHTML = `
     <span class="log-timestamp">[${timestamp}]</span>
     <span class="log-level">${level}</span>
-    <span class="log-message">${message}</span>
+    <span class="log-message">${formatLogMessage(message)}</span>
   `;
 
   container.appendChild(entry);
@@ -336,6 +365,7 @@ function connectResults() {
     const data = JSON.parse(event.data);
     console.log("Received result data:", data); // Debug log
     addLog(`Received result: ${data.job_id} (${data.status})`, "INFO");
+    addLog(data, "INFO");
     displayResult(data);
   };
 

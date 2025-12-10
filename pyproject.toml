@@ -51,6 +51,7 @@ dev = [
 ]
 
 [project.scripts]
+iris-train = "iris.vlm.train:main"
 iris-client = "iris.client.web.app:main"
 iris-server = "iris.server.app:main"
 iris-test = "iris.cli.local_test:cli"
