@@ -320,6 +320,135 @@ async def list_active_jobs() -> dict[str, Any]:
     return {"active_jobs": jobs}
 
 
+@app.get("/list-videos")
+async def list_videos() -> dict:
+    """List available pre-loaded videos for processing.
+
+    Returns:
+        Dictionary with list of video filenames and metadata
+    """
+    from pathlib import Path
+
+    from iris.server.video_processor import VideoFrameExtractor
+
+    # Video directory in static files
+    video_dir = Path(__file__).parent.parent / "client" / "web" / "static" / "videos"
+    video_dir.mkdir(parents=True, exist_ok=True)
+
+    videos = []
+    for ext in ["*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm"]:
+        for video_path in video_dir.glob(ext):
+            try:
+                extractor = VideoFrameExtractor(video_path)
+                info = extractor.get_video_info()
+                videos.append(info)
+            except Exception as e:
+                logger.warning(f"Failed to get info for {video_path.name}: {e}")
+                videos.append({"filename": video_path.name, "error": str(e)})
+
+    return {"videos": sorted(videos, key=lambda x: x.get("filename", ""))}
+
+
+@app.post("/process-video")
+async def process_video_endpoint(request: dict) -> dict:
+    """Process a pre-loaded video file frame by frame.
+
+    Args:
+        request: Dictionary with video_name
+
+    Returns:
+        Dictionary with processing status and job info
+    """
+    from pathlib import Path
+
+    from iris.server.video_processor import VideoFrameExtractor
+    from iris.vlm.inference.queue.jobs import VideoJob
+
+    video_name = request.get("video_name")
+    if not video_name:
+        raise HTTPException(status_code=400, detail="video_name is required")
+
+    # Find video file
+    video_dir = Path(__file__).parent.parent / "client" / "web" / "static" / "videos"
+    video_path = video_dir / video_name
+
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail=f"Video not found: {video_name}")
+
+    state = get_server_state()
+    video_cfg = config.jobs.get("video", {})
+
+    # Extract frames at target FPS
+    target_fps = video_cfg.get("default_fps", 5.0)
+    extractor = VideoFrameExtractor(video_path, target_fps=target_fps)
+
+    try:
+        frames = extractor.extract_frames()
+    except Exception as e:
+        logger.error(f"Failed to extract frames from {video_name}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to extract frames: {e!s}"
+        ) from e
+
+    if not frames:
+        raise HTTPException(status_code=400, detail="No frames extracted from video")
+
+    # Create batch jobs (same as live stream)
+    job_id_base = f"video_file_{uuid.uuid4().hex[:8]}"
+    buffer_size = video_cfg.get("buffer_size", 8)
+    overlap_frames = video_cfg.get("overlap_frames", 4)
+    prompt = video_cfg.get("prompt", "Describe what you see in the video.")
+    max_new_tokens = video_cfg.get("max_new_tokens", 128)
+
+    batches_created = 0
+    stride = buffer_size - overlap_frames
+
+    for i in range(0, len(frames), stride):
+        batch_frames = frames[i : i + buffer_size]
+
+        # Skip if batch is too small (less than half buffer size)
+        if len(batch_frames) < buffer_size // 2:
+            logger.info(f"Skipping small batch at end: {len(batch_frames)} frames")
+            break
+
+        batch_job_id = f"{job_id_base}_batch_{batches_created}"
+
+        # Create VideoJob
+        batch_job = VideoJob(
+            job_id=batch_job_id,
+            model=state.model,
+            processor=state.processor,
+            executor=state.queue.executor,
+            queue=state.queue,
+            frames=batch_frames,
+            prompt=prompt,
+            buffer_size=buffer_size,
+            overlap_frames=overlap_frames,
+            default_fps=target_fps,
+            max_new_tokens=max_new_tokens,
+            client_fps=target_fps,
+        )
+
+        # Submit to queue
+        submitted = await state.queue.submit(batch_job)
+        if submitted:
+            batches_created += 1
+            logger.info(f"Submitted video batch {batch_job_id}")
+        else:
+            logger.warning(f"Failed to submit batch {batch_job_id} - queue full")
+            break
+
+    return {
+        "status": "processing",
+        "job_id_base": job_id_base,
+        "video_name": video_name,
+        "total_frames": len(frames),
+        "batches_created": batches_created,
+        "frames_per_batch": buffer_size,
+        "target_fps": target_fps,
+    }
+
+
 @app.websocket("/ws/stream")
 async def inference_endpoint(websocket: WebSocket) -> None:
     """Receive frames and return inference results."""

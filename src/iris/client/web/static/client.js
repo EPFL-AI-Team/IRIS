@@ -22,7 +22,7 @@ let resultsHistory = [];
 const LOG_MAX_ENTRIES = 100;
 
 function formatLogMessage(message) {
-  // Pretty-print JSON payloads for readability
+  // 1. Handle Objects directly
   if (typeof message === "object" && message !== null) {
     try {
       return `<pre class="log-json">${JSON.stringify(message, null, 2)}</pre>`;
@@ -31,20 +31,40 @@ function formatLogMessage(message) {
     }
   }
 
+  // 2. Handle Strings
   if (typeof message === "string") {
-    const trimmed = message.trim();
+    let content = message.trim();
+
+    // Regex to remove markdown code blocks (e.g., ```json ... ```)
+    // ^```       : Starts with backticks
+    // (?:json)?  : Optional 'json' language tag (non-capturing)
+    // \s* : Optional whitespace/newlines
+    // ([\s\S]*?) : Capture the actual content (non-greedy)
+    // \s* : Optional trailing whitespace
+    // ```$       : Ends with backticks
+    const fenceRegex = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
+    const match = content.match(fenceRegex);
+
+    // If fences are found, extract the inner content
+    if (match) {
+      content = match[1].trim();
+    }
+
+    // 3. Attempt JSON Parse on the cleaned content
     if (
-      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+      (content.startsWith("{") && content.endsWith("}")) ||
+      (content.startsWith("[") && content.endsWith("]"))
     ) {
       try {
-        const parsed = JSON.parse(trimmed);
+        const parsed = JSON.parse(content);
         return `<pre class="log-json">${JSON.stringify(parsed, null, 2)}</pre>`;
       } catch (err) {
         // Fall back to raw string below
       }
     }
-    return trimmed;
+
+    // Return the cleaned content if it was a code block, otherwise the original trimmed message
+    return match ? content : message.trim();
   }
 
   return String(message);
@@ -413,7 +433,32 @@ function displayResult(data) {
     timestamp = new Date(data.datetime).toLocaleTimeString();
   }
 
+  // Parse and clean result text
+  let resultText = data.result || "No result";
+  let isJSON = false;
+  let parsedJSON = null;
+
+  // Remove markdown code fences (```json, ```)
+  resultText = resultText
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/, "")
+    .replace(/```\s*$/, "")
+    .trim();
+
+  // Try to parse as JSON
+  try {
+    parsedJSON = JSON.parse(resultText);
+    isJSON = true;
+  } catch (e) {
+    // Not JSON or invalid JSON, display as plain text
+    isJSON = false;
+  }
+
   // Build result HTML with result number
+  const resultContent = isJSON
+    ? `<pre class="json-result">${JSON.stringify(parsedJSON, null, 2)}</pre>`
+    : `<p>${resultText}</p>`;
+
   resultDiv.innerHTML = `
     <div class="result-header">
       <span class="result-number">#${resultNumber}</span>
@@ -421,7 +466,7 @@ function displayResult(data) {
       <span class="result-frames">Frames: ${data.frames_processed || 0}</span>
     </div>
     <div class="result-text">
-      <p>${data.result || "No result"}</p>
+      ${resultContent}
     </div>
     <div class="result-metrics">
       <span>Inference: ${(
@@ -679,7 +724,128 @@ document.addEventListener("DOMContentLoaded", () => {
         addLog(`Failed to clear results: ${error.message}`, "ERROR");
       }
     });
+
+  // Video selector change handler
+  document.getElementById("video-selector").addEventListener("change", (e) => {
+    const selectedIndex = e.target.selectedIndex;
+    const selectedOption = e.target.options[selectedIndex];
+    const processBtn = document.getElementById("process-video-btn");
+    const videoInfo = document.getElementById("video-info");
+
+    if (selectedOption.value === "") {
+      processBtn.disabled = true;
+      videoInfo.innerHTML = "";
+      return;
+    }
+
+    // Enable process button
+    processBtn.disabled = false;
+
+    // Display video info if available
+    try {
+      const info = JSON.parse(selectedOption.dataset.info || "{}");
+      if (info.duration_seconds !== undefined) {
+        videoInfo.innerHTML = `
+          <strong>${info.filename}</strong><br>
+          Resolution: ${info.width}x${info.height} |
+          FPS: ${info.fps.toFixed(2)} |
+          Duration: ${info.duration_seconds.toFixed(1)}s |
+          Frames: ${info.frame_count}
+        `;
+      }
+    } catch (err) {
+      videoInfo.innerHTML = "";
+    }
+  });
+
+  // Process video button handler
+  document.getElementById("process-video-btn").addEventListener("click", processVideo);
+
+  // Load video list on page load
+  loadVideoList();
 });
+
+// Load available videos from server
+async function loadVideoList() {
+  try {
+    const response = await fetch("/list-videos");
+    const data = await response.json();
+
+    const selector = document.getElementById("video-selector");
+    selector.innerHTML = "";
+
+    if (data.videos.length === 0) {
+      selector.innerHTML = '<option value="">No videos available</option>';
+      addLog("No pre-loaded videos found", "WARNING");
+      return;
+    }
+
+    // Add default option
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Select a video...";
+    selector.appendChild(defaultOption);
+
+    // Add videos
+    data.videos.forEach((video) => {
+      const option = document.createElement("option");
+      option.value = video.filename;
+      option.textContent = video.filename;
+      // Store video info in data attribute
+      option.dataset.info = JSON.stringify(video);
+      selector.appendChild(option);
+    });
+
+    addLog(`Loaded ${data.videos.length} pre-loaded videos`, "INFO");
+  } catch (error) {
+    addLog(`Failed to load video list: ${error.message}`, "ERROR");
+    const selector = document.getElementById("video-selector");
+    selector.innerHTML = '<option value="">Error loading videos</option>';
+  }
+}
+
+// Process selected video
+async function processVideo() {
+  const videoName = document.getElementById("video-selector").value;
+  if (!videoName) {
+    showToast("Please select a video", "warning");
+    return;
+  }
+
+  const processBtn = document.getElementById("process-video-btn");
+  const progressDiv = document.getElementById("video-progress");
+
+  processBtn.disabled = true;
+  progressDiv.innerHTML = '<span style="color: #2196F3;">Processing video...</span>';
+
+  try {
+    addLog(`Processing video: ${videoName}`, "INFO");
+
+    const response = await fetch("/process-video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video_name: videoName }),
+    });
+
+    const data = await response.json();
+
+    if (data.status === "processing") {
+      const message = `Submitted ${data.batches_created} batches (${data.total_frames} frames) for processing`;
+      progressDiv.innerHTML = `<span style="color: #4CAF50;">${message}</span>`;
+      addLog(message, "INFO");
+      showToast("Video processing started", "success");
+    } else {
+      throw new Error(data.message || "Unknown error");
+    }
+  } catch (error) {
+    const errorMsg = `Failed to process video: ${error.message}`;
+    progressDiv.innerHTML = `<span style="color: #f44336;">${errorMsg}</span>`;
+    addLog(errorMsg, "ERROR");
+    showToast("Video processing failed", "error");
+  } finally {
+    processBtn.disabled = false;
+  }
+}
 
 // Initialize
 addLog("IRIS Client initializing...", "INFO");

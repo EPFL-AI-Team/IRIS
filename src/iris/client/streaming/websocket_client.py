@@ -153,7 +153,10 @@ class StreamingClient:
 
                 await ws.send(json.dumps(message))
                 self.frame_count += 1
-                await asyncio.sleep(0.01)
+
+                # Throttle to target FPS (e.g., 5 FPS = 0.2s sleep)
+                target_interval = 1.0 / self.capture_fps if self.capture_fps > 0 else 0.01
+                await asyncio.sleep(target_interval)
 
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(

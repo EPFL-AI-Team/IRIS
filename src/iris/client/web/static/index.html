@@ -128,6 +128,20 @@
                 <button type="button" id="refresh-cameras-btn">Refresh Cameras</button>
             </div>
         </div>
+
+        <!-- Video Processing Section -->
+        <div class="video-processing-section">
+            <h2>Pre-loaded Video Processing</h2>
+            <div class="form-group">
+                <label for="video-selector">Select Video:</label>
+                <select id="video-selector">
+                    <option value="">Loading videos...</option>
+                </select>
+            </div>
+            <div id="video-info" style="margin: 10px 0; color: #666; font-size: 0.9em;"></div>
+            <button type="button" id="process-video-btn" class="btn-start" disabled>Process Video</button>
+            <div id="video-progress" style="margin-top: 10px;"></div>
+        </div>
     </div>
 
     <!-- Toast notification container -->
