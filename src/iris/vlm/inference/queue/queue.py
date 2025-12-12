@@ -134,9 +134,17 @@ class InferenceQueue:
                         )
                         job.model.to(device)
 
-                logger.info(f"{worker_name} is processing {job}")
+                # Log queue depth before processing
+                queue_depth = self.queue.qsize()
+                logger.info(f"{worker_name} processing {job}, queue_depth={queue_depth}")
+
                 # Run the job. The job updates its own internal state.
                 await job.execute()
+
+                # Log queue depth after completion
+                queue_depth = self.queue.qsize()
+                logger.info(f"{worker_name} completed {job}, queue_depth={queue_depth}")
+
             except Exception as e:
                 logger.error(f"{worker_name} failed on {job}: {e}", exc_info=True)
                 # If it fails, update the job's state

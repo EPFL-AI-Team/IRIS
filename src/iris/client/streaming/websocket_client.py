@@ -52,8 +52,8 @@ class StreamingClient:
                 # spurious timeouts (1011) on slow or bursty networks/inference.
                 async with websockets.connect(
                     self.ws_url,
-                    ping_interval=20,  # Send ping every 20s (was: None)
-                    ping_timeout=30,  # Timeout after 10s (was: None)
+                    ping_interval=20,  # Send ping every 20s
+                    ping_timeout=60,  # Timeout after 60s (increased to prevent timeout during inference)
                     close_timeout=30.0,
                     max_queue=None,
                 ) as ws:

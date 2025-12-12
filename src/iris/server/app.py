@@ -19,9 +19,8 @@ from PIL import Image
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
-from iris.server.jobs.config import JobConfig, VideoJobConfig
+from iris.server.jobs.config import JobConfig
 from iris.server.jobs.manager import JobManager
-from iris.server.jobs.types import TriggerMode
 from iris.server.logging_handler import WebSocketLogHandler
 from iris.vlm.inference.queue.queue import InferenceQueue
 from iris.vlm.models import load_model_and_processor
@@ -340,73 +339,58 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     # Register log callback with JobManager
     state.job_manager.register_log_callback(log_callback)
 
-    # AUTO-CREATE VIDEO JOB WITH UNIQUE ID PER CONNECTION
+    # Connection-level config and state
     connection_job_id = f"video_job_{uuid.uuid4().hex[:8]}"
     video_cfg = config.jobs.get("video", {})
-    trigger_mode_val = video_cfg.get("trigger_mode", TriggerMode.PERIODIC)
-    if isinstance(trigger_mode_val, str):
-        trigger_mode_val = TriggerMode(trigger_mode_val)
 
-    job_config = VideoJobConfig(
-        job_id=connection_job_id,
-        prompt=video_cfg.get("prompt", "Describe what you see in the video."),
-        trigger_mode=trigger_mode_val,
-        buffer_size=video_cfg.get("buffer_size", 8),
-        overlap_frames=video_cfg.get("overlap_frames", 4),
-        default_fps=video_cfg.get("default_fps", 5),
-        max_new_tokens=video_cfg.get("max_new_tokens", 128),
-    )
+    # Extract config values for batch job creation
+    buffer_size = video_cfg.get("buffer_size", 8)
+    overlap_frames = video_cfg.get("overlap_frames", 4)
+    default_fps = video_cfg.get("default_fps", 5)
+    prompt = video_cfg.get("prompt", "Describe what you see in the video.")
+    max_new_tokens = video_cfg.get("max_new_tokens", 128)
 
-    try:
-        job_id = await state.job_manager.start_job(job_config)
-        logger.info(f"Auto-created VideoJob for connection: {job_id}")
+    # Track WebSocket connection state
+    connection_active = True
 
-        # Track WebSocket connection state
-        connection_active = True
+    # Result callback for batch jobs
+    async def result_handler(result_data: dict) -> None:
+        """Handle result from VideoJob and queue for sending."""
+        if not connection_active:
+            return  # Skip if connection is closed
 
-        # Register result callback for immediate broadcasting
-        video_job = state.job_manager.get_job(job_id)
-        if video_job and hasattr(video_job, "result_callback"):
+        try:
+            # Record metrics
+            if state.metrics:
+                state.metrics.record_job(
+                    job_id=result_data["job_id"],
+                    inference_time=result_data.get("inference_time", 0.0),
+                    total_latency=result_data.get("inference_time", 0.0),
+                    status="completed",
+                    queue_depth=state.queue.queue.qsize(),
+                )
 
-            async def result_handler(result_data: dict) -> None:
-                """Handle result from VideoJob and queue for sending."""
-                if not connection_active:
-                    return  # Skip if connection is closed
+                # Save detailed result to session results file
+                state.metrics.record_inference_result(result_data)
 
-                try:
-                    # Record metrics
-                    if state.metrics:
-                        state.metrics.record_job(
-                            job_id=result_data["job_id"],
-                            inference_time=result_data.get("inference_time", 0.0),
-                            total_latency=result_data.get("inference_time", 0.0),
-                            status="completed",
-                            queue_depth=state.queue.queue.qsize(),
-                        )
+            # Queue for sending
+            await outgoing_queue.put(result_data)
 
-                        # Save detailed result to session results file
-                        state.metrics.record_inference_result(result_data)
+        except Exception as e:
+            logger.error(f"Error in result handler: {e}", exc_info=True)
 
-                    # Queue for sending
-                    await outgoing_queue.put(result_data)
+    # Wrap async callback for sync context
+    def sync_result_callback(result_data: dict) -> None:
+        task = asyncio.create_task(result_handler(result_data))
+        pending_tasks.append(task)
 
-                except Exception as e:
-                    logger.error(f"Error in result handler: {e}", exc_info=True)
-
-            # Wrap async callback for sync context
-            def sync_result_callback(result_data: dict) -> None:
-                task = asyncio.create_task(result_handler(result_data))
-                pending_tasks.append(task)
-
-            video_job.result_callback = sync_result_callback
-
-    except Exception as e:
-        logger.error(f"Failed to auto-create VideoJob: {e}")
-        await websocket.close(code=1011, reason="Failed to create video job")
-        return
-
-    # Producer loop which receives frames and routes them to active jobs
+    # Producer loop which receives frames and buffers them locally
     async def receive_loop() -> None:
+        # Local frame buffer for this connection
+        frame_buffer: list[Image.Image] = []
+        batch_counter = 0
+        client_fps = default_fps
+
         try:
             while True:
                 # Support both text and binary JSON payloads from clients
@@ -450,12 +434,6 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         f"arrival={arrival_time:.3f}s, latency={latency_ms:.1f}ms"
                     )
                     logger.debug(msg)
-                    await outgoing_queue.put({
-                        "type": "log",
-                        "job_id": connection_job_id,
-                        "message": msg,
-                        "timestamp": time.time(),
-                    })
 
                 if "measured_fps" in data:
                     deviation = abs(data.get("fps", 0) - data.get("measured_fps", 0))
@@ -465,34 +443,53 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                             data.get("fps"),
                             data.get("measured_fps"),
                         )
-                        await outgoing_queue.put({
-                            "type": "log",
-                            "job_id": connection_job_id,
-                            "message": (
-                                f"Network/processing lag detected: capture={data.get('fps')}, "
-                                f"actual={data.get('measured_fps'):.1f}"
-                            ),
-                            "timestamp": time.time(),
-                        })
 
+                # Update client FPS if provided
+                if "fps" in data:
+                    client_fps = float(data["fps"])
+
+                # Decode frame
                 frame_b64 = data["frame"]
-
                 image_data = base64.b64decode(frame_b64)
                 image = Image.open(BytesIO(image_data))
 
-                # Route frame to active jobs (decoupled from job creation)
-                # Prefer capture timestamp if provided; fallback to arrival time
-                route_timestamp = (
-                    capture_time if capture_time is not None else arrival_time
-                )
-                client_fps = data.get("fps") or job_config.default_fps
+                # Add frame to local buffer
+                frame_buffer.append(image.copy())
 
-                await state.job_manager.route_frame(
-                    frame=image,
-                    frame_id=frame_id,
-                    timestamp=route_timestamp,
-                    client_fps=client_fps,
-                )
+                # When buffer reaches threshold, create and submit batch job
+                if len(frame_buffer) >= buffer_size:
+                    batch_job_id = f"{connection_job_id}_batch_{batch_counter}"
+
+                    # Create one-shot VideoJob with buffered frames
+                    from iris.vlm.inference.queue.jobs import VideoJob
+                    batch_job = VideoJob(
+                        job_id=batch_job_id,
+                        model=state.model,
+                        processor=state.processor,
+                        executor=state.executor,
+                        queue=state.queue,
+                        frames=frame_buffer.copy(),
+                        prompt=prompt,
+                        buffer_size=buffer_size,
+                        overlap_frames=overlap_frames,
+                        default_fps=default_fps,
+                        max_new_tokens=max_new_tokens,
+                        client_fps=client_fps,
+                    )
+
+                    # Set result callback
+                    batch_job.result_callback = sync_result_callback
+
+                    # Submit directly to queue
+                    await state.queue.submit(batch_job)
+
+                    # Log with queue depth
+                    queue_depth = state.queue.queue.qsize()
+                    logger.info(f"Submitted {batch_job_id}, queue_depth={queue_depth}")
+
+                    # Keep last N frames for temporal overlap
+                    frame_buffer = frame_buffer[-overlap_frames:]
+                    batch_counter += 1
 
         except WebSocketDisconnect as e:
             code = getattr(e, "code", None)
@@ -502,6 +499,33 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 code,
                 reason,
             )
+
+            # Submit partial batch if there are remaining frames
+            if len(frame_buffer) > 0:
+                batch_job_id = f"{connection_job_id}_batch_{batch_counter}_partial"
+                logger.info(f"Submitting partial batch with {len(frame_buffer)} frames")
+
+                from iris.vlm.inference.queue.jobs import VideoJob
+                batch_job = VideoJob(
+                    job_id=batch_job_id,
+                    model=state.model,
+                    processor=state.processor,
+                    executor=state.executor,
+                    queue=state.queue,
+                    frames=frame_buffer.copy(),
+                    prompt=prompt,
+                    buffer_size=buffer_size,
+                    overlap_frames=overlap_frames,
+                    default_fps=default_fps,
+                    max_new_tokens=max_new_tokens,
+                    client_fps=client_fps,
+                )
+                batch_job.result_callback = sync_result_callback
+                await state.queue.submit(batch_job)
+
+                queue_depth = state.queue.queue.qsize()
+                logger.info(f"Submitted {batch_job_id}, queue_depth={queue_depth}")
+
         except Exception as e:
             logger.error("Receive loop error: %s", e, exc_info=True)
 
@@ -534,8 +558,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     try:
         await asyncio.gather(receive_loop(), send_loop())
     finally:
-        logger.info(f"Entering finally block for {connection_job_id}")  # ADD THIS
-        
+        logger.info(f"WebSocket disconnecting for {connection_job_id}")
+
         # Mark connection as inactive to stop result handler tasks
         connection_active = False
 
@@ -548,13 +572,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         if pending_tasks:
             await asyncio.gather(*pending_tasks, return_exceptions=True)
 
-        # CLEANUP: Stop and remove job when WebSocket disconnects
-        try:
-            logger.info(f"Attempting to stop job {connection_job_id}")  # ADD THIS
-            await state.job_manager.stop_job(connection_job_id)
-            logger.info(f"Cleaned up VideoJob on disconnect: {connection_job_id}")
-        except Exception as e:
-            logger.error(f"Failed to clean up job {connection_job_id}: {e}", exc_info=True)
+        # No job cleanup needed - batch jobs complete naturally
+        logger.info(f"WebSocket cleanup complete for {connection_job_id}")
 
 
 @app.websocket("/ws/logs")
