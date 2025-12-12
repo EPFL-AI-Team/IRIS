@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import signal
+import sys
 import time
 import uuid
 import warnings
@@ -762,7 +763,12 @@ def main() -> None:
     """Entry point for server."""
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8001)
+    except KeyboardInterrupt:
+        # Handle Ctrl+C during uvicorn startup
+        logger.info("Server interrupted during startup. Exiting...")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
