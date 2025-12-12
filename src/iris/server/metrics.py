@@ -271,6 +271,80 @@ class MetricsCollector:
         index = int(len(sorted_values) * (percentile / 100.0))
         return sorted_values[min(index, len(sorted_values) - 1)]
 
+    def reset(self, clear_files: bool = True) -> dict[str, Any]:
+        """Reset metrics state and optionally delete log files.
+
+        Args:
+            clear_files: Whether to delete metrics files from disk
+
+        Returns:
+            Dictionary with reset status and file count
+        """
+        # Reset in-memory state
+        old_totals = {
+            "total_jobs": self.total_jobs,
+            "completed_jobs": self.completed_jobs,
+            "failed_jobs": self.failed_jobs,
+            "dropped_frames": self.dropped_frames,
+        }
+
+        self.total_jobs = 0
+        self.completed_jobs = 0
+        self.failed_jobs = 0
+        self.dropped_frames = 0
+        self.inference_times = []
+        self.latencies = []
+        self.job_history = []
+
+        files_deleted = 0
+        errors = []
+
+        # Delete log files if requested
+        if clear_files and self.persist:
+            try:
+                # Delete all session_*.jsonl files in log_dir
+                for file_path in self.log_dir.glob("session_*.jsonl"):
+                    try:
+                        file_path.unlink()
+                        files_deleted += 1
+                        logger.info(f"Deleted metrics file: {file_path}")
+                    except Exception as e:
+                        error_msg = f"Failed to delete {file_path}: {e}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+            except Exception as e:
+                error_msg = f"Failed to scan metrics directory: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+
+        # Start new session
+        self.session_start = time.time()
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if self.persist:
+            self.metrics_file = self.log_dir / f"session_{self.session_id}.jsonl"
+            self.results_file = self.log_dir / f"session_{self.session_id}_results.jsonl"
+
+            # Write new session header
+            self._write_metrics({
+                "type": "session_start",
+                "session_id": self.session_id,
+                "timestamp": self.session_start,
+                "datetime": datetime.fromtimestamp(self.session_start).isoformat(),
+                "reset_from_previous": True,
+                "previous_session_totals": old_totals,
+            })
+
+        logger.info(f"Metrics reset: cleared {old_totals['total_jobs']} jobs, deleted {files_deleted} files")
+
+        return {
+            "metrics_reset": True,
+            "previous_totals": old_totals,
+            "files_deleted": files_deleted,
+            "errors": errors,
+            "new_session_id": self.session_id,
+        }
+
     def close(self) -> None:
         """Close metrics collector and finalize session."""
         if self.persist:

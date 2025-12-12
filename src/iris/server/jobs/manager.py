@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
@@ -131,6 +131,39 @@ class JobManager:
             del self.active_jobs[job_id]
             logger.info(f"Stopped job: {job_id}")
             return True
+
+    async def stop_all_jobs(self) -> dict[str, Any]:
+        """Stop all active jobs.
+
+        Returns:
+            Dictionary with count of stopped jobs and any errors
+        """
+        async with self.lock:
+            job_ids = list(self.active_jobs.keys())
+            stopped_count = 0
+            errors = []
+
+            for job_id in job_ids:
+                try:
+                    job = self.active_jobs.get(job_id)
+                    if job:
+                        # Stop the job if it supports it
+                        if hasattr(job, "stop"):
+                            job.stop()
+
+                        # Remove from active_jobs
+                        del self.active_jobs[job_id]
+                        stopped_count += 1
+                        logger.info(f"Stopped job: {job_id}")
+                except Exception as e:
+                    error_msg = f"Failed to stop job {job_id}: {e}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+
+            return {
+                "stopped_count": stopped_count,
+                "errors": errors
+            }
 
     async def route_frame(
         self,

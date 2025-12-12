@@ -65,6 +65,39 @@ class InferenceQueue:
         self.executor.shutdown(wait=False)  # Don't wait for GPU threads
         logger.info("Inference queue stopped.")
 
+    async def clear_queue(self) -> int:
+        """Clear all pending jobs from the queue without stopping workers.
+
+        Returns:
+            Number of jobs removed from queue
+        """
+        cleared_count = 0
+
+        # Drain the queue by consuming items without processing
+        while not self.queue.empty():
+            try:
+                job = self.queue.get_nowait()
+                # Skip None (shutdown signals)
+                if job is not None:
+                    cleared_count += 1
+                    # Mark job as cancelled/failed
+                    job.status = JobStatus.FAILED
+                    job.error = "Cleared by system reset"
+                self.queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+        # Also clear results queue to prevent memory leaks
+        while not self.results.empty():
+            try:
+                self.results.get_nowait()
+                self.results.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+        logger.info(f"Cleared {cleared_count} pending jobs from queue")
+        return cleared_count
+
     async def submit(self, job: Job) -> bool:
         """
         Submits a job to the queue for processing.
