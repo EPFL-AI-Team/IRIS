@@ -22,6 +22,7 @@ let resultsHistory = [];
 const LOG_MAX_ENTRIES = 100;
 
 function formatLogMessage(message) {
+  console.log("Formatting log message:", message);
   // 1. Handle Objects directly
   if (typeof message === "object" && message !== null) {
     try {
@@ -45,6 +46,7 @@ function formatLogMessage(message) {
     const fenceRegex = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
     const match = content.match(fenceRegex);
 
+    console.log("Code fence match:", match);
     // If fences are found, extract the inner content
     if (match) {
       content = match[1].trim();
@@ -66,6 +68,9 @@ function formatLogMessage(message) {
     // Return the cleaned content if it was a code block, otherwise the original trimmed message
     return match ? content : message.trim();
   }
+
+  console.log;("Log message is of unsupported type:", typeof message);
+  
 
   return String(message);
 }
@@ -434,7 +439,7 @@ function displayResult(data) {
   }
 
   // Parse and clean result text
-  let resultText = data.result || "No result";
+  let resultText = formatLogMessage(data.result) || "No result";
   let isJSON = false;
   let parsedJSON = null;
 
@@ -759,7 +764,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Process video button handler
-  document.getElementById("process-video-btn").addEventListener("click", processVideo);
+  document
+    .getElementById("process-video-btn")
+    .addEventListener("click", processVideo);
 
   // Load video list on page load
   loadVideoList();
@@ -814,12 +821,26 @@ async function processVideo() {
 
   const processBtn = document.getElementById("process-video-btn");
   const progressDiv = document.getElementById("video-progress");
+  const videoPlayer = document.getElementById("video-player");
+  const videoPlayerContainer = document.getElementById("video-player-container");
 
   processBtn.disabled = true;
-  progressDiv.innerHTML = '<span style="color: #2196F3;">Processing video...</span>';
+  progressDiv.innerHTML =
+    '<span style="color: #2196F3;">Processing video...</span>';
 
   try {
     addLog(`Processing video: ${videoName}`, "INFO");
+
+    // Load and play the video
+    if (videoPlayer && videoPlayerContainer) {
+      videoPlayer.src = `/static/videos/${videoName}`;
+      videoPlayerContainer.style.display = "block";
+      videoPlayer.load();
+      videoPlayer.play().catch((err) => {
+        console.warn("Autoplay failed:", err);
+        addLog("Video loaded (click play to watch)", "INFO");
+      });
+    }
 
     const response = await fetch("/process-video", {
       method: "POST",
