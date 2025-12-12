@@ -3,6 +3,9 @@ let previewWs = null;
 let resultsWs = null;
 let statusInterval = null;
 
+// Configuration
+const SHOW_PENDING_CARDS = true;
+
 // Canvas preview state
 let previewCanvas = null;
 let previewCtx = null;
@@ -411,11 +414,95 @@ function connectResults() {
   };
 }
 
-// Display inference result
-function displayResult(data) {
+// Create a pending result card
+function createPendingCard(jobId, queueDepth = null, frameInfo = null) {
+  if (!SHOW_PENDING_CARDS) return;
+
   const container = document.getElementById("results-container");
 
-  // Add to history
+  // Check if already exists
+  if (document.getElementById(`result-${jobId}`)) return;
+
+  // Remove placeholder
+  const placeholder = container.querySelector(".results-placeholder");
+  if (placeholder) {
+    placeholder.remove();
+  }
+
+  const resultDiv = document.createElement("div");
+  resultDiv.className = "result-item pending";
+  resultDiv.id = `result-${jobId}`;
+
+  // Calculate result number (next in sequence)
+  // We use the current history length + 1 as a temporary number
+  const resultNumber = resultsHistory.length + 1;
+
+  let statusText = "Queued";
+  if (queueDepth !== null) {
+    statusText += ` (Position: ${queueDepth})`;
+  }
+
+  let detailsHtml = "";
+  if (frameInfo) {
+    detailsHtml = `<div class="pending-details">${frameInfo}</div>`;
+  }
+
+  resultDiv.innerHTML = `
+    <div class="result-header">
+      <span class="result-number">#${resultNumber}</span>
+      <span class="result-timestamp">${new Date().toLocaleTimeString()}</span>
+      <span class="result-status">${statusText}</span>
+    </div>
+    <div class="result-text">
+      <div class="loading-spinner"></div>
+      <p><em>Processing batch...</em></p>
+      ${detailsHtml}
+    </div>
+  `;
+
+  container.appendChild(resultDiv);
+  container.scrollTop = container.scrollHeight;
+}
+
+// Update pending card with frame info
+function updatePendingCardWithFrameInfo(jobId, frameInfo) {
+  if (!SHOW_PENDING_CARDS) return;
+
+  const card = document.getElementById(`result-${jobId}`);
+  if (!card) return;
+
+  const detailsDiv = card.querySelector(".pending-details");
+  if (detailsDiv) {
+    detailsDiv.textContent = frameInfo;
+  } else {
+    const textDiv = card.querySelector(".result-text");
+    const newDetails = document.createElement("div");
+    newDetails.className = "pending-details";
+    newDetails.textContent = frameInfo;
+    textDiv.appendChild(newDetails);
+  }
+
+  const statusSpan = card.querySelector(".result-status");
+  if (statusSpan) {
+    statusSpan.textContent = "Processing";
+  }
+}
+
+// Display inference result
+function displayResult(data) {
+  // Handle log messages separately
+  if (data.type === "log") {
+    // Parse "Starting inference" logs
+    if (data.message && data.message.includes("Starting inference:")) {
+      updatePendingCardWithFrameInfo(data.job_id, data.message);
+    }
+    return;
+  }
+
+  const container = document.getElementById("results-container");
+
+  // Add to history if it's a result or batch submission
+  // We avoid adding logs to history
   resultsHistory.push(data);
   const resultNumber = resultsHistory.length; // Sequential result number
 
@@ -423,6 +510,13 @@ function displayResult(data) {
   const placeholder = container.querySelector(".results-placeholder");
   if (placeholder) {
     placeholder.remove();
+  }
+
+  // Handle batch submission
+  if (data.type === "batch_submitted") {
+    console.log("Batch submission object:", data);
+    createPendingCard(data.job_id);
+    return;
   }
 
   // Create result element
@@ -443,8 +537,6 @@ function displayResult(data) {
   let isJSON = false;
   let parsedJSON = null;
 
-  console.log("Raw result text:", resultText);
-
   // Remove markdown code fences (```json, ```)
   if (typeof resultText === "string") {
     resultText = resultText
@@ -453,15 +545,11 @@ function displayResult(data) {
       .replace(/```\s*$/, "")
       .trim();
 
-    console.log("Cleaned result text:", resultText);
-
     // Try to parse as JSON
     try {
       parsedJSON = JSON.parse(resultText);
       isJSON = true;
-      console.log("Parsed JSON:", parsedJSON);
     } catch (e) {
-      console.warn("JSON parse failed:", e);
       // Not JSON or invalid JSON, display as plain text
       isJSON = false;
     }
@@ -479,9 +567,9 @@ function displayResult(data) {
           typeof value === "object" && value !== null
             ? JSON.stringify(value)
             : value;
-        return `<div><strong>${formattedKey}:</strong> "${displayValue}"</div>`;
+        return `<div><strong>${formattedKey}:</strong> ${displayValue}</div>`;
       });
-      resultContent = `<div class="formatted-result" style="font-family: monospace; line-height: 1.5;">${formattedLines.join(
+      resultContent = `<div class="formatted-result" style="font-family: monospace; line-height: 1.5; text-align: left; padding-left: 20px;">${formattedLines.join(
         ""
       )}</div>`;
     } catch (err) {
@@ -496,6 +584,39 @@ function displayResult(data) {
   } else {
     resultContent = `<p>${resultText}</p>`;
   }
+
+  // Check if we should update an existing item (e.g. for batch submitted)
+  const existingItem = document.getElementById(`result-${data.job_id}`);
+  if (existingItem) {
+    // Preserve the original result number
+    const existingNumber =
+      existingItem.querySelector(".result-number").textContent;
+
+    // Update existing item
+    existingItem.innerHTML = `
+    <div class="result-header">
+      <span class="result-number">${existingNumber}</span>
+      <span class="result-timestamp">${timestamp}</span>
+      <span class="result-frames">Frames: ${data.frames_processed || 0}</span>
+    </div>
+    <div class="result-text">
+      ${resultContent}
+    </div>
+    <div class="result-metrics">
+      <span>Inference: ${(
+        data.metrics?.inference_time ||
+        data.inference_time ||
+        0
+      ).toFixed(3)}s</span>
+    </div>
+    `;
+    existingItem.classList.remove("batch-pending");
+    existingItem.classList.remove("pending");
+    return; // Done updating
+  }
+
+  resultDiv.id = `result-${data.job_id}`;
+  // Note: batch_submitted is handled above, so we don't need the check here anymore
 
   resultDiv.innerHTML = `
     <div class="result-header">

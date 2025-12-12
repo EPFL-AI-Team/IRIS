@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 
@@ -50,13 +51,15 @@ class StreamingClient:
                 self.connection_state = "connecting"
                 # Disable client-side pings; let server handle keepalive. This avoids
                 # spurious timeouts (1011) on slow or bursty networks/inference.
-                async with websockets.connect(
-                    self.ws_url,
-                    ping_interval=20,  # Send ping every 20s
-                    ping_timeout=60,  # Timeout after 60s (increased to prevent timeout during inference)
-                    close_timeout=30.0,
-                    max_queue=None,
-                ) as ws:
+                async with (
+                    websockets.connect(
+                        self.ws_url,
+                        ping_interval=20,  # Send ping every 20s
+                        ping_timeout=60,  # Timeout after 60s (increased to prevent timeout during inference)
+                        close_timeout=30.0,
+                        max_queue=None,
+                    ) as ws
+                ):
                     logger.info("Connected to %s", self.ws_url)
                     self.connection_state = "connected"
                     retry_delay = 1.0  # Reset on successful connection
@@ -155,7 +158,9 @@ class StreamingClient:
                 self.frame_count += 1
 
                 # Throttle to target FPS (e.g., 5 FPS = 0.2s sleep)
-                target_interval = 1.0 / self.capture_fps if self.capture_fps > 0 else 0.01
+                target_interval = (
+                    1.0 / self.capture_fps if self.capture_fps > 0 else 0.01
+                )
                 await asyncio.sleep(target_interval)
 
             except websockets.exceptions.ConnectionClosed as e:
@@ -194,6 +199,30 @@ class StreamingClient:
                     level = logging.INFO
                     if log_text:
                         logger.log(level, "Job log: [%s] %s", log_job, log_text)
+
+                        # Check for batch submission to notify UI
+                        # Log format: "Submitted {batch_job_id}, queue_depth={queue_depth}"
+                        if self.result_callback and "Submitted video_job_" in log_text:
+                            match = re.search(
+                                r"Submitted (video_job_\w+_batch_\d+)", log_text
+                            )
+                            if match:
+                                job_id = match.group(1)
+                                self.result_callback({
+                                    "type": "batch_submitted",
+                                    "job_id": job_id,
+                                    "timestamp": time.time(),
+                                    "status": "processing",
+                                })
+
+                        # Forward "Starting inference" logs to UI for progress tracking
+                        if self.result_callback and "Starting inference:" in log_text:
+                            self.result_callback({
+                                "type": "log",
+                                "message": log_text,
+                                "job_id": log_job,
+                                "timestamp": time.time(),
+                            })
             except asyncio.CancelledError:
                 raise
             except websockets.exceptions.ConnectionClosed as e:

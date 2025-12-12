@@ -540,3 +540,45 @@ button:disabled {
         opacity: 0;
     }
 }
+
+/* Pending Card Styles */
+.result-item.pending {
+    border-left: 4px solid #ffc107;
+    background-color: #fffdf5;
+}
+
+.result-status {
+    font-weight: bold;
+    color: #ffc107;
+    margin-left: auto;
+}
+
+.pending-details {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #666;
+    font-family: monospace;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    border-top-color: #007bff;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Formatted Result */
+.formatted-result {
+    padding-left: 20px;
+    border-left: 2px solid #eee;
+}
