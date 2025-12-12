@@ -69,8 +69,8 @@ function formatLogMessage(message) {
     return match ? content : message.trim();
   }
 
-  console.log;("Log message is of unsupported type:", typeof message);
-  
+  console.log;
+  "Log message is of unsupported type:", typeof message;
 
   return String(message);
 }
@@ -439,30 +439,63 @@ function displayResult(data) {
   }
 
   // Parse and clean result text
-  let resultText = formatLogMessage(data.result) || "No result";
+  let resultText = data.result || "No result";
   let isJSON = false;
   let parsedJSON = null;
 
-  // Remove markdown code fences (```json, ```)
-  resultText = resultText
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/, "")
-    .replace(/```\s*$/, "")
-    .trim();
+  console.log("Raw result text:", resultText);
 
-  // Try to parse as JSON
-  try {
-    parsedJSON = JSON.parse(resultText);
-    isJSON = true;
-  } catch (e) {
-    // Not JSON or invalid JSON, display as plain text
-    isJSON = false;
+  // Remove markdown code fences (```json, ```)
+  if (typeof resultText === "string") {
+    resultText = resultText
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/, "")
+      .replace(/```\s*$/, "")
+      .trim();
+
+    console.log("Cleaned result text:", resultText);
+
+    // Try to parse as JSON
+    try {
+      parsedJSON = JSON.parse(resultText);
+      isJSON = true;
+      console.log("Parsed JSON:", parsedJSON);
+    } catch (e) {
+      console.warn("JSON parse failed:", e);
+      // Not JSON or invalid JSON, display as plain text
+      isJSON = false;
+    }
   }
 
   // Build result HTML with result number
-  const resultContent = isJSON
-    ? `<pre class="json-result">${JSON.stringify(parsedJSON, null, 2)}</pre>`
-    : `<p>${resultText}</p>`;
+  let resultContent;
+  if (isJSON) {
+    try {
+      const formattedLines = Object.entries(parsedJSON).map(([key, value]) => {
+        // Capitalize first letter of key
+        const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
+        // Handle objects/arrays in value
+        const displayValue =
+          typeof value === "object" && value !== null
+            ? JSON.stringify(value)
+            : value;
+        return `<div><strong>${formattedKey}:</strong> "${displayValue}"</div>`;
+      });
+      resultContent = `<div class="formatted-result" style="font-family: monospace; line-height: 1.5;">${formattedLines.join(
+        ""
+      )}</div>`;
+    } catch (err) {
+      console.error("Error formatting JSON result:", err);
+      // Fallback to raw JSON
+      resultContent = `<pre class="json-result">${JSON.stringify(
+        parsedJSON,
+        null,
+        2
+      )}</pre>`;
+    }
+  } else {
+    resultContent = `<p>${resultText}</p>`;
+  }
 
   resultDiv.innerHTML = `
     <div class="result-header">
@@ -729,144 +762,7 @@ document.addEventListener("DOMContentLoaded", () => {
         addLog(`Failed to clear results: ${error.message}`, "ERROR");
       }
     });
-
-  // Video selector change handler
-  document.getElementById("video-selector").addEventListener("change", (e) => {
-    const selectedIndex = e.target.selectedIndex;
-    const selectedOption = e.target.options[selectedIndex];
-    const processBtn = document.getElementById("process-video-btn");
-    const videoInfo = document.getElementById("video-info");
-
-    if (selectedOption.value === "") {
-      processBtn.disabled = true;
-      videoInfo.innerHTML = "";
-      return;
-    }
-
-    // Enable process button
-    processBtn.disabled = false;
-
-    // Display video info if available
-    try {
-      const info = JSON.parse(selectedOption.dataset.info || "{}");
-      if (info.duration_seconds !== undefined) {
-        videoInfo.innerHTML = `
-          <strong>${info.filename}</strong><br>
-          Resolution: ${info.width}x${info.height} |
-          FPS: ${info.fps.toFixed(2)} |
-          Duration: ${info.duration_seconds.toFixed(1)}s |
-          Frames: ${info.frame_count}
-        `;
-      }
-    } catch (err) {
-      videoInfo.innerHTML = "";
-    }
-  });
-
-  // Process video button handler
-  document
-    .getElementById("process-video-btn")
-    .addEventListener("click", processVideo);
-
-  // Load video list on page load
-  loadVideoList();
 });
-
-// Load available videos from server
-async function loadVideoList() {
-  try {
-    const response = await fetch("/list-videos");
-    const data = await response.json();
-
-    const selector = document.getElementById("video-selector");
-    selector.innerHTML = "";
-
-    if (data.videos.length === 0) {
-      selector.innerHTML = '<option value="">No videos available</option>';
-      addLog("No pre-loaded videos found", "WARNING");
-      return;
-    }
-
-    // Add default option
-    const defaultOption = document.createElement("option");
-    defaultOption.value = "";
-    defaultOption.textContent = "Select a video...";
-    selector.appendChild(defaultOption);
-
-    // Add videos
-    data.videos.forEach((video) => {
-      const option = document.createElement("option");
-      option.value = video.filename;
-      option.textContent = video.filename;
-      // Store video info in data attribute
-      option.dataset.info = JSON.stringify(video);
-      selector.appendChild(option);
-    });
-
-    addLog(`Loaded ${data.videos.length} pre-loaded videos`, "INFO");
-  } catch (error) {
-    addLog(`Failed to load video list: ${error.message}`, "ERROR");
-    const selector = document.getElementById("video-selector");
-    selector.innerHTML = '<option value="">Error loading videos</option>';
-  }
-}
-
-// Process selected video
-async function processVideo() {
-  const videoName = document.getElementById("video-selector").value;
-  if (!videoName) {
-    showToast("Please select a video", "warning");
-    return;
-  }
-
-  const processBtn = document.getElementById("process-video-btn");
-  const progressDiv = document.getElementById("video-progress");
-  const videoPlayer = document.getElementById("video-player");
-  const videoPlayerContainer = document.getElementById("video-player-container");
-
-  processBtn.disabled = true;
-  progressDiv.innerHTML =
-    '<span style="color: #2196F3;">Processing video...</span>';
-
-  try {
-    addLog(`Processing video: ${videoName}`, "INFO");
-
-    // Load and play the video
-    if (videoPlayer && videoPlayerContainer) {
-      videoPlayer.src = `/static/videos/${videoName}`;
-      videoPlayerContainer.style.display = "block";
-      videoPlayer.load();
-      videoPlayer.play().catch((err) => {
-        console.warn("Autoplay failed:", err);
-        addLog("Video loaded (click play to watch)", "INFO");
-      });
-    }
-
-    const response = await fetch("/process-video", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ video_name: videoName }),
-    });
-
-    const data = await response.json();
-
-    if (data.status === "processing") {
-      const message = `Submitted ${data.batches_created} batches (${data.total_frames} frames) for processing`;
-      progressDiv.innerHTML = `<span style="color: #4CAF50;">${message}</span>`;
-      addLog(message, "INFO");
-      showToast("Video processing started", "success");
-    } else {
-      throw new Error(data.message || "Unknown error");
-    }
-  } catch (error) {
-    const errorMsg = `Failed to process video: ${error.message}`;
-    progressDiv.innerHTML = `<span style="color: #f44336;">${errorMsg}</span>`;
-    addLog(errorMsg, "ERROR");
-    showToast("Video processing failed", "error");
-  } finally {
-    processBtn.disabled = false;
-  }
-}
 
 // Initialize
 addLog("IRIS Client initializing...", "INFO");
