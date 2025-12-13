@@ -1,0 +1,275 @@
+{
+  "model": "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit",
+  "hardware": "v100",
+  "videos": [
+    "src/iris/client/web/static/videos/chuv-test-video.mp4",
+    "src/iris/client/web/static/videos/dataset-test-video.mp4"
+  ],
+  "runs_per_video": 3,
+  "results": [
+    {
+      "buffer_size": 2,
+      "mean_time": 7.069717603425185,
+      "std_time": 0.6891458153887349,
+      "min_time": 5.866356272250414,
+      "max_time": 8.068953964859247,
+      "mean_fps": 0.2857431207083648,
+      "total_runs": 6,
+      "raw_results": [
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 0,
+          "time": 6.9497222900390625,
+          "fps": 0.2877812834142411
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 1,
+          "time": 7.503668822348118,
+          "fps": 0.2665362834302356
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 2,
+          "time": 7.32643972709775,
+          "fps": 0.27298388774055576
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 0,
+          "time": 5.866356272250414,
+          "fps": 0.3409271287290523
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 1,
+          "time": 6.703164543956518,
+          "fps": 0.29836653820517844
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 2,
+          "time": 8.068953964859247,
+          "fps": 0.24786360273092567
+        }
+      ]
+    },
+    {
+      "buffer_size": 4,
+      "mean_time": 8.228565437098345,
+      "std_time": 1.0769812390046898,
+      "min_time": 6.564196579158306,
+      "max_time": 9.299243748188019,
+      "mean_fps": 0.495294556114662,
+      "total_runs": 6,
+      "raw_results": [
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 0,
+          "time": 9.299243748188019,
+          "fps": 0.4301425049514817
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 1,
+          "time": 9.26712479442358,
+          "fps": 0.43163333706339735
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 2,
+          "time": 8.78373546153307,
+          "fps": 0.4553871206068699
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 0,
+          "time": 6.564196579158306,
+          "fps": 0.609366272286882
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 1,
+          "time": 8.488808363676071,
+          "fps": 0.4712086583455164
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 2,
+          "time": 6.968283675611019,
+          "fps": 0.5740294434338248
+        }
+      ]
+    },
+    {
+      "buffer_size": 8,
+      "mean_time": 10.522966219112277,
+      "std_time": 0.614056172789055,
+      "min_time": 9.721514895558357,
+      "max_time": 11.37519046291709,
+      "mean_fps": 0.7627949625788047,
+      "total_runs": 6,
+      "raw_results": [
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 0,
+          "time": 10.465415507555008,
+          "fps": 0.764422587352101
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 1,
+          "time": 11.37519046291709,
+          "fps": 0.7032849274990034
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 2,
+          "time": 11.29570196568966,
+          "fps": 0.7082339835363707
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 0,
+          "time": 10.139245208352804,
+          "fps": 0.7890133669328291
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 1,
+          "time": 9.721514895558357,
+          "fps": 0.8229170130321051
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 2,
+          "time": 10.140729274600744,
+          "fps": 0.7888978971204191
+        }
+      ]
+    },
+    {
+      "buffer_size": 12,
+      "mean_time": 11.486836054672798,
+      "std_time": 1.3508577922077671,
+      "min_time": 10.02298966050148,
+      "max_time": 13.624352794140577,
+      "mean_fps": 1.0584914331935467,
+      "total_runs": 6,
+      "raw_results": [
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 0,
+          "time": 11.201835591346025,
+          "fps": 1.0712530015411579
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 1,
+          "time": 13.624352794140577,
+          "fps": 0.8807757829906487
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 2,
+          "time": 12.993904899805784,
+          "fps": 0.9235099142659848
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 0,
+          "time": 10.02298966050148,
+          "fps": 1.1972475684864274
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 1,
+          "time": 10.748349286615849,
+          "fps": 1.1164505060272598
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 2,
+          "time": 10.32958409562707,
+          "fps": 1.161711825849802
+        }
+      ]
+    },
+    {
+      "buffer_size": 16,
+      "mean_time": 14.104766542712847,
+      "std_time": 1.830419778402178,
+      "min_time": 11.890464879572392,
+      "max_time": 16.160359751433134,
+      "mean_fps": 1.1538796165052767,
+      "total_runs": 6,
+      "raw_results": [
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 0,
+          "time": 16.160359751433134,
+          "fps": 0.9900769689598703
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 1,
+          "time": 15.62635175511241,
+          "fps": 1.023911419040298
+        },
+        {
+          "video": "chuv-test-video.mp4",
+          "run": 2,
+          "time": 15.961734011769295,
+          "fps": 1.0023973578436083
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 0,
+          "time": 12.610550809651613,
+          "fps": 1.2687788377771918
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 1,
+          "time": 11.890464879572392,
+          "fps": 1.3456160177124543
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 2,
+          "time": 12.379138048738241,
+          "fps": 1.2924970976982375
+        }
+      ]
+    },
+    {
+      "buffer_size": 32,
+      "mean_time": 20.886525844534237,
+      "std_time": 0.470261289358031,
+      "min_time": 20.385944116860628,
+      "max_time": 21.516002640128136,
+      "mean_fps": 1.5328586213468587,
+      "total_runs": 3,
+      "raw_results": [
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 0,
+          "time": 21.516002640128136,
+          "fps": 1.487265108450899
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 1,
+          "time": 20.385944116860628,
+          "fps": 1.5697090022695452
+        },
+        {
+          "video": "dataset-test-video.mp4",
+          "run": 2,
+          "time": 20.75763077661395,
+          "fps": 1.541601753320132
+        }
+      ]
+    }
+  ]
+}

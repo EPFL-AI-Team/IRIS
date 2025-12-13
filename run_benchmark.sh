@@ -3,7 +3,7 @@
 # 1. Load System Modules
 # GCC is required for many Python C-extensions (like Pillow/Numpy) to run correctly
 #
-module load gcc
+module load gcc ffmpeg
 module load cuda/12.1.1
 
 # nvidia-smi
@@ -24,10 +24,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 3. Print Connection Instructions
 echo "========================================================"
-echo "IRIS Server is starting on NODE: $(hostname)"
-echo "--------------------------------------------------------"
-echo "To connect, open a NEW terminal on your Mac and run:"
-echo "ssh -N -L 8001:$(hostname):8001 mhamelin@izar.hpc.epfl.ch"
+echo "Benchmark is starting on NODE: $(hostname)"
 echo "========================================================"
 
 # 4. Navigate to Project
@@ -38,4 +35,4 @@ cd ~/projects/IRIS || exit
 # --host 0.0.0.0 : Essential for the tunnel to work
 # --port 8001 : Matches your tunnel config
 echo "Starting uvicorn..."
-uv run python -u -m iris.cli.server 
+uv run python -u -m iris.cli.benchmark
