@@ -2,17 +2,27 @@
 
 # 1. Load System Modules
 # GCC is required for many Python C-extensions (like Pillow/Numpy) to run correctly
+#
 module load gcc
+module load cuda/12.1.1
+
+nvidia-smi
+/home/mhamelin/projects/IRIS/.venv/bin/python -c "
+import torch
+print('PyTorch:', torch.__version__)
+print('CUDA available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('GPU:', torch.cuda.get_device_name(0))
+"
 
 # 2. Set Environment Variables
 # Critical: Keep heavy model weights in /scratch, not /home
 export HF_HOME="/scratch/izar/mhamelin/hf_cache"
 
-# Optional: Helps with "CUDA out of memory" fragmentation if you hit it again
+# Optional: Helps with "CUDA out of memory" fragmentation if hit again with it
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 3. Print Connection Instructions
-# This prints the exact command you need to copy-paste to your Mac
 echo "========================================================"
 echo "IRIS Server is starting on NODE: $(hostname)"
 echo "--------------------------------------------------------"
@@ -28,4 +38,4 @@ cd ~/projects/IRIS || exit
 # --host 0.0.0.0 : Essential for the tunnel to work
 # --port 8001 : Matches your tunnel config
 echo "Starting uvicorn..."
-uv run python -u -m iris.cli.server --host 0.0.0.0 --port 8001
+uv run python -u -m iris.cli.server 
