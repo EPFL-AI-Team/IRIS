@@ -59,6 +59,12 @@ class JobManager:
         Raises:
             RuntimeError: If job submission fails (queue full)
         """
+        if self.state.shutting_down:
+            logger.warning(
+                "Rejecting start_job during shutdown: job_type=%s", config.job_type
+            )
+            raise RuntimeError("Server shutting down")
+
         async with self.lock:
             # Create job using factory
             job = JobFactory.create_job(

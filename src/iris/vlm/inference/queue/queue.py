@@ -174,9 +174,13 @@ class InferenceQueue:
                 # Run the job. The job updates its own internal state.
                 await job.execute()
 
-                # Log queue depth after completion
+                # Log queue depth after completion to show remaining backlog
                 queue_depth = self.queue.qsize()
-                logger.info(f"{worker_name} completed {job}, queue_depth={queue_depth}")
+                remaining_results = self.results.qsize()
+                remaining_jobs = queue_depth
+                logger.info(
+                    f"{worker_name} completed {job}, queue_depth={queue_depth}, remaining_jobs={remaining_jobs}, pending_results={remaining_results}"
+                )
 
             except Exception as e:
                 logger.error(f"{worker_name} failed on {job}: {e}", exc_info=True)

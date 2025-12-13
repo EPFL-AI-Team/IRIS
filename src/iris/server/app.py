@@ -56,17 +56,46 @@ force_shutdown_event = asyncio.Event()
 shutdown_count = 0
 
 
+def _queue_status_snapshot() -> dict[str, int]:
+    """Return a lightweight snapshot of queue/active job counts."""
+    state = get_server_state()
+
+    if state.shutting_down:
+        logger.warning("Rejecting process-video request during shutdown")
+        raise HTTPException(status_code=503, detail="Server shutting down")
+    queue_depth = state.queue.queue.qsize() if state.queue else 0
+    active_jobs = (
+        len(state.job_manager.active_jobs)
+        if state.job_manager and state.job_manager.active_jobs is not None
+        else 0
+    )
+    pending_results = state.queue.results.qsize() if state.queue else 0
+    return {
+        "queue_depth": queue_depth,
+        "active_jobs": active_jobs,
+        "pending_results": pending_results,
+    }
+
+
 def handle_shutdown_signal(signum: int, frame: Any) -> None:
     """Handle SIGINT/SIGTERM for graceful shutdown."""
     global shutdown_count
     shutdown_count += 1
 
+    state = get_server_state()
+    state.shutting_down = True
+
+    # Capture quick stats to help the operator decide whether to wait or force-exit
+    status = _queue_status_snapshot()
+
     if shutdown_count == 1:
         logger.info(
-            "Received signal %s. Initiating graceful shutdown (waiting for in-flight jobs, timeout: %.1fs). "
-            "Send signal again to force shutdown.",
+            "Received %s. Graceful shutdown requested; active_jobs=%d, queue_depth=%d, pending_results=%d. "
+            "Waiting for jobs to finish. Send signal again to force shutdown.",
             signal.Signals(signum).name,
-            config.graceful_shutdown_timeout,
+            status["active_jobs"],
+            status["queue_depth"],
+            status["pending_results"],
         )
         shutdown_event.set()
     elif shutdown_count == 2:
@@ -172,20 +201,24 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
             sys.exit(1)  # Force exit if still running
         else:
+            status_before = _queue_status_snapshot()
             logger.info(
-                "Graceful shutdown - waiting for in-flight jobs (timeout: %.1fs)",
-                config.graceful_shutdown_timeout,
+                "Graceful shutdown - waiting for in-flight jobs (no timeout). "
+                "active_jobs=%d, queue_depth=%d, pending_results=%d",
+                status_before["active_jobs"],
+                status_before["queue_depth"],
+                status_before["pending_results"],
             )
-            try:
-                await asyncio.wait_for(
-                    state.queue.stop(), timeout=config.graceful_shutdown_timeout
-                )
-                logger.info("All in-flight jobs completed successfully")
-            except TimeoutError:
-                logger.warning(
-                    "Graceful shutdown timeout (%.1fs) exceeded. Some jobs may be incomplete.",
-                    config.graceful_shutdown_timeout,
-                )
+
+            await state.queue.stop()
+
+            status_after = _queue_status_snapshot()
+            logger.info(
+                "Queue stopped. Remaining: active_jobs=%d, queue_depth=%d, pending_results=%d",
+                status_after["active_jobs"],
+                status_after["queue_depth"],
+                status_after["pending_results"],
+            )
     logger.info("Server stopped.")
 
 
@@ -213,6 +246,12 @@ async def start_job(config: JobConfig) -> dict[str, Any]:
         Dictionary with job_id, status, job_type, and config
     """
     state = get_server_state()
+
+    if state.shutting_down:
+        logger.warning(
+            "Rejecting start_job request during shutdown: job_type=%s", config.job_type
+        )
+        raise HTTPException(status_code=503, detail="Server shutting down")
 
     try:
         job_id = await state.job_manager.start_job(config)
@@ -414,6 +453,13 @@ async def process_video_endpoint(request: dict) -> dict:
 
         batch_job_id = f"{job_id_base}_batch_{batches_created}"
 
+        if state.shutting_down:
+            logger.info(
+                "Shutdown in progress; skipping remaining video batches after %d created",
+                batches_created,
+            )
+            break
+
         # Create VideoJob
         batch_job = VideoJob(
             job_id=batch_job_id,
@@ -610,6 +656,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     # Set result callback
                     batch_job.result_callback = sync_result_callback
 
+                    if state.shutting_down:
+                        logger.info(
+                            "Shutdown in progress; skipping batch submission %s",
+                            batch_job_id,
+                        )
+                        break
+
                     # Submit directly to queue
                     await state.queue.submit(batch_job)
 
@@ -651,7 +704,14 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     client_fps=client_fps,
                 )
                 batch_job.result_callback = sync_result_callback
-                await state.queue.submit(batch_job)
+
+                if state.shutting_down:
+                    logger.info(
+                        "Shutdown in progress; skipping partial batch submission %s",
+                        batch_job_id,
+                    )
+                else:
+                    await state.queue.submit(batch_job)
 
                 queue_depth = state.queue.queue.qsize()
                 logger.info(f"Submitted {batch_job_id}, queue_depth={queue_depth}")

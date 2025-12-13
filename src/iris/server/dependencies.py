@@ -19,6 +19,7 @@ class ServerState:
         self.model_loaded = False
         self.metrics: MetricsCollector | None = None
         self.job_manager: JobManager | None = None
+        self.shutting_down: bool = False
 
 
 # Singleton
