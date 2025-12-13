@@ -1,16 +1,20 @@
 import asyncio
 import base64
+import inspect
 import logging
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import cv2
+import numpy as np
 import torch
 from PIL import Image
-from qwen_vl_utils import process_vision_info
 
 if TYPE_CHECKING:
     from iris.vlm.inference.queue.queue import InferenceQueue
@@ -289,6 +293,7 @@ class VideoJob(Job):
         self.executor = executor
         self.queue = queue
         self.prompt = prompt
+        self._process_vision_info = None  # Lazy-loaded when Qwen is detected
 
         # Configuration (kept for status reporting)
         self.buffer_size = buffer_size
@@ -307,6 +312,17 @@ class VideoJob(Job):
         self.result_callback: Any = (
             None  # Callable[[dict], None] - for real-time result broadcasting
         )
+
+        # If this job is for a Qwen model, attempt to load qwen_vl_utils once up front
+        if self._is_qwen_model():
+            try:
+                from qwen_vl_utils import process_vision_info
+
+                self._process_vision_info = process_vision_info
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "qwen_vl_utils (and its torchvision dependency) is required when using Qwen models."
+                ) from exc
 
     async def execute(self) -> None:
         """One-shot execution: process the buffered frames and complete.
@@ -385,46 +401,55 @@ class VideoJob(Job):
             self.result_callback(result_data)
 
     def _sync_inference(self, frames: list[Image.Image], prompt: str) -> str:
-        """Blocking GPU inference (runs in ThreadPoolExecutor).
-
-        Processes frames as a video sequence with temporal understanding.
-        Qwen2.5-VL uses sample_fps to understand frame timing.
-        """
+        """Blocking GPU inference (runs in ThreadPoolExecutor)."""
         if not frames:
             return "No frames to process"
 
-        frame_count = len(frames)
-        logger.info(
-            f"WORKER: VideoJob inference for {self.job_id} ({frame_count} frames)"
-        )
+        # Simple dispatch based on model type
+        if self._is_qwen_model():
+            return self._inference_qwen(frames, prompt)
+        else:
+            return self._inference_smolvlm(frames, prompt)
+
+    def _is_qwen_model(self) -> bool:
+        """Simple check to see if we are using a Qwen model."""
+        # Check config type or model class name
+        model_type = getattr(self.model.config, "model_type", "").lower()
+        return "qwen" in model_type
+
+    def _inference_qwen(self, frames: list[Image.Image], prompt: str) -> str:
+        """Original Qwen 2.5 VL logic."""
+        logger.info(f"WORKER: Running Qwen inference on {len(frames)} frames")
+
+        if not self._process_vision_info:
+            raise ModuleNotFoundError(
+                "qwen_vl_utils (and its torchvision dependency) is required when using Qwen models."
+            )
 
         with torch.no_grad():
-            # Format as video with temporal information
             messages = [
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "video",
-                            "video": frames,  # List[PIL.Image]
-                            "sample_fps": self.client_fps,  # Frame rate
+                            "video": frames,
+                            "sample_fps": self.client_fps,
                         },
                         {"type": "text", "text": prompt},
                     ],
                 }
             ]
 
-            # Extract vision inputs - handles video properly (ignore audio output)
-            image_inputs, video_inputs, video_kwargs = process_vision_info(
+            # Qwen-specific utils
+            image_inputs, video_inputs, video_kwargs = self._process_vision_info(
                 messages, return_video_kwargs=True
             )
 
-            # Apply chat template
             text = self.processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
 
-            # Process inputs
             inputs = self.processor(
                 text=[text],
                 images=image_inputs,
@@ -433,14 +458,81 @@ class VideoJob(Job):
                 **(video_kwargs or {}),
             ).to(self.model.device)
 
-            # Generate
             outputs = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
-
-            # Decode only new tokens
             generated_ids = outputs[0][len(inputs.input_ids[0]) :]
             result = self.processor.decode(generated_ids, skip_special_tokens=True)
 
-        logger.info(f"WORKER: Finished VideoJob inference for {self.job_id}")
+        return result
+
+    def _inference_smolvlm(self, frames: list[Image.Image], prompt: str) -> str:
+        """New SmolVLM2 logic (V100 friendly)."""
+        logger.info(f"WORKER: Running SmolVLM inference on {len(frames)} frames")
+
+        if not frames:
+            return "No frames to process"
+
+        temp_video_path = None
+
+        try:
+            # Create temporary mp4 file (needed for smolvlm)
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                temp_video_path = tmp.name
+
+            # Write frames to video (RGB PIL -> BGR OpenCV)
+            first = np.array(frames[0].convert("RGB"))
+            height, width = first.shape[:2]
+
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            writer = cv2.VideoWriter(
+                temp_video_path, fourcc, self.client_fps, (width, height)
+            )
+
+            for frame in frames:
+                arr = np.array(frame.convert("RGB"))
+                bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                writer.write(bgr)
+
+            writer.release()
+
+            # SmolVLM2 messages with path to tmp video
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "video",
+                            "path": temp_video_path,
+                            "fps": self.client_fps,
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            with torch.no_grad():
+                inputs = self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                ).to(self.model.device)
+
+                # Generate
+                outputs = self.model.generate(
+                    **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
+                )
+
+                # Decode
+                generated_ids = outputs[0][len(inputs.input_ids[0]) :]
+                result = self.processor.decode(generated_ids, skip_special_tokens=True)
+
+        finally:
+            if temp_video_path:
+                try:
+                    Path(temp_video_path).unlink(missing_ok=True)
+                except Exception:
+                    logger.warning("Could not delete temp video %s", temp_video_path)
         return result
 
     def _send_log(self, message: str) -> None:
@@ -452,7 +544,6 @@ class VideoJob(Job):
                 "message": message,
                 "timestamp": time.time(),
             })
-
 
     def get_status_dict(self) -> dict:
         """Return custom status information."""
