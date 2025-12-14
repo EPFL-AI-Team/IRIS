@@ -2,9 +2,9 @@
 # Override via environment variables: IRIS_SERVER__PORT=8002
 
 server:
-  model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+  # model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
   # model_id: "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"
-  # model_id: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
+  model_id: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
   vlm_hardware: "v100"
   # vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.)
   max_queue_size: 10

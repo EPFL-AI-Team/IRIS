@@ -6,6 +6,10 @@ logs/**/*
 
 benchmark*.json
 
+inference_results.txt
+sbatch_scripts/*.sbatch
+
+
 .claude/
 
 # Created by https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
@@ -685,4 +689,3 @@ tags
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
-inference_results.txt

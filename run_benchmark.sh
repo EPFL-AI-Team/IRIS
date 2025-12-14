@@ -30,9 +30,10 @@ echo "========================================================"
 # 4. Navigate to Project
 cd ~/projects/IRIS || exit
 
+export CUDA_VISIBLE_DEVICES=0
+nvidia-smi
+
 # 5. Run the Server
 # -u : Unbuffered mode (so logs appear instantly, not in chunks)
-# --host 0.0.0.0 : Essential for the tunnel to work
-# --port 8001 : Matches your tunnel config
-echo "Starting uvicorn..."
+echo "Running benchmark..."
 uv run python -u -m iris.cli.benchmark

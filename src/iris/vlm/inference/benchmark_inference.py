@@ -94,13 +94,14 @@ def run_qwen_inference(
             messages, tokenize=False, add_generation_prompt=True
         )
         
+        model_dtype = getattr(model, "dtype", None)
         inputs = processor(
             text=[text],
             images=image_inputs,
             videos=video_inputs,
             return_tensors="pt",
             **(video_kwargs or {}),
-        ).to(model.device)
+        ).to(device=model.device, dtype=model_dtype)
         
         outputs = model.generate(**inputs, max_new_tokens=max_new_tokens)
         generated_ids = outputs[0][len(inputs.input_ids[0]):]
@@ -117,60 +118,36 @@ def run_smolvlm_inference(
     max_new_tokens: int = 128,
     fps: float = 5.0,
 ) -> str:
-    """SmolVLM inference logic (from your VideoJob)."""
-    import tempfile
+    """SmolVLM inference with VideoMetadata."""
+    from transformers.video_utils import VideoMetadata
     
-    temp_video_path = None
+    # Create metadata for our pre-sampled frames
+    video_metadata = VideoMetadata(
+        total_num_frames=len(frames),
+        fps=fps,
+        duration=len(frames) / fps
+    )
     
-    try:
-        # Create temp video file
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-            temp_video_path = tmp.name
-        
-        # Write frames to video
-        first = np.array(frames[0].convert("RGB"))
-        height, width = first.shape[:2]
-        
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(temp_video_path, fourcc, fps, (width, height))
-        
-        for frame in frames:
-            arr = np.array(frame.convert("RGB"))
-            bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-            writer.write(bgr)
-        
-        writer.release()
-        
-        # SmolVLM inference
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "video", "path": temp_video_path, "fps": fps},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
-        
-        with torch.no_grad():
-            inputs = processor.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
-                return_tensors="pt",
-            ).to(model.device)
-            
-            outputs = model.generate(
-                **inputs, max_new_tokens=max_new_tokens, do_sample=False
-            )
-            
-            generated_ids = outputs[0][len(inputs.input_ids[0]):]
-            result = processor.decode(generated_ids, skip_special_tokens=True)
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "video", "video": frames},
+            {"type": "text", "text": prompt},
+        ],
+    }]
     
-    finally:
-        if temp_video_path:
-            Path(temp_video_path).unlink(missing_ok=True)
+    with torch.no_grad():
+        inputs = processor.apply_chat_template(
+            messages,
+            video_metadata=[video_metadata],  # Add metadata
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(device=model.device, dtype=torch.float16)
+        
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        result = processor.batch_decode(outputs, skip_special_tokens=True)[0]
     
     return result
 

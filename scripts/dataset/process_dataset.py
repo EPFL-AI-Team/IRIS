@@ -9,12 +9,15 @@ from PIL import Image
 from tqdm import tqdm
 
 # READ-ONLY input data (The slow, big storage)
-# SOURCE_BASE = Path("/work/team-ai/IRIS_vlm")
-SOURCE_BASE = Path("/Users/marcushamelink/Developer/ml/IRIS-semester-project/data")
+SOURCE_BASE = Path("/work/team-ai/IRIS_vlm")
+# SOURCE_BASE = Path("/Users/marcushamelink/Developer/ml/IRIS-semester-project/data")
 
 # READ-WRITE output (The fast scratch space)
+# SCRATCH_BASE = Path(
+#     "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/dataset_gen_output"
+# )
 SCRATCH_BASE = Path(
-    "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/dataset_gen_output"
+    "/scratch/izar/mhamelin/finebio_data"
 )
 
 PATHS = {
@@ -27,7 +30,6 @@ PATHS = {
 }
 
 MAX_FRAMES = 16  # Optimal for Qwen 3B
-
 
 def fill_task_column(details_df: pd.DataFrame, tasks_df: pd.DataFrame) -> pd.DataFrame:
     """Fill task column for all rows based on time overlap with task annotations"""
@@ -240,9 +242,6 @@ def main() -> None:
 
     print("Done!")
 
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
