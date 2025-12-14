@@ -2,9 +2,10 @@
 # For inference use on IZAR cluster
 
 model:
-  dtype: "float16"  # V100 doesn't support bfloat16
+  device: "cuda:0"  # V100 doesn't support bfloat16
   attn_implementation: "sdpa"  # V100 doesn't support flash_attention_2
   low_cpu_mem_usage: true
+  dtype: "float16"
 
 quantization:
   load_in_8bit: false  # V100 has enough VRAM for float16
