@@ -8,7 +8,7 @@ from iris.vlm.trainer import VLMTrainer
 logger = setup_logger(__name__)
 
 
-def main():
+def main() -> None:
     """Train VLM model with config-driven setup."""
     parser = argparse.ArgumentParser(description="Train VLM model using Unsloth")
     parser.add_argument(
