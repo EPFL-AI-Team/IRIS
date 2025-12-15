@@ -1,40 +1,42 @@
+# Base training configuration for Qwen2.5-VL-3B
+# This config is for your mini test run
+
 model:
-  name: "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"
-  load_in_4bit: true
-  max_seq_length: 2048
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"  # HuggingFace model ID
+  max_seq_length: 2048                  # Max sequence length (not enforced due to max_length=None)
 
 lora:
-  r: 16
-  alpha: 32
-  dropout: 0
-  finetune_vision_layers: false
-  finetune_language_layers: true
-  finetune_attention_modules: true
-  finetune_mlp_modules: true
+  r: 16                                 # Rank fo LoRA matrices, controls model capacity and memory.
+  alpha: 32                             # Scaling factor for LoRA updates (alpha/r ratio is around 2)
+  dropout: 0.05                         # LoRA dropout for regularization
+  finetune_attention_modules: true     # Apply LoRA to q_proj, k_proj, v_proj, o_proj
+  finetune_mlp_modules: true           # Apply LoRA to gate_proj, up_proj, down_proj
 
 data:
+  # Paths relative to project root or absolute
   train_path: "/scratch/izar/mhamelin/finebio_data/train_mini.jsonl"
   val_path: "/scratch/izar/mhamelin/finebio_data/val_mini.jsonl"
 
 training:
-  batch_size: 4                      # Lower for 3B + 8 frames
-  gradient_accumulation_steps: 8     # Effective batch = 32
-  warmup_steps: 10
-  max_steps: 100                    # ~1 epoch on 40k samples
-  learning_rate: 2.0e-4              # Standard for LoRA
+  # Mini test run settings
+  batch_size: 4                         # Per-GPU batch size per forward pass
+  gradient_accumulation_steps: 8        # Number of steps to accumulate gradients before optimizer update. Effective batch size = 4 * 8 = 32
+  warmup_steps: 10                      # LR warmup steps
+  max_steps: 100                        # Total training steps (~1 epoch on 40k samples)
+  learning_rate: 2.0e-4                 # Standard LoRA learning rate
   output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_mini_test"
-  save_steps: 50
-  logging_steps: 10
-  weight_decay: 0.01 
+  save_steps: 50                        # Save checkpoint every 50 steps
+  logging_steps: 10                     # Log metrics every 10 steps
+  weight_decay: 0.01                    # L2 regularization
 
-
-# Full training changes
-# data:
-#   train_path: "/scratch/izar/mhamelin/finebio_data/train.jsonl"
-#   val_path: "/scratch/izar/mhamelin/finebio_data/val.jsonl"
-
+# To switch to full training, uncomment below and comment out above training section:
 # training:
-#   max_steps: 1500
+#   batch_size: 4
+#   gradient_accumulation_steps: 8
 #   warmup_steps: 100
+#   max_steps: 1500                     # ~5 epochs on 10k samples
+#   learning_rate: 2.0e-4
 #   output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_finebio_full"
-
+#   save_steps: 300
+#   logging_steps: 10
+#   weight_decay: 0.01
