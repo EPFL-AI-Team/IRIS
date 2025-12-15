@@ -16,17 +16,19 @@ data:
   # Paths relative to project root or absolute
   train_path: "/scratch/izar/mhamelin/finebio_data/train_mini.jsonl"
   val_path: "/scratch/izar/mhamelin/finebio_data/val_mini.jsonl"
+  max_frames: 8                     # Subsample to 8 frames per video
+  max_pixels: 307200                # 640x480 = 307200 pixels. Hard limit for V100 memory.
 
 training:
-  # Mini test run settings
-  batch_size: 4                         # Per-GPU batch size per forward pass
-  gradient_accumulation_steps: 8        # Number of steps to accumulate gradients before optimizer update. Effective batch size = 4 * 8 = 32
+  # V100-optimized settings for sustainable training
+  batch_size: 1                         # CRITICAL: Reduce to 1 for V100
+  gradient_accumulation_steps: 32       # Increase to 32 (Effective Batch Size = 1 * 32 = 32)
   warmup_steps: 10                      # LR warmup steps
   max_steps: 100                        # Total training steps (~1 epoch on 40k samples)
   learning_rate: 2.0e-4                 # Standard LoRA learning rate
   output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_mini_test"
   save_steps: 50                        # Save checkpoint every 50 steps
-  logging_steps: 10                     # Log metrics every 10 steps
+  logging_steps: 1                      # Log metrics every step for debugging
   weight_decay: 0.01                    # L2 regularization
 
 # To switch to full training, uncomment below and comment out above training section:

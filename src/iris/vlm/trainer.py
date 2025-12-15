@@ -17,6 +17,7 @@ from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model
 
 from iris.utils.logging import setup_logger
 from iris.vlm.config import load_config
+from iris.vlm.data import QwenDataCollator
 
 logger = setup_logger(__name__)
 
@@ -93,19 +94,30 @@ class VLMTrainer:
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_compute_dtype=torch.float16,
             )
             
             # 2. Load model
             model_name = self.cfg["model"]["name"]
+            # Read max_frames and max_pixels from config
+            max_frames = self.cfg["data"].get("max_frames")
+            max_pixels = self.cfg["data"].get("max_pixels")
+            
+            if max_pixels:
+                logger.info(f"Resolution limit: {max_pixels} pixels (e.g., {int((max_pixels/1.5)**0.5)}x{int((max_pixels*1.5)**0.5)})")
+            
             logger.info(f"Loading model: {model_name}")
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name,
                 quantization_config=bnb_config,
                 device_map="auto",
-                torch_dtype=torch.bfloat16,
+                torch_dtype=torch.float16,
             )
-            processor = AutoProcessor.from_pretrained(model_name)
+            processor = AutoProcessor.from_pretrained(
+                model_name,
+                min_pixels=256*28*28,
+                max_pixels=max_pixels    
+            )
             logger.info(f"Model loaded. Memory: {torch.cuda.memory_allocated()/1e9:.2f}GB")
             
             # 3. Prepare for training
@@ -175,15 +187,21 @@ class VLMTrainer:
             logger.info(f"View with: uv run tensorboard --logdir={logging_dir}")
             
             # 7. Data collator for VLMs
-            logger.info("Setting up data collator for VLMs")
-            data_collator = DataCollatorForSeq2Seq(
-                processor,
-                return_tensors="pt",
-                padding=True,
+            logger.info("Setting up Qwen-specific data collator")
+            
+            data_collator = QwenDataCollator(
+                processor=processor,
+                max_frames=max_frames,
+                max_pixels=max_pixels,
             )
             
             # 8. Training args
             logger.info("Configuring training arguments")
+            
+            # Determine fp16/bf16 based on hardware config or defaults
+            use_fp16 = self.cfg["training"].get("fp16", False)
+            use_bf16 = self.cfg["training"].get("bf16", False)
+            
             training_args = TrainingArguments(
                 output_dir=train_cfg["output_dir"],
                 max_steps=train_cfg["max_steps"],
@@ -192,9 +210,10 @@ class VLMTrainer:
                 learning_rate=train_cfg["learning_rate"],
                 warmup_steps=train_cfg["warmup_steps"],
                 lr_scheduler_type="cosine",
-                optim="adamw_8bit",
+                optim="paged_adamw_8bit",
                 weight_decay=train_cfg.get("weight_decay", 0.01),
-                bf16=True,
+                fp16=use_fp16,  # Should be True for V100
+                bf16=use_bf16,  # Should be False for V100
                 gradient_checkpointing=True,
                 logging_dir=logging_dir,
                 logging_steps=train_cfg["logging_steps"],
