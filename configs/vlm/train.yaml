@@ -1,44 +1,42 @@
-# Base training configuration for Qwen2.5-VL-3B
-# This config is for your mini test run
-
 model:
-  name: "Qwen/Qwen2.5-VL-3B-Instruct"  # HuggingFace model ID
-  max_seq_length: 2048                  # Max sequence length (not enforced due to max_length=None)
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"
+  max_seq_length: 2048
+  # V100 Specifics
+  dtype: "float16"
 
 lora:
-  r: 16                                 # Rank fo LoRA matrices, controls model capacity and memory.
-  alpha: 32                             # Scaling factor for LoRA updates (alpha/r ratio is around 2)
-  dropout: 0.05                         # LoRA dropout for regularization
-  finetune_attention_modules: true     # Apply LoRA to q_proj, k_proj, v_proj, o_proj
-  finetune_mlp_modules: true           # Apply LoRA to gate_proj, up_proj, down_proj
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
 
 data:
-  # Paths relative to project root or absolute
   train_path: "/scratch/izar/mhamelin/finebio_data/train_mini.jsonl"
   val_path: "/scratch/izar/mhamelin/finebio_data/val_mini.jsonl"
-  max_frames: 8                     # Subsample to 8 frames per video
-  max_pixels: 307200                # 640x480 = 307200 pixels. Hard limit for V100 memory.
+  # Memory Guards
+  max_frames: 8           # 8 frames is a good balance for temporal context
+  max_pixels: 307200      # 640x480. Strictly prevents V100 OOM.
 
 training:
-  # V100-optimized settings for sustainable training
-  batch_size: 1                         # CRITICAL: Reduce to 1 for V100
-  gradient_accumulation_steps: 32       # Increase to 32 (Effective Batch Size = 1 * 32 = 32)
-  warmup_steps: 10                      # LR warmup steps
-  max_steps: 100                        # Total training steps (~1 epoch on 40k samples)
-  learning_rate: 2.0e-4                 # Standard LoRA learning rate
-  output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_mini_test"
-  save_steps: 50                        # Save checkpoint every 50 steps
-  logging_steps: 1                      # Log metrics every step for debugging
-  weight_decay: 0.01                    # L2 regularization
+  # 1. Memory Settings
+  batch_size: 1                   # MUST be 1 on V100 with video
+  gradient_accumulation_steps: 32 # 1 * 32 = 32 Effective Batch Size
+  
+  # 2. V100 Precision (Volta GPU)
+  fp16: true                      # V100 is fast with fp16
+  bf16: false                     # V100 does NOT support bf16 (Ampere+ only)
+  optim: "paged_adamw_8bit"       # Paged optimizer saves extra memory
+  
+  # 3. Stability Settings
+  learning_rate: 5.0e-5           # Lower LR to prevent "zig-zag" loss
+  warmup_steps: 20                # Gentle start
+  max_grad_norm: 0.3              # Clip gradient spikes
+  weight_decay: 0.01
 
-# To switch to full training, uncomment below and comment out above training section:
-# training:
-#   batch_size: 4
-#   gradient_accumulation_steps: 8
-#   warmup_steps: 100
-#   max_steps: 1500                     # ~5 epochs on 10k samples
-#   learning_rate: 2.0e-4
-#   output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_finebio_full"
-#   save_steps: 300
-#   logging_steps: 10
-#   weight_decay: 0.01
+  # 4. Duration & Logging
+  max_steps: 60                   # Adjust based on dataset size (Target ~3-5 epochs)
+  output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_v100_stable"
+  save_steps: 20                  # Save more frequently for short runs
+  logging_steps: 1
+  gradient_checkpointing: true    # Trades compute for VRAM (Required)

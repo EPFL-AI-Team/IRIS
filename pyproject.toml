@@ -43,10 +43,10 @@ server = [
     "datasets>=2.19.0",             # Data loading
     "num2words>=0.5.14",
     "tensorboard>=2.14.0",
-
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
     "torchcodec>=0.7.0 ; sys_platform == 'darwin'",
+    "scikit-learn>=1.8.0",
 ]
 
 [project.scripts]
