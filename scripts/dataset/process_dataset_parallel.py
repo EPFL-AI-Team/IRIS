@@ -1,22 +1,24 @@
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any
+
 import cv2
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import os
 
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
 
 # READ-ONLY input data
-SOURCE_BASE = Path('/work/team-ai/IRIS_vlm')
+SOURCE_BASE = Path("/work/team-ai/IRIS_vlm")
 
 # READ-WRITE output (Scratch)
-SCRATCH_BASE = Path('/scratch/izar/mhamelin/finebio_data')
+SCRATCH_BASE = Path("/scratch/izar/mhamelin/finebio_data")
 
 PATHS = {
     "videos": SOURCE_BASE / "finebio/videos/w640",
@@ -31,7 +33,10 @@ MAX_FRAMES = 16
 # 2. WORKER FUNCTION
 # ==========================================
 
-def process_single_video(video_id, group_df, video_dir, output_dir):
+
+def process_single_video(
+    video_id: str, group_df: pd.DataFrame, video_dir: Path, output_dir: Path
+) -> list[Any]:
     """
     Processes segments for ONE video. 
     SKIPS video reading if frames already exist on disk.
@@ -154,18 +159,20 @@ def process_single_video(video_id, group_df, video_dir, output_dir):
         
     return jsonl_entries
 
+
 # ==========================================
 # 3. MAIN (Orchestrator)
 # ==========================================
 
-def fill_task_column(details_df, tasks_df):
+
+def fill_task_column(details_df: pd.DataFrame, tasks_df: pd.DataFrame) -> pd.DataFrame:
     """Map tasks to actions based on timestamps."""
     result_df = details_df.copy()
     for _, task_row in tasks_df.iterrows():
         mask = (
-            (result_df["start_sec"] >= task_row["start_sec"]) &
-            (result_df["end_sec"] <= task_row["end_sec"]) &
-            (result_df["task"].isna())
+            (result_df["start_sec"] >= task_row["start_sec"])
+            & (result_df["end_sec"] <= task_row["end_sec"])
+            & (result_df["task"].isna())
         )
         result_df.loc[mask, "task"] = task_row["task"]
     return result_df
@@ -205,16 +212,16 @@ def main():
     print("(Existing frames will be reused to speed up generation)")
 
     all_jsonl_lines = []
-    
+
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_to_video = {
             executor.submit(
-                process_single_video, 
-                vid_id, 
-                group, 
-                PATHS["videos"], 
-                PATHS["output_frames"]
-            ): vid_id 
+                process_single_video,
+                vid_id,
+                group,
+                PATHS["videos"],
+                PATHS["output_frames"],
+            ): vid_id
             for vid_id, group in grouped
         }
         
@@ -226,10 +233,11 @@ def main():
                 print(f"Worker failed: {e}")
 
     print(f"Saving {len(all_jsonl_lines)} samples to {PATHS['manifest_file']}...")
-    with open(PATHS['manifest_file'], 'w') as f:
-        f.write('\n'.join(all_jsonl_lines))
-        
+    with open(PATHS["manifest_file"], "w") as f:
+        f.write("\n".join(all_jsonl_lines))
+
     print("Done!")
+
 
 if __name__ == "__main__":
     main()

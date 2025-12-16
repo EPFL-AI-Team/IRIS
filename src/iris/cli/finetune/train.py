@@ -8,7 +8,7 @@ from iris.vlm.trainer import VLMTrainer
 logger = setup_logger(__name__)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="train", help="Config name")
     parser.add_argument("--hardware", default=None, help="Hardware profile")
