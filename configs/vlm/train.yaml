@@ -1,19 +1,42 @@
-training:
-  batch_size: 8
-  learning_rate: 5e-5
-
 model:
-  model_id: "qwen2.5-7b"
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"
+  max_seq_length: 2048
+  # V100 Specifics
+  dtype: "float16"
 
-# data:
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
 
-logging:
-  log_level: "INFO"
+data:
+  train_path: "/scratch/izar/mhamelin/finebio_data/train_mini.jsonl"
+  val_path: "/scratch/izar/mhamelin/finebio_data/val_mini.jsonl"
+  # Memory Guards
+  max_frames: 8           # 8 frames is a good balance for temporal context
+  max_pixels: 307200      # 640x480. Strictly prevents V100 OOM.
 
-# checkpoint:
-#   save_steps: 1000
-#   save_total_limit: 3
-#   output_dir: "experiments"
+training:
+  # 1. Memory Settings
+  batch_size: 1                   # MUST be 1 on V100 with video
+  gradient_accumulation_steps: 32 # 1 * 32 = 32 Effective Batch Size
+  
+  # 2. V100 Precision (Volta GPU)
+  fp16: true                      # V100 is fast with fp16
+  bf16: false                     # V100 does NOT support bf16 (Ampere+ only)
+  optim: "paged_adamw_8bit"       # Paged optimizer saves extra memory
+  
+  # 3. Stability Settings
+  learning_rate: 5.0e-5           # Lower LR to prevent "zig-zag" loss
+  warmup_steps: 20                # Gentle start
+  max_grad_norm: 0.3              # Clip gradient spikes
+  weight_decay: 0.01
 
-peft:
-  use_peft: false
+  # 4. Duration & Logging
+  max_steps: 60                   # Adjust based on dataset size (Target ~3-5 epochs)
+  output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_v100_stable"
+  save_steps: 20                  # Save more frequently for short runs
+  logging_steps: 1
+  gradient_checkpointing: true    # Trades compute for VRAM (Required)

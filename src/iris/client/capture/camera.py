@@ -12,12 +12,16 @@ class CameraCapture:
     """
 
     def __init__(
-        self, camera_index: int = 0, width: int = 640, height: int = 480, fps: int = 30
+        self,
+        camera_index: int = 0,
+        width: int = 640,
+        height: int = 480,
+        fps: float = 30.0,
     ):
         self.camera_index = camera_index
         self.width = width
         self.height = height
-        self.fps = fps
+        self.fps = float(fps)
         self.cap = None
 
     def start(self) -> bool:
@@ -33,7 +37,7 @@ class CameraCapture:
         # Set properties - pylint: disable=no-member
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        self.cap.set(cv2.CAP_PROP_FPS, self.fps)
+        self.cap.set(cv2.CAP_PROP_FPS, int(self.fps))
         return True
 
     def stop(self) -> None:
@@ -95,7 +99,9 @@ class CameraCapture:
 
         # Crop and resize frame if it doesn't match configured dimensions
         if frame.shape[1] != self.width or frame.shape[0] != self.height:
-            frame = self._crop_to_aspect_ratio(frame)  # Crop first to preserve aspect ratio
+            frame = self._crop_to_aspect_ratio(
+                frame
+            )  # Crop first to preserve aspect ratio
             frame = cv2.resize(frame, (self.width, self.height))  # Then resize
 
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]  # pylint: disable=no-member

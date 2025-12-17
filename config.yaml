@@ -2,28 +2,31 @@
 # Override via environment variables: IRIS_SERVER__PORT=8002
 
 server:
-  model_id: "unsloth/Qwen2-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
-  vlm_hardware: null      # Optional: Hardware profile (v100, mac, etc.)
+  # model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+  # model_id: "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"
+  model_id: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
+  vlm_hardware: "v100"
+  # vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.)
   max_queue_size: 10
   num_workers: 1
-  host: "0.0.0.0"
   port: 8001
   graceful_shutdown_timeout: 30.0
   enable_log_streaming: true
   log_streaming_min_level: "INFO"
   enable_metrics: true
-
 jobs:
   video:
-    trigger_mode: "periodic"  # "periodic" | "manual" | "disabled"
     buffer_size: 8
     overlap_frames: 4
+    default_fps: 5
+    max_new_tokens: 128
+    prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity), sample_id (visible sample/ID). Use \"none\" if not visible. Respond with JSON only—no markdown, no prose, no code fences."
 
 client:
   video:
     width: 640
     height: 480
-    fps: 10
+    capture_fps: 5
     jpeg_quality: 80
     camera_index: 0
   server:

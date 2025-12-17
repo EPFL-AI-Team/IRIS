@@ -1,20 +1,24 @@
 import asyncio
 import base64
+import inspect
 import logging
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import cv2
+import numpy as np
 import torch
 from PIL import Image
 
 if TYPE_CHECKING:
     from iris.vlm.inference.queue.queue import InferenceQueue
 
-from iris.server.jobs.types import TriggerMode
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ class Job(ABC):
         self.status = JobStatus.PENDING
         self.submitted_at = time.time()
         self.started_at: float | None = None
-        self.completed_at: float | None
+        self.completed_at: float | None = None
         self.result: Any = None
         self.error: str | None = None
         self.processing_time: float = 0.0
@@ -261,14 +265,11 @@ class SingleFrameJob(Job):
 
 
 class VideoJob(Job):
-    """Simplified video job: buffer frames + batch inference.
+    """One-shot batch processor for video inference.
 
-    Accepts incoming frames, buffers them, and triggers inference based on mode:
-    - PERIODIC: Auto-trigger when buffer reaches buffer_size
-    - MANUAL: Trigger only via API call
-    - DISABLED: Buffer but never process
-
-    Uses overlap_frames for temporal continuity between inferences.
+    Processes a pre-buffered batch of frames through VLM inference and completes.
+    Each VideoJob handles one batch (typically 8 frames) and then exits.
+    Frame buffering is handled by the WebSocket handler, not by VideoJob.
     """
 
     def __init__(
@@ -278,10 +279,13 @@ class VideoJob(Job):
         processor: Any,
         executor: ThreadPoolExecutor,
         queue: "InferenceQueue",
-        prompt: str = "Describe what you see in the video.",
-        trigger_mode: TriggerMode | None = None,
+        frames: list[Image.Image],
+        prompt: str = """<video>\nAnalyze this video segment of a biological experiment. Output a valid JSON object with the following keys:\n- action: The specific movement (e.g., streaking, inspecting).\n- tool: The active instrument.\n- target: The object being acted upon.\n- context: The protocol step.\n- hand: Active hand (left/right).\n- sample_id: Any handwritten text or labels visible on the object (or "none").\n- notes: Visual details like agar color or colony presence.""",
         buffer_size: int = 8,
         overlap_frames: int = 4,
+        default_fps: float = 5.0,
+        max_new_tokens: int = 128,
+        client_fps: float | None = None,
     ):
         super().__init__(job_id)
         self.model = model
@@ -289,87 +293,53 @@ class VideoJob(Job):
         self.executor = executor
         self.queue = queue
         self.prompt = prompt
+        self._process_vision_info = None  # Lazy-loaded when Qwen is detected
 
-        # Set default trigger mode if not provided
-        if trigger_mode is None:
-            trigger_mode = TriggerMode.PERIODIC
-        self.trigger_mode = trigger_mode
-
+        # Configuration (kept for status reporting)
         self.buffer_size = buffer_size
         self.overlap_frames = overlap_frames
+        self.default_fps = float(default_fps)
+        self.client_fps = (
+            float(client_fps) if client_fps is not None else self.default_fps
+        )
+        self.max_new_tokens = max_new_tokens
 
-        # Minimal state
-        self.frame_buffer: list[Image.Image] = []
-        self.stop_event = asyncio.Event()
+        # Pre-buffered frames to process (passed in at construction)
+        self.frame_buffer: list[Image.Image] = frames.copy() if frames else []
+
+        # Callbacks
         self.log_callback: Any = None  # Callable[[dict], None]
-        self.result_callback: Any = None  # Callable[[dict], None] - for real-time result broadcasting
+        self.result_callback: Any = (
+            None  # Callable[[dict], None] - for real-time result broadcasting
+        )
 
-    def accepts_frames(self) -> bool:
-        """This job accepts incoming frames."""
-        return True
+        # If this job is for a Qwen model, attempt to load qwen_vl_utils once up front
+        if self._is_qwen_model():
+            try:
+                from qwen_vl_utils import process_vision_info
 
-    async def add_frame(
-        self, frame: Image.Image, frame_id: int, timestamp: float
-    ) -> None:
-        """Buffer frame and auto-trigger based on mode.
-
-        PERIODIC: Auto-trigger when buffer reaches buffer_size
-        MANUAL: Buffer and wait for API trigger
-        DISABLED: Buffer but never process
-        """
-        self.frame_buffer.append(frame.copy())
-
-        if self.trigger_mode == TriggerMode.PERIODIC:
-            if len(self.frame_buffer) >= self.buffer_size:
-                self._send_log(
-                    f"Buffer full ({self.buffer_size} frames), running inference"
-                )
-                await self._run_inference()
-                # Keep last N frames for overlap
-                self.frame_buffer = self.frame_buffer[-self.overlap_frames :]
-                self._send_log(f"Kept {self.overlap_frames} frames for overlap")
-
-        elif self.trigger_mode == TriggerMode.MANUAL:
-            self._send_log(
-                f"Buffered frame {len(self.frame_buffer)} (waiting for manual trigger)"
-            )
-
-        # DISABLED mode: just buffer, never process
-
-    async def trigger_inference(self) -> None:
-        """Manually trigger inference (called by API endpoint).
-
-        Only works in MANUAL mode.
-        """
-        if self.trigger_mode != TriggerMode.MANUAL:
-            self._send_log(f"Cannot trigger: mode is {self.trigger_mode.value}")
-            return
-
-        if not self.frame_buffer:
-            self._send_log("Cannot trigger: buffer empty")
-            return
-
-        self._send_log(f"Manual trigger: processing {len(self.frame_buffer)} frames")
-        await self._run_inference()
-        self.frame_buffer.clear()  # No overlap for manual mode
+                self._process_vision_info = process_vision_info
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "qwen_vl_utils (and its torchvision dependency) is required when using Qwen models."
+                ) from exc
 
     async def execute(self) -> None:
-        """Minimal execute - VideoJob processes in add_frame() instead of loop.
+        """One-shot execution: process the buffered frames and complete.
 
-        This method is called when job is submitted to queue, but VideoJob
-        doesn't use a traditional execute loop. Inference happens via:
-        - PERIODIC: add_frame() auto-triggers
-        - MANUAL: trigger_inference() API call
-        - DISABLED: never triggers
+        This job processes the frames passed in at construction time,
+        runs inference once, and then completes. No infinite loop.
         """
         self.status = JobStatus.RUNNING
         self.started_at = time.time()
-        logger.info(f"[{self.job_id}] VideoJob ready (mode={self.trigger_mode.value})")
 
-        # Stay alive until stopped
-        while not self.stop_event.is_set():
-            await asyncio.sleep(1.0)
+        frame_count = len(self.frame_buffer)
+        logger.info(f"[{self.job_id}] VideoJob starting with {frame_count} frames")
 
+        # Process frames
+        await self._run_inference()
+
+        # Mark as completed
         self.status = JobStatus.COMPLETED
         logger.info(f"[{self.job_id}] VideoJob completed")
 
@@ -380,6 +350,11 @@ class VideoJob(Job):
 
         frames_to_process = self.frame_buffer.copy()
         frame_count = len(frames_to_process)
+
+        # Log the batch details
+        self._send_log(
+            f"Starting inference: {frame_count} frames | buffer={self.buffer_size} overlap={self.overlap_frames}"
+        )
 
         # Track timing
         start_time = time.time()
@@ -398,8 +373,14 @@ class VideoJob(Job):
         self.result = result
         self.processing_time = inference_time
 
-        logger.info(f"[{self.job_id}] Inference complete: {result[:100]}")
-        self._send_log(f"Inference result: {result[:100]}...")
+        frames_per_second = frame_count / inference_time if inference_time > 0 else 0.0
+        summary = (
+            f"Inference complete | frames={frame_count} "
+            f"time={inference_time:.3f}s fps={frames_per_second:.2f}"
+        )
+
+        logger.info(f"[{self.job_id}] {summary}")
+        self._send_log(summary)
 
         # Broadcast result immediately via callback
         if self.result_callback:
@@ -411,59 +392,147 @@ class VideoJob(Job):
                 "result": result,
                 "frames_processed": frame_count,
                 "inference_time": inference_time,
+                "buffer_size": self.buffer_size,
+                "overlap_frames": self.overlap_frames,
+                "client_fps": self.client_fps,
+                "sample_fps": self.client_fps,
                 "timestamp": time.time(),
             }
             self.result_callback(result_data)
 
     def _sync_inference(self, frames: list[Image.Image], prompt: str) -> str:
-        """Blocking GPU inference (runs in ThreadPoolExecutor).
-
-        TODO: User needs to explore Qwen video prompt template.
-        Current implementation is placeholder - may need different format for video.
-        Qwen2.5-VL might have native video support with special tokens.
-
-        For now, processes only the first frame as a simple baseline.
-        """
+        """Blocking GPU inference (runs in ThreadPoolExecutor)."""
         if not frames:
             return "No frames to process"
 
-        # Simple single-frame inference for now
-        # TODO: Replace with proper video inference once Qwen template is figured out
-        logger.info(
-            f"WORKER: VideoJob inference for {self.job_id} ({len(frames)} frames)"
-        )
+        # Simple dispatch based on model type
+        if self._is_qwen_model():
+            return self._inference_qwen(frames, prompt)
+        else:
+            return self._inference_smolvlm(frames, prompt)
+
+    def _is_qwen_model(self) -> bool:
+        """Simple check to see if we are using a Qwen model."""
+        # Check config type or model class name
+        model_type = getattr(self.model.config, "model_type", "").lower()
+        return "qwen" in model_type
+
+    def _inference_qwen(self, frames: list[Image.Image], prompt: str) -> str:
+        """Original Qwen 2.5 VL logic."""
+        logger.info(f"WORKER: Running Qwen inference on {len(frames)} frames")
+
+        if not self._process_vision_info:
+            raise ModuleNotFoundError(
+                "qwen_vl_utils (and its torchvision dependency) is required when using Qwen models."
+            )
 
         with torch.no_grad():
             messages = [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": frames[0]},
                         {
-                            "type": "text",
-                            "text": f"{prompt} (Processing {len(frames)} frames)",
+                            "type": "video",
+                            "video": frames,
+                            "sample_fps": self.client_fps,
                         },
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ]
+
+            # Qwen-specific utils
+            image_inputs, video_inputs, video_kwargs = self._process_vision_info(
+                messages, return_video_kwargs=True
+            )
 
             text = self.processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
 
             inputs = self.processor(
-                text=[text], images=[frames[0]], return_tensors="pt"
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                return_tensors="pt",
+                **(video_kwargs or {}),
             ).to(self.model.device)
 
-            outputs = self.model.generate(**inputs, max_new_tokens=128)
-
-            # Slice the output to remove input tokens
+            outputs = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
             generated_ids = outputs[0][len(inputs.input_ids[0]) :]
-
-            # Decode only the new tokens
             result = self.processor.decode(generated_ids, skip_special_tokens=True)
 
-        logger.info(f"WORKER: Finished VideoJob inference for {self.job_id}")
+        return result
+
+    def _inference_smolvlm(self, frames: list[Image.Image], prompt: str) -> str:
+        """New SmolVLM2 logic (V100 friendly)."""
+        logger.info(f"WORKER: Running SmolVLM inference on {len(frames)} frames")
+
+        if not frames:
+            return "No frames to process"
+
+        temp_video_path = None
+
+        try:
+            # Create temporary mp4 file (needed for smolvlm)
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                temp_video_path = tmp.name
+
+            # Write frames to video (RGB PIL -> BGR OpenCV)
+            first = np.array(frames[0].convert("RGB"))
+            height, width = first.shape[:2]
+
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            writer = cv2.VideoWriter(
+                temp_video_path, fourcc, self.client_fps, (width, height)
+            )
+
+            for frame in frames:
+                arr = np.array(frame.convert("RGB"))
+                bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                writer.write(bgr)
+
+            writer.release()
+
+            # SmolVLM2 messages with path to tmp video
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "video",
+                            "path": temp_video_path,
+                            "fps": self.client_fps,
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+
+            with torch.no_grad():
+                inputs = self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                ).to(self.model.device)
+
+                # Generate
+                outputs = self.model.generate(
+                    **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
+                )
+
+                # Decode
+                generated_ids = outputs[0][len(inputs.input_ids[0]) :]
+                result = self.processor.decode(generated_ids, skip_special_tokens=True)
+
+        finally:
+            if temp_video_path:
+                try:
+                    Path(temp_video_path).unlink(missing_ok=True)
+                except Exception:
+                    logger.warning("Could not delete temp video %s", temp_video_path)
         return result
 
     def _send_log(self, message: str) -> None:
@@ -476,18 +545,14 @@ class VideoJob(Job):
                 "timestamp": time.time(),
             })
 
-    def stop(self) -> None:
-        """Stop job (called when WebSocket disconnects)."""
-        logger.info(f"[{self.job_id}] Stopping VideoJob")
-        self.stop_event.set()
-
     def get_status_dict(self) -> dict:
         """Return custom status information."""
         return {
             "frames_buffered": len(self.frame_buffer),
-            "trigger_mode": str(self.trigger_mode.value),
             "buffer_size": self.buffer_size,
             "overlap_frames": self.overlap_frames,
+            "client_fps": self.client_fps,
+            "default_fps": self.default_fps,
         }
 
     def to_response_dict(self) -> dict:

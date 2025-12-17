@@ -1,9 +1,7 @@
 """WebSocket log streaming handler for IRIS server."""
 
 import asyncio
-import json
 import logging
-from datetime import datetime
 
 from fastapi import WebSocket
 
@@ -15,6 +13,7 @@ class WebSocketLogHandler(logging.Handler):
         """Initialize the handler with a minimum log level."""
         super().__init__()
         self.connections: list[WebSocket] = []
+        self.background_tasks: set[asyncio.Task] = set()
         self.setLevel(getattr(logging, min_level.upper()))
 
         # Set formatter for structured log messages
@@ -27,12 +26,13 @@ class WebSocketLogHandler(logging.Handler):
         """Emit a log record to all connected WebSocket clients."""
         try:
             log_entry = self.format(record)
-            # Broadcast to all connected clients (non-blocking)
             for ws in self.connections[:]:  # Copy list to avoid modification during iteration
                 try:
                     # Create task to send without awaiting
-                    asyncio.create_task(ws.send_text(log_entry))
-                except Exception as e:
+                    task = asyncio.create_task(ws.send_text(log_entry))
+                    self.background_tasks.add(task)
+                    task.add_done_callback(self.background_tasks.discard)
+                except Exception:
                     # Remove disconnected clients
                     if ws in self.connections:
                         self.connections.remove(ws)

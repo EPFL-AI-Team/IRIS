@@ -1,13 +1,12 @@
-# V100 GPU optimization (16GB VRAM)
-# For inference use on IZAR cluster
+# Hardware-specific overrides for V100 32GB GPU
 
-model:
-  dtype: "float16"  # V100 doesn't support bfloat16
-  attn_implementation: "sdpa"  # V100 doesn't support flash_attention_2
-  low_cpu_mem_usage: true
+# model:
+#   dtype: "float16"
 
-quantization:
-  load_in_8bit: false  # V100 has enough VRAM for float16
-  load_in_4bit: false
-
-device: "auto"
+# training:
+#   fp16: true
+#   bf16: false
+#   gradient_checkpointing: true
+#   optim: "paged_adamw_8bit"
+#   lr_scheduler_type: "cosine"
+#   max_grad_norm: 0.3  # Tighter clipping to prevent gradient spikes and stabilize training

@@ -3,6 +3,9 @@ let previewWs = null;
 let resultsWs = null;
 let statusInterval = null;
 
+// Configuration
+const SHOW_PENDING_CARDS = true;
+
 // Canvas preview state
 let previewCanvas = null;
 let previewCtx = null;
@@ -21,6 +24,60 @@ let resultsHistory = [];
 // Activity logging
 const LOG_MAX_ENTRIES = 100;
 
+function formatLogMessage(message) {
+  console.log("Formatting log message:", message);
+  // 1. Handle Objects directly
+  if (typeof message === "object" && message !== null) {
+    try {
+      return `<pre class="log-json">${JSON.stringify(message, null, 2)}</pre>`;
+    } catch (err) {
+      return String(message);
+    }
+  }
+
+  // 2. Handle Strings
+  if (typeof message === "string") {
+    let content = message.trim();
+
+    // Regex to remove markdown code blocks (e.g., ```json ... ```)
+    // ^```       : Starts with backticks
+    // (?:json)?  : Optional 'json' language tag (non-capturing)
+    // \s* : Optional whitespace/newlines
+    // ([\s\S]*?) : Capture the actual content (non-greedy)
+    // \s* : Optional trailing whitespace
+    // ```$       : Ends with backticks
+    const fenceRegex = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
+    const match = content.match(fenceRegex);
+
+    console.log("Code fence match:", match);
+    // If fences are found, extract the inner content
+    if (match) {
+      content = match[1].trim();
+    }
+
+    // 3. Attempt JSON Parse on the cleaned content
+    if (
+      (content.startsWith("{") && content.endsWith("}")) ||
+      (content.startsWith("[") && content.endsWith("]"))
+    ) {
+      try {
+        const parsed = JSON.parse(content);
+        return `<pre class="log-json">${JSON.stringify(parsed, null, 2)}</pre>`;
+      } catch (err) {
+        // Fall back to raw string below
+      }
+    }
+
+    // Return the cleaned content if it was a code block, otherwise the original trimmed message
+    return match ? content : message.trim();
+  }
+
+  console.log;
+  "Log message is of unsupported type:", typeof message;
+
+  return String(message);
+}
+
 function addLog(message, level = "INFO") {
   const container = document.getElementById("log-container");
   if (!container) return;
@@ -31,7 +88,7 @@ function addLog(message, level = "INFO") {
   entry.innerHTML = `
     <span class="log-timestamp">[${timestamp}]</span>
     <span class="log-level">${level}</span>
-    <span class="log-message">${message}</span>
+    <span class="log-message">${formatLogMessage(message)}</span>
   `;
 
   container.appendChild(entry);
@@ -334,8 +391,12 @@ function connectResults() {
 
   resultsWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
+    if (data.type === "keepalive") {
+      return; // Ignore keepalive pings
+    }
     console.log("Received result data:", data); // Debug log
     addLog(`Received result: ${data.job_id} (${data.status})`, "INFO");
+    addLog(data, "INFO");
     displayResult(data);
   };
 
@@ -353,11 +414,95 @@ function connectResults() {
   };
 }
 
-// Display inference result
-function displayResult(data) {
+// Create a pending result card
+function createPendingCard(jobId, queueDepth = null, frameInfo = null) {
+  if (!SHOW_PENDING_CARDS) return;
+
   const container = document.getElementById("results-container");
 
-  // Add to history
+  // Check if already exists
+  if (document.getElementById(`result-${jobId}`)) return;
+
+  // Remove placeholder
+  const placeholder = container.querySelector(".results-placeholder");
+  if (placeholder) {
+    placeholder.remove();
+  }
+
+  const resultDiv = document.createElement("div");
+  resultDiv.className = "result-item pending";
+  resultDiv.id = `result-${jobId}`;
+
+  // Calculate result number (next in sequence)
+  // We use the current history length + 1 as a temporary number
+  const resultNumber = resultsHistory.length + 1;
+
+  let statusText = "Queued";
+  if (queueDepth !== null) {
+    statusText += ` (Position: ${queueDepth})`;
+  }
+
+  let detailsHtml = "";
+  if (frameInfo) {
+    detailsHtml = `<div class="pending-details">${frameInfo}</div>`;
+  }
+
+  resultDiv.innerHTML = `
+    <div class="result-header">
+      <span class="result-number">#${resultNumber}</span>
+      <span class="result-timestamp">${new Date().toLocaleTimeString()}</span>
+      <span class="result-status">${statusText}</span>
+    </div>
+    <div class="result-text">
+      <div class="loading-spinner"></div>
+      <p><em>Processing batch...</em></p>
+      ${detailsHtml}
+    </div>
+  `;
+
+  container.appendChild(resultDiv);
+  container.scrollTop = container.scrollHeight;
+}
+
+// Update pending card with frame info
+function updatePendingCardWithFrameInfo(jobId, frameInfo) {
+  if (!SHOW_PENDING_CARDS) return;
+
+  const card = document.getElementById(`result-${jobId}`);
+  if (!card) return;
+
+  const detailsDiv = card.querySelector(".pending-details");
+  if (detailsDiv) {
+    detailsDiv.textContent = frameInfo;
+  } else {
+    const textDiv = card.querySelector(".result-text");
+    const newDetails = document.createElement("div");
+    newDetails.className = "pending-details";
+    newDetails.textContent = frameInfo;
+    textDiv.appendChild(newDetails);
+  }
+
+  const statusSpan = card.querySelector(".result-status");
+  if (statusSpan) {
+    statusSpan.textContent = "Processing";
+  }
+}
+
+// Display inference result
+function displayResult(data) {
+  // Handle log messages separately
+  if (data.type === "log") {
+    // Parse "Starting inference" logs
+    if (data.message && data.message.includes("Starting inference:")) {
+      updatePendingCardWithFrameInfo(data.job_id, data.message);
+    }
+    return;
+  }
+
+  const container = document.getElementById("results-container");
+
+  // Add to history if it's a result or batch submission
+  // We avoid adding logs to history
   resultsHistory.push(data);
   const resultNumber = resultsHistory.length; // Sequential result number
 
@@ -365,6 +510,13 @@ function displayResult(data) {
   const placeholder = container.querySelector(".results-placeholder");
   if (placeholder) {
     placeholder.remove();
+  }
+
+  // Handle batch submission
+  if (data.type === "batch_submitted") {
+    console.log("Batch submission object:", data);
+    createPendingCard(data.job_id);
+    return;
   }
 
   // Create result element
@@ -380,7 +532,92 @@ function displayResult(data) {
     timestamp = new Date(data.datetime).toLocaleTimeString();
   }
 
+  // Parse and clean result text
+  let resultText = data.result || "No result";
+  let isJSON = false;
+  let parsedJSON = null;
+
+  // Remove markdown code fences (```json, ```)
+  if (typeof resultText === "string") {
+    resultText = resultText
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/, "")
+      .replace(/```\s*$/, "")
+      .trim();
+
+    // Try to parse as JSON
+    try {
+      parsedJSON = JSON.parse(resultText);
+      isJSON = true;
+    } catch (e) {
+      // Not JSON or invalid JSON, display as plain text
+      isJSON = false;
+    }
+  }
+
   // Build result HTML with result number
+  let resultContent;
+  if (isJSON) {
+    try {
+      const formattedLines = Object.entries(parsedJSON).map(([key, value]) => {
+        // Capitalize first letter of key
+        const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
+        // Handle objects/arrays in value
+        const displayValue =
+          typeof value === "object" && value !== null
+            ? JSON.stringify(value)
+            : value;
+        return `<div><strong>${formattedKey}:</strong> ${displayValue}</div>`;
+      });
+      resultContent = `<div class="formatted-result" style="font-family: monospace; line-height: 1.5; text-align: left; padding-left: 20px;">${formattedLines.join(
+        ""
+      )}</div>`;
+    } catch (err) {
+      console.error("Error formatting JSON result:", err);
+      // Fallback to raw JSON
+      resultContent = `<pre class="json-result">${JSON.stringify(
+        parsedJSON,
+        null,
+        2
+      )}</pre>`;
+    }
+  } else {
+    resultContent = `<p>${resultText}</p>`;
+  }
+
+  // Check if we should update an existing item (e.g. for batch submitted)
+  const existingItem = document.getElementById(`result-${data.job_id}`);
+  if (existingItem) {
+    // Preserve the original result number
+    const existingNumber =
+      existingItem.querySelector(".result-number").textContent;
+
+    // Update existing item
+    existingItem.innerHTML = `
+    <div class="result-header">
+      <span class="result-number">${existingNumber}</span>
+      <span class="result-timestamp">${timestamp}</span>
+      <span class="result-frames">Frames: ${data.frames_processed || 0}</span>
+    </div>
+    <div class="result-text">
+      ${resultContent}
+    </div>
+    <div class="result-metrics">
+      <span>Inference: ${(
+        data.metrics?.inference_time ||
+        data.inference_time ||
+        0
+      ).toFixed(3)}s</span>
+    </div>
+    `;
+    existingItem.classList.remove("batch-pending");
+    existingItem.classList.remove("pending");
+    return; // Done updating
+  }
+
+  resultDiv.id = `result-${data.job_id}`;
+  // Note: batch_submitted is handled above, so we don't need the check here anymore
+
   resultDiv.innerHTML = `
     <div class="result-header">
       <span class="result-number">#${resultNumber}</span>
@@ -388,7 +625,7 @@ function displayResult(data) {
       <span class="result-frames">Frames: ${data.frames_processed || 0}</span>
     </div>
     <div class="result-text">
-      <p>${data.result || "No result"}</p>
+      ${resultContent}
     </div>
     <div class="result-metrics">
       <span>Inference: ${(

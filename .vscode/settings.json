@@ -46,5 +46,8 @@
     // Ruff Settings
     "ruff.nativeServer": "on",
     // Other Extensions
-    "evenBetterToml.schema.enabled": false
+    "evenBetterToml.schema.enabled": false,
+    "python.analysis.extraPaths": [
+        "scripts"
+    ]
 }
