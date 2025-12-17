@@ -9,7 +9,7 @@
 # FROM nvcr.io/nvidia/pytorch:25.03-py3 or FROM nvcr.io/nvidia/ai-workbench/pytorch:1.0.6
 # In this example, we'll use the second image.
 
-FROM nvcr.io/nvidia/pytorch:24.12-py3
+FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
 #####################################
 # RCP CaaS requirement (Storage)
@@ -23,52 +23,53 @@ ARG LDAP_USERNAME
 ARG LDAP_UID
 ARG LDAP_GROUPNAME
 ARG LDAP_GID
-RUN groupadd ${LDAP_GROUPNAME} --gid ${LDAP_GID}
-RUN useradd -m -s /bin/bash -g ${LDAP_GROUPNAME} -u ${LDAP_UID} ${LDAP_USERNAME}
+RUN groupadd ${LDAP_GROUPNAME} --gid ${LDAP_GID} && \
+    useradd -m -s /bin/bash -g ${LDAP_GROUPNAME} -u ${LDAP_UID} ${LDAP_USERNAME}
 
 #####################################
 # Install system dependencies (as root)
 #####################################
-RUN apt update && apt install -y curl git
-
-# Copy uv binary from official image (accessible to all users)
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get update && apt-get install -y curl git ffmpeg libsm6 libxext6 python3-full python3-pip && \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN mkdir -p /home/${LDAP_USERNAME}
-COPY pyproject.toml /home/${LDAP_USERNAME}/
-
-# Create virtual environment
-RUN uv venv
-
-# Install project into venv (uv will use existing PyTorch from system when possible)
-RUN uv sync --group server --no-dev
-
 #####################################
-# Copy project files
+# Dependencies (pre-installation)
 #####################################
-COPY README.md /home/${LDAP_USERNAME}/
-
-COPY src/ /home/${LDAP_USERNAME}/src/
-COPY configs/ /home/${LDAP_USERNAME}/
-COPY config.yaml /home/${LDAP_USERNAME}/
-
-# Set your user as owner of the new copied files
-RUN chown -R ${LDAP_USERNAME}:${LDAP_GROUPNAME} /home/${LDAP_USERNAME}
-
-# Set the working directory in your user's home
 WORKDIR /home/${LDAP_USERNAME}
+RUN chown ${LDAP_USERNAME}:${LDAP_GROUPNAME} /home/${LDAP_USERNAME}
 USER ${LDAP_USERNAME}
 
+COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} pyproject.toml uv.lock ./
+
+ENV UV_CACHE_DIR=/home/${LDAP_USERNAME}/.cache/uv
+RUN --mount=type=cache,target=/home/${LDAP_USERNAME}/.cache/uv,uid=${LDAP_UID},gid=${LDAP_GID} \
+    uv venv && \
+    uv sync --frozen --group server --no-dev --no-install-project
+
 #####################################
-# Environment variables (set for user)
+# Source code & Final setup
 #####################################
-ENV HF_HOME=/scratch/iris/cache/hf_cache
-ENV TRANSFORMERS_CACHE=/scratch/iris/cache/hf_cache
-ENV HF_DATASETS_CACHE=/scratch/iris/cache/hf_cache/datasets
-ENV TORCH_HOME=/scratch/iris/cache/torch_cache
-ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-ENV TRANSFORMERS_VERBOSITY=warning
-ENV PYTHONUNBUFFERED=1
+COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} README.md ./
+COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} src/ ./src/
+COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} configs/ ./configs/
+COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} config.yaml ./
+
+RUN --mount=type=cache,target=/home/${LDAP_USERNAME}/.cache/uv,uid=${LDAP_UID},gid=${LDAP_GID} \
+    uv sync --frozen --group server --no-dev
+
+#####################################
+# Environment
+#####################################
+ENV PATH="/home/${LDAP_USERNAME}/.venv/bin:$PATH" \
+    HF_HOME=/scratch/iris/cache/hf_cache \
+    TRANSFORMERS_CACHE=/scratch/iris/cache/hf_cache \
+    HF_DATASETS_CACHE=/scratch/iris/cache/hf_cache/datasets \
+    TORCH_HOME=/scratch/iris/cache/torch_cache \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    TRANSFORMERS_VERBOSITY=warning \
+    PYTHONUNBUFFERED=1
 
 #####################################
 # Create venv and install dependencies
