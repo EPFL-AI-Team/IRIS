@@ -5,15 +5,13 @@ from typing import Any, cast
 
 import torch
 from datasets import Dataset, load_dataset
+from peft import LoraConfig, get_peft_model
 from transformers import (
     AutoModelForImageTextToText,
     AutoProcessor,
     Trainer,  # type: ignore[reportPrivateImportUsage]
     TrainingArguments,  # type: ignore[reportPrivateImportUsage]
-    DataCollatorForSeq2Seq,  # type: ignore[reportPrivateImportUsage]
 )
-from transformers.utils.quantization_config import BitsAndBytesConfig
-from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model
 
 from iris.utils.logging import setup_logger
 from iris.vlm.config import load_config
@@ -88,53 +86,54 @@ class VLMTrainer:
         logger.info("=" * 80)
 
         try:
-            # 1. Setup quantization
-            logger.info("Setting up 4-bit quantization")
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=torch.float16,
-            )
-            
-            # 2. Load model
+            # Setup quantization (not needed for A100 training)
+            # logger.info("Setting up 4-bit quantization")
+            # bnb_config = BitsAndBytesConfig(
+            #     load_in_4bit=True,
+            #     bnb_4bit_quant_type="nf4",
+            #     bnb_4bit_use_double_quant=True,
+            #     bnb_4bit_compute_dtype=torch.float16,
+            # )
+
+            # 2. Load model in fp16
             model_name = self.cfg["model"]["name"]
-            # Read max_frames and max_pixels from config
             max_frames = self.cfg["data"].get("max_frames")
             max_pixels = self.cfg["data"].get("max_pixels")
-            
+
             if max_pixels:
-                logger.info(f"Resolution limit: {max_pixels} pixels (e.g., {int((max_pixels/1.5)**0.5)}x{int((max_pixels*1.5)**0.5)})")
-            
+                logger.info(f"Resolution limit: {max_pixels} pixels")
+
             logger.info(f"Loading model: {model_name}")
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name,
-                quantization_config=bnb_config,
-                device_map="auto",
+                # quantization_config=bnb_config,
                 torch_dtype=torch.float16,
+                device_map="auto",
             )
             processor = AutoProcessor.from_pretrained(
-                model_name,
-                min_pixels=256*28*28,
-                max_pixels=max_pixels    
+                model_name, min_pixels=256 * 28 * 28, max_pixels=max_pixels
             )
-            logger.info(f"Model loaded. Memory: {torch.cuda.memory_allocated()/1e9:.2f}GB")
-            
-            # 3. Prepare for training
-            logger.info("Preparing model for k-bit training")
-            model = prepare_model_for_kbit_training(model)
-            
+            logger.info(
+                f"Model loaded. Memory: {torch.cuda.memory_allocated() / 1e9:.2f}GB"
+            )
+
+            # Prepare QLoRA (not used anymore)
+            # logger.info("Preparing model for k-bit training")
+            # model = prepare_model_for_kbit_training(model)
+
             # 4. Setup LoRA
             lora_cfg = self.cfg["lora"]
-            logger.info(f"Setting up LoRA with r={lora_cfg['r']}, alpha={lora_cfg['alpha']}")
-            
+            logger.info(
+                f"Setting up LoRA with r={lora_cfg['r']}, alpha={lora_cfg['alpha']}"
+            )
+
             # Build target modules list
             target_modules = []
             if lora_cfg.get("finetune_attention_modules", True):
                 target_modules.extend(["q_proj", "k_proj", "v_proj", "o_proj"])
             if lora_cfg.get("finetune_mlp_modules", True):
                 target_modules.extend(["gate_proj", "up_proj", "down_proj"])
-            
+
             peft_config = LoraConfig(
                 r=lora_cfg["r"],
                 lora_alpha=lora_cfg["alpha"],
@@ -144,64 +143,57 @@ class VLMTrainer:
                 task_type="CAUSAL_LM",
             )
             model = get_peft_model(model, peft_config)
-            
+
             # Print trainable params
-            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            trainable_params = sum(
+                p.numel() for p in model.parameters() if p.requires_grad
+            )
             total_params = sum(p.numel() for p in model.parameters())
             logger.info(
                 f"Trainable params: {trainable_params:,} ({100 * trainable_params / total_params:.2f}%)"
             )
-            
-            # 5. Load data
+
+            # Load data
             data_cfg = self.cfg["data"]
             logger.info(f"Loading datasets from {data_cfg['train_path']}")
             train_dataset = cast(
                 Dataset,
-                load_dataset(
-                    "json", 
-                    data_files=data_cfg["train_path"], 
-                    split="train"
-                )
+                load_dataset("json", data_files=data_cfg["train_path"], split="train"),
             )
-            
+
             val_dataset = None
             if data_cfg.get("val_path"):
                 val_dataset = cast(
                     Dataset,
                     load_dataset(
-                        "json", 
-                        data_files=data_cfg["val_path"], 
-                        split="train"
-                    )
+                        "json", data_files=data_cfg["val_path"], split="train"
+                    ),
                 )
-            
+
             logger.info(f"Train samples: {len(train_dataset)}")
             if val_dataset:
                 logger.info(f"Val samples: {len(val_dataset)}")
-            
-            # 6. Setup logging directory for TensorBoard
+
+            # Setup logging directory (Tensorboard and WandB)
             train_cfg = self.cfg["training"]
             logging_dir = str(Path(train_cfg["output_dir"]) / "logs")
             Path(logging_dir).mkdir(parents=True, exist_ok=True)
             logger.info(f"TensorBoard logs will be saved to: {logging_dir}")
             logger.info(f"View with: uv run tensorboard --logdir={logging_dir}")
-            
-            # 7. Data collator for VLMs
+
+            # Data collator
             logger.info("Setting up Qwen-specific data collator")
-            
             data_collator = QwenDataCollator(
                 processor=processor,
                 max_frames=max_frames,
                 max_pixels=max_pixels,
             )
-            
-            # 8. Training args
+
+            # Training args
             logger.info("Configuring training arguments")
-            
-            # Determine fp16/bf16 based on hardware config or defaults
             use_fp16 = self.cfg["training"].get("fp16", False)
             use_bf16 = self.cfg["training"].get("bf16", False)
-            
+
             training_args = TrainingArguments(
                 output_dir=train_cfg["output_dir"],
                 max_steps=train_cfg["max_steps"],
@@ -210,7 +202,7 @@ class VLMTrainer:
                 learning_rate=train_cfg["learning_rate"],
                 warmup_steps=train_cfg["warmup_steps"],
                 lr_scheduler_type="cosine",
-                optim="paged_adamw_8bit",
+                optim=train_cfg.get("optim", "adamw_torch"),  # Regular AdamW for LoRA
                 weight_decay=train_cfg.get("weight_decay", 0.01),
                 fp16=use_fp16,  # Should be True for V100
                 bf16=use_bf16,  # Should be False for V100
@@ -224,10 +216,10 @@ class VLMTrainer:
                 remove_unused_columns=False,
                 dataloader_pin_memory=True,
                 seed=42,
-                report_to=["tensorboard"],
+                report_to=["tensorboard", "wandb"],
             )
-            
-            # 9. Train
+
+            # Train
             logger.info("Initializing HuggingFace Trainer")
             trainer = Trainer(
                 model=model,
@@ -237,15 +229,17 @@ class VLMTrainer:
                 data_collator=data_collator,
                 processing_class=processor,
             )
-            
+
             logger.info("Starting training...")
             trainer.train()
-            
-            # 10. Save
-            logger.info("Training complete! Saving model...")
+
+            # Save
+            logger.info(
+                "Training complete! Saving model to %s", training_args.output_dir
+            )
             trainer.save_model(training_args.output_dir)
             processor.save_pretrained(training_args.output_dir)
-            
+
             logger.info("=" * 80)
             logger.info("Training Complete!")
             logger.info(f"Model saved to: {training_args.output_dir}")

@@ -1,8 +1,9 @@
-import numpy as np
-import torch
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, dict, list
+
+import numpy as np
+import torch
 from qwen_vl_utils import process_vision_info
 
 
@@ -22,7 +23,7 @@ class QwenDataCollator:
     max_frames: int | None = None
     max_pixels: int | None = None
 
-    def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+    def __call__(self, examples: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         # DEBUG: Print warning if limits are missing
         if self.max_pixels is None:
             print("WARNING: max_pixels is None! Training will crash on V100.")
@@ -64,7 +65,7 @@ class QwenDataCollator:
         batch["labels"] = labels
         return batch
 
-    def _process_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _process_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Process messages to:
         1. Clean up None values in image/text fields

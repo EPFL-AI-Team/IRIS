@@ -40,33 +40,52 @@ def load_hardware_profile(hardware: str) -> dict:
 
 
 def load_config(config_name: str, hardware: str | None = None) -> dict:
-    """Load config from configs/vlm/{config_name}.yaml + optional hardware override.
+    """Load config from path or name.
 
     Args:
-        config_name: "train" or "serve" (loads configs/vlm/{config_name}.yaml)
-        hardware: Optional hardware override ("mac_m3", "v100_qlora", etc)
+        config_name: Absolute path (/scratch/iris/train.yaml) or name ("train")
+        hardware: Optional hardware override ("v100", "mac", etc)
 
     Returns:
         Merged config dict
-
-    Example:
-        cfg = load_config("train", hardware="v100_qlora")
-        cfg = load_config("serve")  # No hardware override
     """
-    base_path = Path(f"configs/vlm/{config_name}.yaml")
-    cfg = _load_yaml(base_path)
+    # Check if absolute path
+    config_path = Path(config_name)
+    if config_path.is_absolute() and config_path.exists():
+        cfg = _load_yaml(config_path)
+        logger.info(f"Loaded config from: {config_path}")
+    else:
+        # Resolve relative to project structure
+        base_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "configs"
+            / "vlm"
+            / f"{config_name}.yaml"
+        )
+        if not base_path.exists():
+            raise FileNotFoundError(f"Config not found: {base_path}")
+        cfg = _load_yaml(base_path)
+        logger.info(f"Loaded config: {config_name}")
 
+    # Apply hardware overrides
     if hardware:
-        hw_path = Path(f"configs/vlm/hardware/{hardware}.yaml")
+        hw_path = (
+            Path(__file__).parent.parent.parent
+            / "configs"
+            / "vlm"
+            / "hardware"
+            / f"{hardware}.yaml"
+        )
         if hw_path.exists():
             hw_cfg = _load_yaml(hw_path)
             cfg = _merge_dicts(cfg, hw_cfg)
+            logger.info(f"Applied hardware profile: {hardware}")
 
     return cfg
 
 
 def _load_yaml(path: Path) -> dict:
-    """Load single YAML file"""
+    """Load YAML file"""
     with open(path) as f:
         return yaml.safe_load(f)
 

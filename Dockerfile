@@ -31,18 +31,23 @@ RUN useradd -m -s /bin/bash -g ${LDAP_GROUPNAME} -u ${LDAP_UID} ${LDAP_USERNAME}
 #####################################
 RUN apt update && apt install -y curl git
 
-# Install uv (as root, makes it available system-wide)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+# Copy uv binary from official image (accessible to all users)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-#####################################
+RUN mkdir -p /home/${LDAP_USERNAME}
+COPY pyproject.toml /home/${LDAP_USERNAME}/
+
+# Create virtual environment
+RUN uv venv
+
+# Install project into venv (uv will use existing PyTorch from system when possible)
+RUN uv sync --group server --no-dev
 
 #####################################
 # Copy project files
 #####################################
-RUN mkdir -p /home/${LDAP_USERNAME}
 COPY README.md /home/${LDAP_USERNAME}/
-COPY pyproject.toml /home/${LDAP_USERNAME}/
+
 COPY src/ /home/${LDAP_USERNAME}/src/
 COPY configs/ /home/${LDAP_USERNAME}/
 COPY config.yaml /home/${LDAP_USERNAME}/
@@ -65,13 +70,12 @@ ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV TRANSFORMERS_VERBOSITY=warning
 ENV PYTHONUNBUFFERED=1
 
-# Install additional dependencies
-# RUN pip install -r requirements.txt
+#####################################
+# Create venv and install dependencies
+#####################################
 
-#####################################
-# Install dependencies with uv
-#####################################
-RUN uv pip install --system -e ".[server]"
+# Activate venv by adding to PATH
+ENV PATH="/home/${LDAP_USERNAME}/.venv/bin:$PATH"
 
 # Verify installation
 RUN python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.version.cuda}')"
