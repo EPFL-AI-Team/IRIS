@@ -37,18 +37,19 @@ WORKDIR /home/${LDAP_USERNAME}
 # Environment variables (set for user)
 #####################################
 ENV HF_HOME=/scratch/iris/cache/hf_cache
-ENV TRANSFORMERS_CACHE=/scratch/iris/cache/hf_cache
+ENV HF_CACHE=/scratch/iris/cache/hf_cache
 ENV HF_DATASETS_CACHE=/scratch/iris/cache/hf_cache/datasets
 ENV TORCH_HOME=/scratch/iris/cache/torch_cache
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV TRANSFORMERS_VERBOSITY=warning
 ENV PYTHONUNBUFFERED=1
-ENV PATH="/home/${LDAP_USERNAME}/.local/bin:$PATH"
+ENV PATH="/home/${LDAP_USERNAME}/.venv/bin:$PATH"
+ENV UV_COMPILE_BYTECODE=1
 
 #####################################
 # Install dependencies with uv
 #####################################
-RUN uv pip install --system --no-cache --break-system-packages ".[server]"
+RUN uv sync --frozen --no-cache
 
 USER ${LDAP_USERNAME}
 #####################################

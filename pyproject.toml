@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["google-generativeai>=0.8.5", "ipykernel>=6.29.0", "tensorboard>=2.14.0"]
+dev = ["google-generativeai>=0.8.5", "ipykernel>=6.29.0"]
 
 # Server-only dependencies (V100 + Mac dev)
 server = [
@@ -35,18 +35,19 @@ server = [
     "torchvision>=0.20.1,<0.21.0",
     "torchaudio>=2.5.1,<2.6.0",
     "transformers>=4.49.0,<4.54.0", # Qwen2.5-VL support, avoid 4.54+ regression
-    "peft>=0.14.0", # VLM support with bitsandbytes
-    "trl<=0.26.1", # Native VLM support in SFTTrainer
-    "bitsandbytes>=0.46.0", # 4-bit quantization
-    "accelerate>=0.21.0", # Distributed training
-    "qwen-vl-utils>=0.0.8", # Qwen utilities
-    "datasets>=2.19.0", # Data loading
+    "peft>=0.14.0",                 # VLM support with bitsandbytes
+    "trl<=0.26.1",                  # Native VLM support in SFTTrainer
+    "bitsandbytes>=0.46.0",         # 4-bit quantization
+    "accelerate>=0.21.0",           # Distributed training
+    "qwen-vl-utils>=0.0.8",         # Qwen utilities
+    "datasets>=2.19.0",             # Data loading
     "num2words>=0.5.14",
-    "tensorboard>=2.14.0",
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
     "torchcodec>=0.7.0 ; sys_platform == 'darwin'",
     "scikit-learn>=1.8.0",
+    # Logging
+    "tensorboard>=2.14.0",
     "wandb>=0.23.1",
 ]
 

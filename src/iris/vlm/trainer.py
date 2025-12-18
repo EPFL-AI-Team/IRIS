@@ -116,6 +116,9 @@ class VLMTrainer:
             logger.info(
                 f"Model loaded. Memory: {torch.cuda.memory_allocated() / 1e9:.2f}GB"
             )
+            
+            # Enable model gradient checkpointing
+            model.gradient_checkpointing_enable()
 
             # Prepare QLoRA (not used anymore)
             # logger.info("Preparing model for k-bit training")
@@ -206,7 +209,7 @@ class VLMTrainer:
                 weight_decay=train_cfg.get("weight_decay", 0.01),
                 fp16=use_fp16,  # Should be True for V100
                 bf16=use_bf16,  # Should be False for V100
-                gradient_checkpointing=True,
+                gradient_checkpointing=False,
                 logging_dir=logging_dir,
                 logging_steps=train_cfg["logging_steps"],
                 save_steps=train_cfg["save_steps"],
