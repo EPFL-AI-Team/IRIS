@@ -20,8 +20,7 @@ RUN apt update && apt install -y curl git && \
     rm -rf /var/lib/apt/lists/*
 
 # Install uv (as root, makes it available system-wide)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 #####################################
 # Copy project files
@@ -30,10 +29,9 @@ RUN mkdir -p /home/${LDAP_USERNAME}
 
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} pyproject.toml /home/${LDAP_USERNAME}/
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} uv.lock /home/${LDAP_USERNAME}/
+COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} README.md /home/${LDAP_USERNAME}/
 
-# Switch to user for installation
 WORKDIR /home/${LDAP_USERNAME}
-USER ${LDAP_USERNAME}
 
 #####################################
 # Environment variables (set for user)
@@ -50,12 +48,12 @@ ENV PATH="/home/${LDAP_USERNAME}/.local/bin:$PATH"
 #####################################
 # Install dependencies with uv
 #####################################
-RUN uv pip install --system --no-cache ".[server]"
+RUN uv pip install --system --no-cache --break-system-packages ".[server]"
 
+USER ${LDAP_USERNAME}
 #####################################
 # Copy rest of project files - AFTER dependencies installed
 #####################################
-COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} README.md /home/${LDAP_USERNAME}/
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} src/ /home/${LDAP_USERNAME}/src/
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} configs/ /home/${LDAP_USERNAME}/configs/
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} config.yaml /home/${LDAP_USERNAME}/
