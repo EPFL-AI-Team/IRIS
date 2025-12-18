@@ -12,6 +12,16 @@
 FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
 #####################################
+# Install system dependencies (as root)
+#####################################
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    curl git ffmpeg libsm6 libxext6 && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+#####################################
 # RCP CaaS requirement (Storage)
 #####################################
 # Create your user inside the container.
@@ -25,14 +35,6 @@ ARG LDAP_GROUPNAME
 ARG LDAP_GID
 RUN groupadd ${LDAP_GROUPNAME} --gid ${LDAP_GID} && \
     useradd -m -s /bin/bash -g ${LDAP_GROUPNAME} -u ${LDAP_UID} ${LDAP_USERNAME}
-
-#####################################
-# Install system dependencies (as root)
-#####################################
-RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y curl git ffmpeg libsm6 libxext6 python3-full python3-pip && \
-    rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 #####################################
 # Dependencies (pre-installation)
