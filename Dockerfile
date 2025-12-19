@@ -1,7 +1,21 @@
 #####################################
 # RCP CaaS requirement (Image)
 #####################################
-FROM nvcr.io/nvidia/pytorch:24.12-py3
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+#####################################
+# Install Python 3.12 + system deps
+#####################################
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common curl git && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv python3.12-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
 #####################################
 # RCP CaaS requirement (Storage)
@@ -12,13 +26,6 @@ ARG LDAP_GROUPNAME
 ARG LDAP_GID
 RUN groupadd ${LDAP_GROUPNAME} --gid ${LDAP_GID}
 RUN useradd -m -s /bin/bash -g ${LDAP_GROUPNAME} -u ${LDAP_UID} ${LDAP_USERNAME}
-
-#####################################
-# Install system dependencies (as root)
-#####################################
-RUN apt update && \
-    apt install -y --no-install-recommends curl git && \
-    rm -rf /var/lib/apt/lists/*
 
 # Install uv (as root)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
