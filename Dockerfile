@@ -3,6 +3,9 @@
 #####################################
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Europe/Zurich 
+
 #####################################
 # Install Python 3.12 + system deps
 #####################################
