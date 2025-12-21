@@ -18,7 +18,7 @@ echo "Building IRIS Qwen image: $VERSION"
 docker buildx build --platform linux/amd64 \
   --cache-from=type=registry,ref=registry.rcp.epfl.ch/iris-qwen/iris-qwen:buildcache \
   --cache-to=type=registry,ref=registry.rcp.epfl.ch/iris-qwen/iris-qwen:buildcache,mode=max \
-  --tag registry.rcp.epfl.ch/iris-qwen/iris-qwen:${VERSION} \
+  --tag registry.rcp.epfl.ch/iris-qwen/iris-qwen:"${VERSION}" \
   --build-arg LDAP_GROUPNAME=rcp-runai-aiteam_AppGrpU \
   --build-arg LDAP_GID=84800 \
   --build-arg LDAP_USERNAME=mhamelin \

@@ -80,9 +80,9 @@ class VLMTrainer:
                 self.cfg[key] = value
 
     def run(self) -> None:
-        """Execute QLoRA training pipeline."""
+        """Execute LoRA training pipeline."""
         logger.info("=" * 80)
-        logger.info("Starting QLoRA Fine-tuning Pipeline")
+        logger.info("Starting LoRA Fine-tuning Pipeline")
         logger.info("=" * 80)
 
         try:

@@ -21,25 +21,31 @@ def main() -> None:
     parser.add_argument("--wandb-run-name", default=None, help="WandB run name")
     args = parser.parse_args()
 
-    # Initialize WandB
-    if os.getenv("WANDB_API_KEY"):
-        wandb.init(
-            project=args.wandb_project,
-            name=args.wandb_run_name
-            or f"run-{args.config}-{args.hardware or 'default'}",
-            config={
-                "config_name": args.config,
-                "hardware": args.hardware,
-            },
-        )
-        logger.info(f"WandB tracking enabled: {wandb.run.url}")
-    else:
-        logger.warning("WANDB_API_KEY not set, skipping WandB logging")
-
     trainer = VLMTrainer(
         config_name=args.config,
         hardware=args.hardware,
     )
+
+    # Initialize WandB
+    if os.getenv("WANDB_API_KEY"):
+        try:
+            os.environ["WANDB_LOG_MODEL"] = "checkpoint"
+            wandb.init(
+                project=args.wandb_project,
+                name=args.wandb_run_name
+                or f"run-{args.config}-{args.hardware or 'default'}",
+                config={
+                    "config_name": args.config,
+                    "hardware": args.hardware,
+                    **trainer.cfg,
+                },
+            )
+            logger.info(f"WandB tracking enabled: {wandb.run.url}")
+        except Exception as e:
+            logger.warning(f"WandB failed: {e}. Continuing without WandB.")
+    else:
+        logger.warning("WANDB_API_KEY not set, skipping WandB logging")
+
     trainer.run()
 
     # Finish wandb

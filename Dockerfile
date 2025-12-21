@@ -59,9 +59,10 @@ ENV HF_HOME=/scratch/iris/cache/hf_cache \
 #####################################
 # Install dependencies with uv (with caching)
 #####################################
-RUN --mount=type=cache,target=/root/.cache/uv,uid=${LDAP_UID} \
+RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --group server
 
+RUN chown -R ${LDAP_USERNAME}:${LDAP_GROUPNAME} /home/${LDAP_USERNAME}
 #####################################
 # Copy code AFTER dependencies (code changes don't rebuild deps)
 #####################################

@@ -103,7 +103,7 @@ class QwenDataCollator:
 
                         # Inject max_pixels if configured (forces resolution limit)
                         if self.max_pixels:
-                            img_dict["max_pixels"] = str(self.max_pixels)
+                            img_dict["max_pixels"] = self.max_pixels # pyright: ignore[reportArgumentType]
 
                         images.append(img_dict)
 
