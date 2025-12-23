@@ -104,10 +104,13 @@ class VLMTrainer:
                 logger.info(f"Resolution limit: {max_pixels} pixels")
 
             logger.info(f"Loading model: {model_name}")
+            
+            dtype_str = self.cfg["model"].get("dtype", "float16")
+            torch_dtype = torch.bfloat16 if dtype_str == "bfloat16" else torch.float16
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name,
                 # quantization_config=bnb_config,
-                torch_dtype=torch.float16,
+                torch_dtype=torch_dtype,
                 device_map="auto",
             )
             processor = AutoProcessor.from_pretrained(
@@ -215,7 +218,9 @@ class VLMTrainer:
                 save_steps=train_cfg["save_steps"],
                 save_strategy="steps",
                 save_total_limit=3,
-                eval_strategy="no",
+                eval_strategy="steps" if val_dataset else "no",
+                eval_steps=train_cfg.get("eval_steps", 10), # Default to 10 if missing
+                per_device_eval_batch_size=train_cfg.get("batch_size", 1),
                 remove_unused_columns=False,
                 dataloader_pin_memory=True,
                 seed=42,
