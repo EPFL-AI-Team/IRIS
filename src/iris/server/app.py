@@ -20,10 +20,11 @@ from PIL import Image
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
+from iris.server.frame_buffer import FrameBuffer
 from iris.server.jobs.config import JobConfig
 from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
-from iris.vlm.inference.queue.queue import InferenceQueue
+from iris.server.inference.executor import InferenceExecutor
 from iris.vlm.models import load_model_and_processor
 
 # Suppress known warnings
@@ -57,12 +58,12 @@ shutdown_count = 0
 
 
 def _queue_status_snapshot() -> dict[str, int]:
-    """Return a lightweight snapshot of queue/active job counts."""
-    state = get_server_state()
+    """Return a lightweight snapshot of queue/active job counts.
 
-    if state.shutting_down:
-        logger.warning("Rejecting process-video request during shutdown")
-        raise HTTPException(status_code=503, detail="Server shutting down")
+    Note: This is a utility function used by both HTTP endpoints and the
+    signal handler. Shutdown checks should be done at the endpoint level.
+    """
+    state = get_server_state()
     queue_depth = state.queue.queue.qsize() if state.queue else 0
     active_jobs = (
         len(state.job_manager.active_jobs)
@@ -90,32 +91,31 @@ def handle_shutdown_signal(signum: int, frame: Any) -> None:
 
     if shutdown_count == 1:
         logger.info(
-            "Received %s. Graceful shutdown requested; active_jobs=%d, queue_depth=%d, pending_results=%d. "
-            "Waiting for jobs to finish. Send signal again to force shutdown.",
+            "Received %s. Graceful shutdown initiated; active_jobs=%d, queue_depth=%d, pending_results=%d.",
             signal.Signals(signum).name,
             status["active_jobs"],
             status["queue_depth"],
             status["pending_results"],
         )
+
+        # If queue is empty, shut down immediately. Otherwise, wait for jobs to finish.
+        if status["active_jobs"] == 0 and status["queue_depth"] == 0:
+            logger.info("No pending jobs - shutting down immediately.")
+        else:
+            logger.info("Waiting for jobs to finish. Press Ctrl+C again to force shutdown.")
+
         shutdown_event.set()
-    elif shutdown_count == 2:
+        # Re-raise KeyboardInterrupt to trigger uvicorn shutdown
+        raise KeyboardInterrupt
+
+    elif shutdown_count >= 2:
         logger.warning(
-            "Received signal %s again. Force shutdown initiated. Exiting immediately.",
+            "Received signal %s again. Force shutdown initiated.",
             signal.Signals(signum).name,
         )
         force_shutdown_event.set()
-
-        # Cancel all running tasks to trigger shutdown
-        try:
-            loop = asyncio.get_running_loop()
-            for task in asyncio.all_tasks(loop):
-                task.cancel()
-        except RuntimeError:
-            pass  # No loop running
-
-        # Unregister handlers to allow default behavior (immediate exit on next signal)
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        # Re-raise to force immediate exit
+        raise KeyboardInterrupt
 
 
 async def global_result_drainer(state: Any) -> None:
@@ -149,8 +149,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         hardware=config.vlm_hardware,
     )
 
-    logger.info("Starting inference queue...")
-    state.queue = InferenceQueue(
+    logger.info("Starting inference executor...")
+    state.queue = InferenceExecutor(
         max_queue_size=config.max_queue_size, num_workers=config.num_workers
     )
     await state.queue.start()
@@ -197,28 +197,27 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         if force_shutdown_event.is_set():
             logger.warning("Force shutdown - terminating all jobs immediately")
             await state.queue.stop()
-            import sys
-
-            sys.exit(1)  # Force exit if still running
         else:
             status_before = _queue_status_snapshot()
-            logger.info(
-                "Graceful shutdown - waiting for in-flight jobs (no timeout). "
-                "active_jobs=%d, queue_depth=%d, pending_results=%d",
-                status_before["active_jobs"],
-                status_before["queue_depth"],
-                status_before["pending_results"],
-            )
+            if status_before["active_jobs"] > 0 or status_before["queue_depth"] > 0:
+                logger.info(
+                    "Graceful shutdown - waiting for in-flight jobs (no timeout). "
+                    "active_jobs=%d, queue_depth=%d, pending_results=%d",
+                    status_before["active_jobs"],
+                    status_before["queue_depth"],
+                    status_before["pending_results"],
+                )
 
             await state.queue.stop()
 
             status_after = _queue_status_snapshot()
-            logger.info(
-                "Queue stopped. Remaining: active_jobs=%d, queue_depth=%d, pending_results=%d",
-                status_after["active_jobs"],
-                status_after["queue_depth"],
-                status_after["pending_results"],
-            )
+            if status_after["active_jobs"] > 0 or status_after["queue_depth"] > 0:
+                logger.info(
+                    "Queue stopped. Remaining: active_jobs=%d, queue_depth=%d, pending_results=%d",
+                    status_after["active_jobs"],
+                    status_after["queue_depth"],
+                    status_after["pending_results"],
+                )
     logger.info("Server stopped.")
 
 

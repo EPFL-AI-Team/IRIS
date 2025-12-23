@@ -10,9 +10,7 @@ from iris.server.jobs.config import (
 )
 from iris.server.jobs.types import JobType
 
-# if TYPE_CHECKING:
-#     from iris.vlm.inference.queue.jobs import VideoJob
-#     from iris.vlm.inference.queue.queue import InferenceQueue
+# Note: VideoJob is imported locally in _create_video_job to avoid circular imports
 
 
 class JobFactory:
@@ -24,7 +22,7 @@ class JobFactory:
         model: Any,
         processor: Any,
         executor: ThreadPoolExecutor,
-        queue: Any,  # InferenceQueue
+        frames: list | None = None,
     ) -> Any:
         """Create job instance based on config.job_type.
 
@@ -33,7 +31,7 @@ class JobFactory:
             model: VLM model instance
             processor: Model processor
             executor: ThreadPoolExecutor for blocking GPU work
-            queue: InferenceQueue for submitting triggered jobs
+            frames: List of PIL Image frames (required for VideoJob)
 
         Returns:
             Job instance ready to be submitted to queue
@@ -57,7 +55,7 @@ class JobFactory:
             if not isinstance(config, VideoJobConfig):
                 raise ValueError("Invalid config type for VIDEO job")
             return JobFactory._create_video_job(
-                config, model, processor, executor, queue
+                config, model, processor, executor, frames or []
             )
         else:
             raise ValueError(f"Unknown job type: {config.job_type}")
@@ -68,11 +66,11 @@ class JobFactory:
         model: Any,
         processor: Any,
         executor: ThreadPoolExecutor,
-        queue: Any,  # InferenceQueue
+        frames: list,
     ) -> Any:
         """Create VideoJob from simplified configuration."""
         # Import here to avoid circular dependencies
-        from iris.vlm.inference.queue.jobs import VideoJob
+        from iris.server.inference.jobs import VideoJob
 
         # job_id is guaranteed to be set by create_job(), but add fallback for type safety
         job_id = config.job_id or f"video-{uuid.uuid4().hex[:8]}"
@@ -82,9 +80,8 @@ class JobFactory:
             model=model,
             processor=processor,
             executor=executor,
-            queue=queue,
+            frames=frames,
             prompt=config.prompt,
-            trigger_mode=config.trigger_mode,
             buffer_size=config.buffer_size,
             overlap_frames=config.overlap_frames,
             default_fps=config.default_fps,

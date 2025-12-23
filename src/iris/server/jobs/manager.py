@@ -1,4 +1,9 @@
-"""Job lifecycle management and frame routing."""
+"""Job lifecycle management.
+
+This module provides the JobManager class that handles job lifecycle operations
+including starting, stopping, and tracking jobs. The actual job execution is
+handled by the InferenceExecutor.
+"""
 
 import asyncio
 import logging
@@ -6,11 +11,9 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image
-
+from iris.server.inference.jobs import Job
 from iris.server.jobs.config import JobConfig
 from iris.server.jobs.factory import JobFactory
-from iris.vlm.inference.queue.jobs import Job
 
 if TYPE_CHECKING:
     from iris.server.dependencies import ServerState
@@ -19,13 +22,16 @@ logger = logging.getLogger(__name__)
 
 
 class JobManager:
-    """Centralized job lifecycle and frame routing management.
+    """Centralized job lifecycle management.
 
     Responsibilities:
     - Track active jobs
-    - Route frames to jobs that accept them
     - Provide start/stop/status API
+    - Broadcast log messages to WebSocket callbacks
     - Thread-safe operations with asyncio.Lock
+
+    Note: Job execution is handled by InferenceExecutor. JobManager only
+    manages the lifecycle and provides a tracking layer.
     """
 
     def __init__(self, state: "ServerState"):
@@ -72,7 +78,6 @@ class JobManager:
                 model=self.state.model,
                 processor=self.state.processor,
                 executor=self.state.queue.executor,
-                queue=self.state.queue,
             )
 
             # Set log callback if job supports it
@@ -171,35 +176,6 @@ class JobManager:
                 "errors": errors
             }
 
-    async def route_frame(
-        self,
-        frame: Image.Image,
-        frame_id: int,
-        timestamp: float,
-        client_fps: float | None = None,
-    ) -> None:
-        """Route incoming frame to all active jobs that accept frames.
-
-        Args:
-            frame: PIL Image to route
-            frame_id: Frame identifier for logging
-            timestamp: Frame arrival timestamp
-            client_fps: Capture FPS reported by client (optional)
-        """
-        async with self.lock:
-            for job_id, job in list(self.active_jobs.items()):
-                # Only route to jobs that accept frames
-                if job.accepts_frames():
-                    try:
-                        await job.add_frame(
-                            frame, frame_id, timestamp, client_fps=client_fps
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error routing frame {frame_id} to job {job_id}: {e}",
-                            exc_info=True,
-                        )
-
     async def get_job_status(self, job_id: str) -> dict | None:
         """Get current status of a specific job.
 
@@ -254,7 +230,6 @@ class JobManager:
                 job_id
                 for job_id, job in self.active_jobs.items()
                 if job.status.value in ["completed", "failed"]
-                and not job.accepts_frames()
             ]
             for job_id in completed:
                 del self.active_jobs[job_id]

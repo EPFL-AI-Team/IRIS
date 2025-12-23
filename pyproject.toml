@@ -56,8 +56,6 @@ server = [
 iris-train = "iris.cli.finetune.train:main"
 iris-client = "iris.client.web.app:main"
 iris-server = "iris.server.app:main"
-iris-test = "iris.cli.local_test:cli"
-iris = "iris.cli.local_test:cli"
 iris-benchmark = "iris.cli.benchmark:run"
 iris-vis = "iris.dataset.visualize_sampling:main"
 
