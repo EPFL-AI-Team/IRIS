@@ -402,7 +402,7 @@ async def process_video_endpoint(request: dict) -> dict:
     from pathlib import Path
 
     from iris.server.video_processor import VideoFrameExtractor
-    from iris.vlm.inference.queue.jobs import VideoJob
+    from iris.server.inference.jobs import VideoJob
 
     video_name = request.get("video_name")
     if not video_name:
@@ -466,7 +466,6 @@ async def process_video_endpoint(request: dict) -> dict:
             model=state.model,
             processor=state.processor,
             executor=state.queue.executor,
-            queue=state.queue,
             frames=batch_frames,
             prompt=prompt,
             buffer_size=buffer_size,
@@ -563,7 +562,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     # Producer loop which receives frames and buffers them locally
     async def receive_loop() -> None:
         # Local frame buffer for this connection
-        frame_buffer: list[Image.Image] = []
+        frame_buffer = FrameBuffer(
+            buffer_size=buffer_size,
+            overlap_frames=overlap_frames,
+        )
         batch_counter = 0
         client_fps = default_fps
 
@@ -630,21 +632,20 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 image = Image.open(BytesIO(image_data))
 
                 # Add frame to local buffer
-                frame_buffer.append(image.copy())
+                frame_buffer.add_frame(image)
 
                 # When buffer reaches threshold, create and submit batch job
-                if len(frame_buffer) >= buffer_size:
+                if frame_buffer.is_ready():
                     batch_job_id = f"{connection_job_id}_batch_{batch_counter}"
 
                     # Create one-shot VideoJob with buffered frames
-                    from iris.vlm.inference.queue.jobs import VideoJob
+                    from iris.server.inference.jobs import VideoJob
                     batch_job = VideoJob(
                         job_id=batch_job_id,
                         model=state.model,
                         processor=state.processor,
                         executor=state.queue.executor,
-                        queue=state.queue,
-                        frames=frame_buffer.copy(),
+                        frames=frame_buffer.get_batch(),
                         prompt=prompt,
                         buffer_size=buffer_size,
                         overlap_frames=overlap_frames,
@@ -671,7 +672,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     logger.info(f"Submitted {batch_job_id}, queue_depth={queue_depth}")
 
                     # Keep last N frames for temporal overlap
-                    frame_buffer = frame_buffer[-overlap_frames:]
+                    frame_buffer.slide_window()
                     batch_counter += 1
 
         except WebSocketDisconnect as e:
@@ -688,14 +689,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 batch_job_id = f"{connection_job_id}_batch_{batch_counter}_partial"
                 logger.info(f"Submitting partial batch with {len(frame_buffer)} frames")
 
-                from iris.vlm.inference.queue.jobs import VideoJob
+                from iris.server.inference.jobs import VideoJob
                 batch_job = VideoJob(
                     job_id=batch_job_id,
                     model=state.model,
                     processor=state.processor,
                     executor=state.queue.executor,
-                    queue=state.queue,
-                    frames=frame_buffer.copy(),
+                    frames=frame_buffer.get_batch(),
                     prompt=prompt,
                     buffer_size=buffer_size,
                     overlap_frames=overlap_frames,
