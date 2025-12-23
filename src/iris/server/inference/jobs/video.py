@@ -14,14 +14,10 @@ detection and appropriate inference paths.
 
 import asyncio
 import logging
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import Any
 
-import cv2
-import numpy as np
 import torch
 from PIL import Image
 
@@ -228,74 +224,50 @@ class VideoJob(Job):
         return result
 
     def _inference_smolvlm(self, frames: list[Image.Image], prompt: str) -> str:
-        """New SmolVLM2 logic (V100 friendly)."""
+        """SmolVLM2 inference using VideoMetadata (avoids temp file and dtype issues)."""
+        from transformers.video_utils import VideoMetadata
+
         logger.info(f"WORKER: Running SmolVLM inference on {len(frames)} frames")
 
         if not frames:
             return "No frames to process"
 
-        temp_video_path = None
+        # Create metadata for our pre-sampled frames
+        video_metadata = VideoMetadata(
+            total_num_frames=len(frames),
+            fps=self.client_fps,
+            duration=len(frames) / self.client_fps,
+        )
 
-        try:
-            # Create temporary mp4 file (needed for smolvlm)
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-                temp_video_path = tmp.name
+        # Pass PIL Images directly (not a video path)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "video", "video": frames},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
 
-            # Write frames to video (RGB PIL -> BGR OpenCV)
-            first = np.array(frames[0].convert("RGB"))
-            height, width = first.shape[:2]
+        with torch.no_grad():
+            inputs = self.processor.apply_chat_template(
+                messages,
+                video_metadata=[video_metadata],
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            ).to(device=self.model.device, dtype=self.model.dtype)
 
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            writer = cv2.VideoWriter(
-                temp_video_path, fourcc, self.client_fps, (width, height)
+            # Generate
+            outputs = self.model.generate(
+                **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
             )
 
-            for frame in frames:
-                arr = np.array(frame.convert("RGB"))
-                bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-                writer.write(bgr)
+            # Decode
+            result = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
 
-            writer.release()
-
-            # SmolVLM2 messages with path to tmp video
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "video",
-                            "path": temp_video_path,
-                            "fps": self.client_fps,
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ]
-
-            with torch.no_grad():
-                inputs = self.processor.apply_chat_template(
-                    messages,
-                    add_generation_prompt=True,
-                    tokenize=True,
-                    return_dict=True,
-                    return_tensors="pt",
-                ).to(self.model.device)
-
-                # Generate
-                outputs = self.model.generate(
-                    **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
-                )
-
-                # Decode
-                generated_ids = outputs[0][len(inputs.input_ids[0]) :]
-                result = self.processor.decode(generated_ids, skip_special_tokens=True)
-
-        finally:
-            if temp_video_path:
-                try:
-                    Path(temp_video_path).unlink(missing_ok=True)
-                except Exception:
-                    logger.warning("Could not delete temp video %s", temp_video_path)
         return result
 
     def _send_log(self, message: str) -> None:

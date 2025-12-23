@@ -2,8 +2,8 @@
 
 from typing import TYPE_CHECKING
 
-from iris.server.metrics import MetricsCollector
 from iris.server.inference.executor import InferenceExecutor
+from iris.server.metrics import MetricsCollector
 
 if TYPE_CHECKING:
     from iris.server.jobs.manager import JobManager

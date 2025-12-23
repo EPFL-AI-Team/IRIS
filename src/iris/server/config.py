@@ -16,6 +16,11 @@ class ServerConfig(BaseModel):
         default=_yaml_config.get("server", {}).get("vlm_hardware"),
         description="Hardware profile: v100, mac, or null for auto-detect"
     )
+    # Optional dtype override (takes precedence over hardware profile)
+    model_dtype: str | None = Field(
+        default=_yaml_config.get("server", {}).get("model_dtype"),
+        description="Override model dtype (float16, float32, bfloat16, auto). Falls back to hardware profile if not set."
+    )
     max_queue_size: int = Field(default=_yaml_config.get("server", {}).get("max_queue_size", 10))
     num_workers: int = Field(default=_yaml_config.get("server", {}).get("num_workers", 1))
     host: str = Field(default=_yaml_config.get("server", {}).get("host", "0.0.0.0"))

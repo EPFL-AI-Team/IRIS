@@ -161,47 +161,50 @@ class InferenceExecutor:
             logger.info(f"{worker_name} using CPU (torch not available)")
 
         logger.info(f"{worker_name} has started.")
-        while self._running:
-            # Wait for a job to appear in the queue
-            job: Job | None = await self.queue.get()
-            # Check for the shutdown signal
-            if job is None:
-                self.queue.task_done()
-                break
+        try:
+            while self._running:
+                # Wait for a job to appear in the queue
+                job: Job | None = await self.queue.get()
+                # Check for the shutdown signal
+                if job is None:
+                    self.queue.task_done()
+                    break
 
-            try:
-                # Move model to this worker's GPU if needed
-                if hasattr(job, "model") and hasattr(job.model, "to") and device != "cpu":
-                    current_device = str(job.model.device) if hasattr(job.model, "device") else "unknown"
-                    if device not in current_device:
-                        logger.debug(
-                            f"{worker_name}: Moving model from {current_device} to {device}"
-                        )
-                        job.model.to(device)
+                try:
+                    # Move model to this worker's GPU if needed
+                    if hasattr(job, "model") and hasattr(job.model, "to") and device != "cpu":
+                        current_device = str(job.model.device) if hasattr(job.model, "device") else "unknown"
+                        if device not in current_device:
+                            logger.debug(
+                                f"{worker_name}: Moving model from {current_device} to {device}"
+                            )
+                            job.model.to(device)
 
-                # Log queue depth before processing
-                queue_depth = self.queue.qsize()
-                logger.info(f"{worker_name} processing {job}, queue_depth={queue_depth}")
+                    # Log queue depth before processing
+                    queue_depth = self.queue.qsize()
+                    logger.info(f"{worker_name} processing {job}, queue_depth={queue_depth}")
 
-                # Run the job. The job updates its own internal state.
-                await job.execute()
+                    # Run the job. The job updates its own internal state.
+                    await job.execute()
 
-                # Log queue depth after completion to show remaining backlog
-                queue_depth = self.queue.qsize()
-                remaining_results = self.results.qsize()
-                remaining_jobs = queue_depth
-                logger.info(
-                    f"{worker_name} completed {job}, queue_depth={queue_depth}, remaining_jobs={remaining_jobs}, pending_results={remaining_results}"
-                )
+                    # Log queue depth after completion to show remaining backlog
+                    queue_depth = self.queue.qsize()
+                    remaining_results = self.results.qsize()
+                    remaining_jobs = queue_depth
+                    logger.info(
+                        f"{worker_name} completed {job}, queue_depth={queue_depth}, remaining_jobs={remaining_jobs}, pending_results={remaining_results}"
+                    )
 
-            except Exception as e:
-                logger.error(f"{worker_name} failed on {job}: {e}", exc_info=True)
-                # If it fails, update the job's state
-                job.status = JobStatus.FAILED
-                job.error = str(e)
-            finally:
-                # Pass the entire job object to the results queue
-                await self.results.put(job)
-                self.queue.task_done()
+                except Exception as e:
+                    logger.error(f"{worker_name} failed on {job}: {e}", exc_info=True)
+                    # If it fails, update the job's state
+                    job.status = JobStatus.FAILED
+                    job.error = str(e)
+                finally:
+                    # Pass the entire job object to the results queue
+                    await self.results.put(job)
+                    self.queue.task_done()
+        except asyncio.CancelledError:
+            logger.debug(f"{worker_name} cancelled during shutdown")
 
         logger.info(f"{worker_name} has stopped.")

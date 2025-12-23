@@ -54,12 +54,15 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 def load_model_and_processor(
     model_id: str,
     hardware: str | None = None,
+    model_dtype: str | None = None,
 ) -> tuple[PreTrainedModel, ProcessorMixin]:
     """Load model and processor.
 
     Args:
         model_id: HuggingFace model ID or key from MODEL_CONFIGS (e.g., "qwen2.5-7b")
         hardware: Optional hardware profile (e.g., "v100", "mac") from configs/vlm/hardware/
+        model_dtype: Optional dtype override (float16, float32, bfloat16, auto).
+                     If specified, takes precedence over hardware profile.
 
     Returns:
         Tuple of (model, processor)
@@ -80,7 +83,12 @@ def load_model_and_processor(
 
     # Extract configuration with defaults
     device = hw_config.get("device", "auto")
-    dtype = _parse_dtype(hw_config.get("model", {}).get("dtype", "auto"))
+    # Use model_dtype override if provided, otherwise fall back to hardware profile
+    if model_dtype is not None:
+        dtype = _parse_dtype(model_dtype)
+        logger.info(f"Using dtype override from config: {model_dtype}")
+    else:
+        dtype = _parse_dtype(hw_config.get("model", {}).get("dtype", "auto"))
     attn_implementation = hw_config.get("model", {}).get("attn_implementation", "sdpa")
     low_cpu_mem_usage = hw_config.get("model", {}).get("low_cpu_mem_usage", True)
 

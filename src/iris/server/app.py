@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 import uuid
 import warnings
@@ -21,10 +22,10 @@ from PIL import Image
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
 from iris.server.frame_buffer import FrameBuffer
+from iris.server.inference.executor import InferenceExecutor
 from iris.server.jobs.config import JobConfig
 from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
-from iris.server.inference.executor import InferenceExecutor
 from iris.vlm.models import load_model_and_processor
 
 # Suppress known warnings
@@ -78,8 +79,26 @@ def _queue_status_snapshot() -> dict[str, int]:
     }
 
 
+def _wait_for_drain_and_shutdown() -> None:
+    """Background thread that waits for queue drain then triggers shutdown."""
+    while True:
+        time.sleep(0.5)
+        if force_shutdown_event.is_set():
+            return  # Already forcing shutdown
+        status = _queue_status_snapshot()
+        if status["active_jobs"] == 0 and status["queue_depth"] == 0:
+            logger.info("All queued jobs completed - initiating server shutdown")
+            # Send SIGINT to self - default handler will trigger uvicorn shutdown
+            os.kill(os.getpid(), signal.SIGINT)
+            return
+
+
 def handle_shutdown_signal(signum: int, frame: Any) -> None:
-    """Handle SIGINT/SIGTERM for graceful shutdown."""
+    """Handle SIGINT/SIGTERM for graceful shutdown.
+
+    On first signal: Log status, mark shutdown, wait for ALL queued jobs to complete.
+    On second signal: Force immediate shutdown.
+    """
     global shutdown_count
     shutdown_count += 1
 
@@ -98,24 +117,34 @@ def handle_shutdown_signal(signum: int, frame: Any) -> None:
             status["pending_results"],
         )
 
-        # If queue is empty, shut down immediately. Otherwise, wait for jobs to finish.
-        if status["active_jobs"] == 0 and status["queue_depth"] == 0:
-            logger.info("No pending jobs - shutting down immediately.")
-        else:
-            logger.info("Waiting for jobs to finish. Press Ctrl+C again to force shutdown.")
-
         shutdown_event.set()
-        # Re-raise KeyboardInterrupt to trigger uvicorn shutdown
-        raise KeyboardInterrupt
+        total_pending = status["active_jobs"] + status["queue_depth"]
 
-    elif shutdown_count >= 2:
-        logger.warning(
-            "Received signal %s again. Force shutdown initiated.",
-            signal.Signals(signum).name,
-        )
-        force_shutdown_event.set()
-        # Re-raise to force immediate exit
-        raise KeyboardInterrupt
+        if total_pending > 0:
+            logger.info(
+                "Waiting for %d queued jobs to complete. Press Ctrl+C again to force shutdown.",
+                total_pending,
+            )
+            # Restore default handlers so second Ctrl+C triggers immediate uvicorn shutdown
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            # Start background thread to monitor queue and auto-shutdown when drained
+            threading.Thread(target=_wait_for_drain_and_shutdown, daemon=True).start()
+        else:
+            # Queue already empty, trigger shutdown immediately
+            logger.info("Queue already empty - shutting down")
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+        return
+
+    # shutdown_count >= 2 shouldn't reach here since we restore default handlers
+    # but handle it just in case
+    logger.warning(
+        "Received %s again. Force shutdown.",
+        signal.Signals(signum).name,
+    )
+    force_shutdown_event.set()
 
 
 async def global_result_drainer(state: Any) -> None:
@@ -147,6 +176,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     state.model, state.processor = load_model_and_processor(
         model_id=config.model_id,
         hardware=config.vlm_hardware,
+        model_dtype=config.model_dtype,
     )
 
     logger.info("Starting inference executor...")
@@ -194,30 +224,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Metrics collector closed")
 
     if state.queue:
-        if force_shutdown_event.is_set():
-            logger.warning("Force shutdown - terminating all jobs immediately")
-            await state.queue.stop()
-        else:
-            status_before = _queue_status_snapshot()
-            if status_before["active_jobs"] > 0 or status_before["queue_depth"] > 0:
-                logger.info(
-                    "Graceful shutdown - waiting for in-flight jobs (no timeout). "
-                    "active_jobs=%d, queue_depth=%d, pending_results=%d",
-                    status_before["active_jobs"],
-                    status_before["queue_depth"],
-                    status_before["pending_results"],
-                )
-
-            await state.queue.stop()
-
-            status_after = _queue_status_snapshot()
-            if status_after["active_jobs"] > 0 or status_after["queue_depth"] > 0:
-                logger.info(
-                    "Queue stopped. Remaining: active_jobs=%d, queue_depth=%d, pending_results=%d",
-                    status_after["active_jobs"],
-                    status_after["queue_depth"],
-                    status_after["pending_results"],
-                )
+        status = _queue_status_snapshot()
+        logger.info(
+            "Stopping executor (active_jobs=%d, queue_depth=%d)",
+            status["active_jobs"],
+            status["queue_depth"],
+        )
+        await state.queue.stop()
     logger.info("Server stopped.")
 
 
@@ -524,13 +537,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     prompt = video_cfg.get("prompt", "Describe what you see in the video.")
     max_new_tokens = video_cfg.get("max_new_tokens", 128)
 
-    # Track WebSocket connection state
-    connection_active = True
+    # Track WebSocket connection state (use dict for proper closure capture)
+    connection_state = {"active": True}
 
     # Result callback for batch jobs
     async def result_handler(result_data: dict) -> None:
         """Handle result from VideoJob and queue for sending."""
-        if not connection_active:
+        if not connection_state["active"]:
             return  # Skip if connection is closed
 
         try:
@@ -570,9 +583,15 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
         try:
             while True:
+                # Check if server is shutting down - exit cleanly
+                if state.shutting_down:
+                    logger.info(f"Shutdown initiated - closing connection {connection_job_id}")
+                    break
+
                 # Support both text and binary JSON payloads from clients
                 try:
-                    message = await websocket.receive()
+                    # Use timeout to periodically check shutdown flag
+                    message = await asyncio.wait_for(websocket.receive(), timeout=0.5)
                     if message.get("type") == "websocket.disconnect":
                         raise WebSocketDisconnect()
 
@@ -590,6 +609,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                             continue
 
                     data = json.loads(raw_payload)
+                except asyncio.TimeoutError:
+                    continue  # Re-check shutdown flag
                 except RuntimeError as e:
                     if "WebSocket is not connected" in str(e):
                         raise WebSocketDisconnect() from e
@@ -721,13 +742,22 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     # Consumer loop which watches queue result and sends them to the client
     async def send_loop() -> None:
         try:
-            while True:
-                # Check for log messages or results (non-blocking)
+            while connection_state["active"]:
                 try:
-                    msg = await outgoing_queue.get()
+                    # Use timeout to periodically check connection state
+                    msg = await asyncio.wait_for(outgoing_queue.get(), timeout=0.5)
+                    if not connection_state["active"]:
+                        break
                     await websocket.send_json(msg)
+                except asyncio.TimeoutError:
+                    continue  # Re-check connection_state
                 except asyncio.CancelledError:
                     break
+                except RuntimeError as e:
+                    if "websocket.send" in str(e).lower():
+                        logger.debug("WebSocket closed, exiting send loop")
+                        break
+                    raise
         except asyncio.CancelledError:
             logger.debug("Send loop cancelled during shutdown")
             # Don't raise - allow graceful cleanup
@@ -746,11 +776,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     # This runs until one of them finishes (usually the receive loop on disconnect)
     try:
         await asyncio.gather(receive_loop(), send_loop())
+    except asyncio.CancelledError:
+        logger.debug(f"WebSocket tasks cancelled for {connection_job_id}")
     finally:
         logger.info(f"WebSocket disconnecting for {connection_job_id}")
 
         # Mark connection as inactive to stop result handler tasks
-        connection_active = False
+        connection_state["active"] = False
 
         # Cancel any pending result handler tasks
         for task in pending_tasks:
