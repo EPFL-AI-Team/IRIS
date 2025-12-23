@@ -12,31 +12,27 @@ lora:
   finetune_mlp_modules: true
 
 data:
-  train_path: "/scratch/izar/mhamelin/finebio_data/train_mini.jsonl"
-  val_path: "/scratch/izar/mhamelin/finebio_data/val_mini.jsonl"
-  # Memory Guards
-  max_frames: 8           # 8 frames is a good balance for temporal context
-  max_pixels: 307200      # 640x480. Strictly prevents V100 OOM.
+  train_path: "/scratch/iris/finebio_data/train_mini.jsonl"
+  val_path: "/scratch/iris/finebio_data/val_mini.jsonl"
+  max_frames: 8
+  max_pixels: 307200      # 640x480
 
 training:
-  # 1. Memory Settings
-  batch_size: 1                   # MUST be 1 on V100 with video
-  gradient_accumulation_steps: 32 # 1 * 32 = 32 Effective Batch Size
+  batch_size: 2
+  gradient_accumulation_steps: 8 # 2 * 16 = 16 Effective Batch Size
+
+  # Need to make it compatible for V100 inference
+  fp16: true                      # V100 compatible
+  bf16: false                     # V100 doesn't support bf16
+  optim: "adamw_torch"
   
-  # 2. V100 Precision (Volta GPU)
-  fp16: true                      # V100 is fast with fp16
-  bf16: false                     # V100 does NOT support bf16 (Ampere+ only)
-  optim: "paged_adamw_8bit"       # Paged optimizer saves extra memory
-  
-  # 3. Stability Settings
-  learning_rate: 5.0e-5           # Lower LR to prevent "zig-zag" loss
-  warmup_steps: 20                # Gentle start
-  max_grad_norm: 0.3              # Clip gradient spikes
+  learning_rate: 5.0e-5
+  warmup_steps: 10
+  max_grad_norm: 0.3
   weight_decay: 0.01
 
-  # 4. Duration & Logging
-  max_steps: 60                   # Adjust based on dataset size (Target ~3-5 epochs)
-  output_dir: "/scratch/izar/mhamelin/checkpoints/qwen3b_v100_stable"
-  save_steps: 20                  # Save more frequently for short runs
+  max_steps: 50
+  output_dir: "/scratch/iris/checkpoints/qwen3b_test_run"
+  save_steps: 25
   logging_steps: 1
-  gradient_checkpointing: true    # Trades compute for VRAM (Required)
+  gradient_checkpointing: true

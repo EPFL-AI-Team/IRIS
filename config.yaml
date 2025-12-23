@@ -20,7 +20,7 @@ jobs:
     overlap_frames: 4
     default_fps: 5
     max_new_tokens: 128
-    prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity), sample_id (visible sample/ID). Use \"none\" if not visible. Respond with JSON only—no markdown, no prose, no code fences."
+    prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
 
 client:
   video:

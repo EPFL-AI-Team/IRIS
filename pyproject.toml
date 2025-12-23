@@ -3,7 +3,7 @@ name = "iris"
 version = "0.1.0"
 description = "IRIS - Video understanding ML system"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "jupyter>=1.1.1",
     "numpy>=2.3.3",
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["google-generativeai>=0.8.5", "ipykernel>=6.29.0", "tensorboard>=2.14.0"]
+dev = ["google-generativeai>=0.8.5", "ipykernel>=6.29.0"]
 
 # Server-only dependencies (V100 + Mac dev)
 server = [
@@ -42,15 +42,17 @@ server = [
     "qwen-vl-utils>=0.0.8",         # Qwen utilities
     "datasets>=2.19.0",             # Data loading
     "num2words>=0.5.14",
-    "tensorboard>=2.14.0",
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
     "torchcodec>=0.7.0 ; sys_platform == 'darwin'",
     "scikit-learn>=1.8.0",
+    # Logging
+    "tensorboard>=2.14.0",
+    "wandb>=0.23.1",
 ]
 
 [project.scripts]
-iris-train = "iris.vlm.train:main"
+iris-train = "iris.cli.finetune.train:main"
 iris-client = "iris.client.web.app:main"
 iris-server = "iris.server.app:main"
 iris-test = "iris.cli.local_test:cli"
