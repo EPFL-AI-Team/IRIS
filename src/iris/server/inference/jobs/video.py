@@ -37,8 +37,8 @@ class VideoJob(Job):
     def __init__(
         self,
         job_id: str,
-        model: Any,
-        processor: Any,
+        model: Any | None,
+        processor: Any | None,
         executor: ThreadPoolExecutor,
         frames: list[Image.Image],
         prompt: str = """<video>\nAnalyze this video segment of a biological experiment. Output a valid JSON object with the following keys:\n- action: The specific movement (e.g., streaking, inspecting).\n- tool: The active instrument.\n- target: The object being acted upon.\n- context: The protocol step.\n- hand: Active hand (left/right).\n- sample_id: Any handwritten text or labels visible on the object (or "none").\n- notes: Visual details like agar color or colony presence.""",
@@ -49,8 +49,8 @@ class VideoJob(Job):
         client_fps: float | None = None,
     ):
         super().__init__(job_id)
-        self.model = model
-        self.processor = processor
+        self.model = model  # May be None until worker injects
+        self.processor = processor  # May be None until worker injects
         self.executor = executor
         self.prompt = prompt
         self._process_vision_info = None  # Lazy-loaded when Qwen is detected
@@ -73,17 +73,6 @@ class VideoJob(Job):
             None  # Callable[[dict], None] - for real-time result broadcasting
         )
 
-        # If this job is for a Qwen model, attempt to load qwen_vl_utils once up front
-        if self._is_qwen_model():
-            try:
-                from qwen_vl_utils import process_vision_info
-
-                self._process_vision_info = process_vision_info
-            except ModuleNotFoundError as exc:
-                raise ModuleNotFoundError(
-                    "qwen_vl_utils (and its torchvision dependency) is required when using Qwen models."
-                ) from exc
-
     async def execute(self) -> None:
         """One-shot execution: process the buffered frames and complete.
 
@@ -93,8 +82,29 @@ class VideoJob(Job):
         self.status = JobStatus.RUNNING
         self.started_at = time.time()
 
+        # Validate that model and processor have been injected by worker
+        if self.model is None or self.processor is None:
+            error_msg = f"[{self.job_id}] Model/processor not injected by worker. This indicates a configuration error."
+            logger.error(error_msg)
+            self.status = JobStatus.FAILED
+            self.error = error_msg
+            raise RuntimeError(error_msg)
+
         frame_count = len(self.frame_buffer)
         logger.info(f"[{self.job_id}] VideoJob starting with {frame_count} frames")
+
+        # Lazy-load Qwen utils if needed (now that model is available)
+        if self._is_qwen_model() and self._process_vision_info is None:
+            try:
+                from qwen_vl_utils import process_vision_info
+
+                self._process_vision_info = process_vision_info
+            except ModuleNotFoundError as exc:
+                error_msg = "qwen_vl_utils (and its torchvision dependency) is required when using Qwen models."
+                logger.error(f"[{self.job_id}] {error_msg}")
+                self.status = JobStatus.FAILED
+                self.error = error_msg
+                raise ModuleNotFoundError(error_msg) from exc
 
         # Process frames
         await self._run_inference()
@@ -173,6 +183,8 @@ class VideoJob(Job):
 
     def _is_qwen_model(self) -> bool:
         """Simple check to see if we are using a Qwen model."""
+        if self.model is None:
+            return False
         model_type = getattr(self.model.config, "model_type", "").lower()
         return "qwen" in model_type
 

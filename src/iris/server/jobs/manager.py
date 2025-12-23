@@ -73,10 +73,11 @@ class JobManager:
 
         async with self.lock:
             # Create job using factory
+            # Note: model/processor are None for VideoJob (injected by worker)
             job = JobFactory.create_job(
                 config=config,
-                model=self.state.model,
-                processor=self.state.processor,
+                model=None,  # Will be injected by worker
+                processor=None,  # Will be injected by worker
                 executor=self.state.queue.executor,
             )
 

@@ -25,13 +25,23 @@ class InferenceExecutor:
     - Supports multi-GPU setups via worker assignment
     """
 
-    def __init__(self, max_queue_size: int = 30, num_workers: int = 1):
+    def __init__(
+        self,
+        max_queue_size: int = 30,
+        num_workers: int = 1,
+        model_id: str | None = None,
+        hardware: str | None = None,
+        model_dtype: str | None = None,
+    ):
         """
         Initializes the core components of the executor.
 
         Args:
             max_queue_size: Max jobs to hold before dropping new ones.
-            num_workers: Number of parallel threads for inference. For one GPU, use 1.
+            num_workers: Number of parallel workers (one model replica per worker).
+            model_id: HuggingFace model ID for per-worker loading
+            hardware: Hardware profile (e.g., "v100", "mac") for per-worker loading
+            model_dtype: Model dtype override (float16, float32, bfloat16, auto)
         """
         self.queue: asyncio.Queue[Job | None] = asyncio.Queue(maxsize=max_queue_size)
         self.results: asyncio.Queue[Job] = asyncio.Queue()
@@ -41,6 +51,11 @@ class InferenceExecutor:
         self.workers: list[asyncio.Task] = []  # list to hold our running worker tasks
         self._running = False  # Used for graceful shutdown
         self.num_workers = num_workers
+
+        # Model configuration for per-worker loading
+        self.model_id = model_id
+        self.hardware = hardware
+        self.model_dtype = model_dtype
 
     async def start(self) -> None:
         """Starts the worker tasks that will consume jobs from the queue."""
@@ -160,6 +175,30 @@ class InferenceExecutor:
             device = "cpu"
             logger.info(f"{worker_name} using CPU (torch not available)")
 
+        # Load worker-specific model replica
+        worker_model = None
+        worker_processor = None
+        if self.model_id:
+            try:
+                from iris.vlm.models import load_model_and_processor
+
+                logger.info(f"{worker_name} loading model replica: {self.model_id}")
+                worker_model, worker_processor = load_model_and_processor(
+                    model_id=self.model_id,
+                    hardware=self.hardware,
+                    model_dtype=self.model_dtype,
+                )
+
+                # Move model to assigned GPU if needed
+                if device != "cpu" and hasattr(worker_model, "to"):
+                    logger.info(f"{worker_name} moving model to {device}")
+                    worker_model = worker_model.to(device) # type: ignore
+
+                logger.info(f"{worker_name} model loaded successfully on {device}")
+            except Exception as e:
+                logger.error(f"{worker_name} failed to load model: {e}", exc_info=True)
+                # Continue without model - jobs will fail with validation error
+
         logger.info(f"{worker_name} has started.")
         try:
             while self._running:
@@ -171,14 +210,10 @@ class InferenceExecutor:
                     break
 
                 try:
-                    # Move model to this worker's GPU if needed
-                    if hasattr(job, "model") and hasattr(job.model, "to") and device != "cpu":
-                        current_device = str(job.model.device) if hasattr(job.model, "device") else "unknown"
-                        if device not in current_device:
-                            logger.debug(
-                                f"{worker_name}: Moving model from {current_device} to {device}"
-                            )
-                            job.model.to(device)
+                    # Inject worker's model into job before execution
+                    if hasattr(job, "model") and hasattr(job, "processor"):
+                        job.model = worker_model
+                        job.processor = worker_processor
 
                     # Log queue depth before processing
                     queue_depth = self.queue.qsize()

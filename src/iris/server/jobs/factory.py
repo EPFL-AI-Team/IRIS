@@ -19,8 +19,8 @@ class JobFactory:
     @staticmethod
     def create_job(
         config: JobConfig,
-        model: Any,
-        processor: Any,
+        model: Any | None,
+        processor: Any | None,
         executor: ThreadPoolExecutor,
         frames: list | None = None,
     ) -> Any:
@@ -28,8 +28,8 @@ class JobFactory:
 
         Args:
             config: Job configuration (validated Pydantic model)
-            model: VLM model instance
-            processor: Model processor
+            model: VLM model instance (ignored for VideoJob - injected by worker)
+            processor: Model processor (ignored for VideoJob - injected by worker)
             executor: ThreadPoolExecutor for blocking GPU work
             frames: List of PIL Image frames (required for VideoJob)
 
@@ -77,8 +77,8 @@ class JobFactory:
 
         return VideoJob(
             job_id=job_id,
-            model=model,
-            processor=processor,
+            model=None,  # Will be injected by worker
+            processor=None,  # Will be injected by worker
             executor=executor,
             frames=frames,
             prompt=config.prompt,

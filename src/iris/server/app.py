@@ -171,17 +171,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     logger.info("Signal handlers registered for graceful shutdown")
 
-    logger.info("Loading model...")
-
-    state.model, state.processor = load_model_and_processor(
+    logger.info("Starting inference executor with per-worker model loading...")
+    state.queue = InferenceExecutor(
+        max_queue_size=config.max_queue_size,
+        num_workers=config.num_workers,
         model_id=config.model_id,
         hardware=config.vlm_hardware,
         model_dtype=config.model_dtype,
-    )
-
-    logger.info("Starting inference executor...")
-    state.queue = InferenceExecutor(
-        max_queue_size=config.max_queue_size, num_workers=config.num_workers
     )
     await state.queue.start()
 
@@ -475,8 +471,8 @@ async def process_video_endpoint(request: dict) -> dict:
         # Create VideoJob
         batch_job = VideoJob(
             job_id=batch_job_id,
-            model=state.model,
-            processor=state.processor,
+            model=None,  # Will be injected by worker
+            processor=None,  # Will be injected by worker
             executor=state.queue.executor,
             frames=batch_frames,
             prompt=prompt,
@@ -662,8 +658,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     from iris.server.inference.jobs import VideoJob
                     batch_job = VideoJob(
                         job_id=batch_job_id,
-                        model=state.model,
-                        processor=state.processor,
+                        model=None,  # Will be injected by worker
+                        processor=None,  # Will be injected by worker
                         executor=state.queue.executor,
                         frames=frame_buffer.get_batch(),
                         prompt=prompt,
@@ -712,8 +708,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 from iris.server.inference.jobs import VideoJob
                 batch_job = VideoJob(
                     job_id=batch_job_id,
-                    model=state.model,
-                    processor=state.processor,
+                    model=None,  # Will be injected by worker
+                    processor=None,  # Will be injected by worker
                     executor=state.queue.executor,
                     frames=frame_buffer.get_batch(),
                     prompt=prompt,
