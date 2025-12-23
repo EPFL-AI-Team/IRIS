@@ -1,267 +1,33 @@
+"""Video inference job.
+
+This module contains the VideoJob class for processing batches of video frames
+through VLM inference. VideoJob is a server-side construct that:
+
+- Takes pre-buffered frames at construction time (one-shot processing)
+- Runs inference in a ThreadPoolExecutor thread to avoid blocking
+- Uses callbacks (log_callback, result_callback) to communicate results
+  back to the WebSocket handler
+
+The job supports both Qwen and SmolVLM model families with automatic
+detection and appropriate inference paths.
+"""
+
 import asyncio
-import base64
-import inspect
 import logging
 import tempfile
 import time
-from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from enum import Enum
-from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 import numpy as np
 import torch
 from PIL import Image
 
-if TYPE_CHECKING:
-    from iris.vlm.inference.queue.queue import InferenceQueue
-
+from iris.server.inference.jobs.base import Job, JobStatus
 
 logger = logging.getLogger(__name__)
-
-
-class JobStatus(Enum):
-    """Job lifecycle states"""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class Job(ABC):
-    """
-    Base class for all inference jobs.
-
-    This allows us to run any ML pipeline on a separate thread while other things are running.
-    """
-
-    def __init__(self, job_id: str):
-        self.job_id = job_id
-        self.status = JobStatus.PENDING
-        self.submitted_at = time.time()
-        self.started_at: float | None = None
-        self.completed_at: float | None = None
-        self.result: Any = None
-        self.error: str | None = None
-        self.processing_time: float = 0.0
-
-    def format_result(self) -> str:
-        """
-        Provides a standard, one-line summary for a completed job.
-        Subclasses should override this to provide more detailed output.
-        """
-        # This acts as a default for any job that doesn't have a custom formatter.
-        header = f"Job Completed: {self.job_id} ({self.job_type})"
-        separator = "-" * (len(header) + 4)
-        return f"\n\n{header}\n{separator}\n  - Result: {self.result}\n{separator}\n"
-
-    @abstractmethod
-    async def execute(self) -> Any:
-        """
-        DO THE WORK.
-
-        This method should run the job and store its output
-        in 'self.result' or 'self.error'.
-        """
-        pass
-
-    def accepts_frames(self) -> bool:
-        """Override this to indicate job accepts frame routing from JobManager.
-
-        Returns:
-            True if job accepts frames via add_frame(), False otherwise
-        """
-        return False
-
-    @abstractmethod
-    def to_response_dict(self) -> dict:
-        """Serialize job-specific data for WebSocket response.
-
-        This method allows each job type to define its own response format
-        while maintaining a consistent base structure in the WebSocket handler.
-
-        Returns:
-            Dictionary with job-specific data (result, metrics, etc.)
-        """
-        pass
-
-    @property
-    def job_type(self) -> str:
-        """Return class name for logging"""
-        return self.__class__.__name__
-
-    def __repr__(self) -> str:
-        return f"{self.job_type}(id={self.job_id}, status={self.status.value})"
-
-
-class DummyJob(Job):
-    """Simple test job"""
-
-    def __init__(self, job_id: str, sleep_time: float = 1.0):
-        super().__init__(job_id)
-        self.sleep_time = sleep_time
-
-    async def execute(self) -> str:
-        """Simulate work"""
-        self.status = JobStatus.RUNNING
-        self.started_at = time.time()
-
-        # Simulate blocking work
-        await asyncio.sleep(self.sleep_time)
-
-        self.status = JobStatus.COMPLETED
-        self.completed_at = time.time()
-        return f"Job {self.job_id} completed"
-
-    def to_response_dict(self) -> dict:
-        """Serialize DummyJob data for response."""
-        return {
-            "result": self.result,
-            "sleep_time": self.sleep_time,
-        }
-
-
-class SingleFrameJob(Job):
-    """
-    Process one frame with a VLM
-    """
-
-    def __init__(
-        self,
-        job_id: str,
-        frame: Image.Image,
-        model: Any,
-        processor: Any,
-        prompt: str,  # Specific to SingleFrameJob
-        executor: ThreadPoolExecutor,
-        received_at: float,
-    ):
-        super().__init__(job_id)
-
-        # Store everything we need for inference
-        self.frame = frame
-        self.model = model
-        self.processor = processor
-        self.prompt = prompt
-        self.executor = executor  # For running blocking code
-        self.received_at = received_at  # Store arrival time
-        self.total_latency: float = 0.0  # Will store (completed - received)
-        self.frame_b64: str | None = None  # Store frame as base64 for response
-
-        # Logging callback (set by JobManager)
-        self.log_callback: Any = None  # Callable[[dict], None]
-
-    def format_result(self) -> str:
-        """
-        Overrides the base method to provide a detailed, structured
-        output specific to a SingleFrameJob.
-        """
-        header = f"Job Completed: {self.job_id} ({self.job_type})"
-        separator = "-" * (len(header) + 4)
-
-        # Clean up any weird whitespace from the model's output
-        clean_result = str(self.result).strip().split("Assistant:")[-1]
-
-        # Build the final, clean output block as a single string
-        return (
-            f"\n\n{header}\n{separator}\n"
-            f"  - Processing Time: {self.processing_time:.2f} seconds\n"
-            # f'  - Prompt: "{self.prompt}"\n'
-            f"  - Result: {clean_result}\n"
-            f"{separator}\n"
-        )
-
-    async def execute(self) -> None:
-        """
-        Coordinate the inference and store the result in self.result.
-        """
-
-        self.status = JobStatus.RUNNING
-        self.started_at = time.time()
-        loop = asyncio.get_event_loop()
-
-        # Run blocking work in its own thread
-        inference_output = await loop.run_in_executor(
-            self.executor,  # Which thread to pool
-            self._sync_inference,  # Non-async function to run
-        )
-
-        self.result = inference_output
-        self.completed_at = time.time()
-        self.status = JobStatus.COMPLETED
-        self.processing_time = self.completed_at - self.started_at
-        self.total_latency = self.completed_at - self.received_at
-
-        # Clear data to save memory (not necessary for single frame)
-        # self.frame = None
-
-    def _sync_inference(self) -> str:
-        """
-        Does the GPU work (blocking)
-        Runs in a separate thread so that its blocking nature won't interfere with other computations
-        """
-        logger.info(f"WORKER: Starting inference for {self.job_id}")
-
-        with torch.no_grad():
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": self.frame},
-                        {"type": "text", "text": self.prompt},
-                    ],
-                }
-            ]
-
-            text = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-
-            inputs = self.processor(
-                text=[text], images=[self.frame], return_tensors="pt"
-            ).to(self.model.device)
-
-            outputs = self.model.generate(**inputs, max_new_tokens=128)
-
-            # Slice the output to remove input tokens (cleaner than text parsing)
-            generated_ids = outputs[0][len(inputs.input_ids[0]) :]
-
-            # Decode only the new tokens
-            result = self.processor.decode(generated_ids, skip_special_tokens=True)
-
-        # Store frame as base64 for response
-        buffer = BytesIO()
-        self.frame.save(buffer, format="JPEG")
-        self.frame_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        logger.info(f"WORKER: Finished inference for {self.job_id}")
-        return result
-
-    def to_response_dict(self) -> dict:
-        """Serialize SingleFrameJob data for WebSocket response."""
-        return {
-            "result": self.result,
-            "frame": self.frame_b64,
-            "metrics": {
-                "inference_time": self.processing_time,
-                "total_latency": self.total_latency,
-                "received_at": self.received_at,
-            },
-        }
-
-    def _send_log(self, message: str) -> None:
-        """Send WebSocket log message."""
-        if self.log_callback:
-            self.log_callback({
-                "type": "log",
-                "job_id": self.job_id,
-                "message": message,
-                "timestamp": time.time(),
-            })
 
 
 class VideoJob(Job):
@@ -269,7 +35,7 @@ class VideoJob(Job):
 
     Processes a pre-buffered batch of frames through VLM inference and completes.
     Each VideoJob handles one batch (typically 8 frames) and then exits.
-    Frame buffering is handled by the WebSocket handler, not by VideoJob.
+    Frame buffering is handled by the WebSocket handler or FrameBuffer, not by VideoJob.
     """
 
     def __init__(
@@ -278,7 +44,6 @@ class VideoJob(Job):
         model: Any,
         processor: Any,
         executor: ThreadPoolExecutor,
-        queue: "InferenceQueue",
         frames: list[Image.Image],
         prompt: str = """<video>\nAnalyze this video segment of a biological experiment. Output a valid JSON object with the following keys:\n- action: The specific movement (e.g., streaking, inspecting).\n- tool: The active instrument.\n- target: The object being acted upon.\n- context: The protocol step.\n- hand: Active hand (left/right).\n- sample_id: Any handwritten text or labels visible on the object (or "none").\n- notes: Visual details like agar color or colony presence.""",
         buffer_size: int = 8,
@@ -291,7 +56,6 @@ class VideoJob(Job):
         self.model = model
         self.processor = processor
         self.executor = executor
-        self.queue = queue
         self.prompt = prompt
         self._process_vision_info = None  # Lazy-loaded when Qwen is detected
 
@@ -307,7 +71,7 @@ class VideoJob(Job):
         # Pre-buffered frames to process (passed in at construction)
         self.frame_buffer: list[Image.Image] = frames.copy() if frames else []
 
-        # Callbacks
+        # Callbacks for server-side communication
         self.log_callback: Any = None  # Callable[[dict], None]
         self.result_callback: Any = (
             None  # Callable[[dict], None] - for real-time result broadcasting
@@ -413,7 +177,6 @@ class VideoJob(Job):
 
     def _is_qwen_model(self) -> bool:
         """Simple check to see if we are using a Qwen model."""
-        # Check config type or model class name
         model_type = getattr(self.model.config, "model_type", "").lower()
         return "qwen" in model_type
 

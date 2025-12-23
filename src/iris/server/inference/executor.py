@@ -1,21 +1,33 @@
+"""Inference executor for processing ML jobs asynchronously.
+
+The InferenceExecutor manages a queue of inference jobs and processes them
+in separate threads to avoid blocking the main application loop.
+"""
+
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from iris.vlm.inference.queue.jobs import Job, JobStatus
+from iris.server.inference.jobs.base import Job, JobStatus
 
 logger = logging.getLogger(__name__)
 
 
-class InferenceQueue:
+class InferenceExecutor:
     """
     Manages a queue of inference jobs, processing them asynchronously
     in a separate thread to avoid blocking the main application loop.
+
+    This executor:
+    - Accepts job submissions via submit()
+    - Processes jobs in background worker tasks
+    - Routes completed jobs to a results queue
+    - Supports multi-GPU setups via worker assignment
     """
 
     def __init__(self, max_queue_size: int = 30, num_workers: int = 1):
         """
-        Initializes the core components of the queue.
+        Initializes the core components of the executor.
 
         Args:
             max_queue_size: Max jobs to hold before dropping new ones.
@@ -33,7 +45,7 @@ class InferenceQueue:
     async def start(self) -> None:
         """Starts the worker tasks that will consume jobs from the queue."""
         if self._running:
-            logger.warning("Queue is already running.")
+            logger.warning("Executor is already running.")
             return
 
         self._running = True
@@ -44,11 +56,11 @@ class InferenceQueue:
         logger.info(f"Started {self.num_workers} inference workers.")
 
     async def stop(self) -> None:
-        """Gracefully shuts down the queue and all worker tasks."""
+        """Gracefully shuts down the executor and all worker tasks."""
         if not self._running:
             return
 
-        logger.info("Stopping inference queue...")
+        logger.info("Stopping inference executor...")
         self._running = False
 
         # Send a "None" signal for each worker to unblock and exit
@@ -63,7 +75,7 @@ class InferenceQueue:
 
         # Shut down the thread pool
         self.executor.shutdown(wait=False)  # Don't wait for GPU threads
-        logger.info("Inference queue stopped.")
+        logger.info("Inference executor stopped.")
 
     async def clear_queue(self) -> int:
         """Clear all pending jobs from the queue without stopping workers.
@@ -100,7 +112,7 @@ class InferenceQueue:
 
     async def submit(self, job: Job) -> bool:
         """
-        Submits a job to the queue for processing.
+        Submits a job to the executor for processing.
 
         Returns:
             True if the job was submitted, False if the queue was full and it was dropped.
