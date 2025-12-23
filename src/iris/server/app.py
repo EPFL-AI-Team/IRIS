@@ -937,7 +937,7 @@ def main() -> None:
     import uvicorn
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8001)
+        uvicorn.run(app, host=config.host, port=config.port)
     except KeyboardInterrupt:
         # Handle Ctrl+C during uvicorn startup
         logger.info("Server interrupted during startup. Exiting...")
