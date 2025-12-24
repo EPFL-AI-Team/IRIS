@@ -2,11 +2,15 @@
 
 import asyncio
 import base64
+import json
 import logging
+import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
+import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from iris.client.capture.camera import CameraCapture
@@ -211,6 +215,12 @@ async def preview_websocket(websocket: WebSocket) -> None:
             await asyncio.sleep(0.05)  # 20 FPS preview
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        logger.error(f"Preview WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass
     finally:
         # Stop camera if we're not streaming to server
         if state.camera and (
@@ -222,14 +232,16 @@ async def preview_websocket(websocket: WebSocket) -> None:
 
 @ws_router.websocket("/results")
 async def results_websocket(websocket: WebSocket) -> None:
-    """WebSocket endpoint for inference results."""
+    """WebSocket endpoint for inference results and status updates."""
     state = get_app_state()
     await websocket.accept()
 
     last_sent_index = 0
     loop = asyncio.get_event_loop()
     last_keepalive = loop.time()
+    last_status_update = loop.time()
     keepalive_interval = 15.0  # seconds
+    status_update_interval = 1.0  # seconds - send status every second
 
     try:
         while True:
@@ -256,7 +268,58 @@ async def results_websocket(websocket: WebSocket) -> None:
                 last_sent_index = current_count
                 last_keepalive = now  # Reset timer when data sent
 
-            # Keepalive ping when idle
+            # Send periodic status updates (replacing HTTP polling)
+            if now - last_status_update > status_update_interval:
+                try:
+                    # Determine streaming server connection status (with defensive checks)
+                    streaming_server_status = "disconnected"
+                    streaming_active = False
+                    current_fps = 0.0
+                    camera_active = False
+
+                    try:
+                        if state.streaming_client:
+                            streaming_server_status = state.streaming_client.connection_state
+                            streaming_active = state.streaming_client.running
+                            current_fps = state.streaming_client.get_fps()
+                    except Exception:
+                        pass  # Use defaults on error
+
+                    try:
+                        if state.camera and state.camera.cap:
+                            camera_active = state.camera.cap.isOpened()
+                    except Exception:
+                        pass  # Use default on error
+
+                    status_message = {
+                        "type": "status_update",
+                        "camera_active": camera_active,
+                        "streaming_active": streaming_active,
+                        "streaming_server_status": streaming_server_status,
+                        "fps": current_fps,
+                        "config": {
+                            "server": {
+                                "host": state.config.server.host,
+                                "port": state.config.server.port,
+                                "endpoint": state.config.server.endpoint,
+                            },
+                            "ssh_tunnel": {
+                                "remote_host": state.config.ssh_tunnel.remote_host,
+                            },
+                        },
+                        "timestamp": now,
+                    }
+                    await websocket.send_json(status_message)
+                    last_status_update = now
+                    last_keepalive = now  # Status update counts as keepalive
+                except WebSocketDisconnect:
+                    logger.info("Results WebSocket disconnected during status update")
+                    raise
+                except Exception as e:
+                    logger.error(f"Failed to send status update: {e}")
+                    # Don't raise - continue trying
+
+            # Keepalive ping when idle (fallback if status updates fail)
             elif now - last_keepalive > keepalive_interval:
                 try:
                     await websocket.send_json({"type": "keepalive", "timestamp": now})
@@ -264,6 +327,7 @@ async def results_websocket(websocket: WebSocket) -> None:
                 except WebSocketDisconnect:
                     logger.info("Results WebSocket disconnected during keepalive")
                     raise
+
             await asyncio.sleep(0.1)  # Check for new results 10 times per second
     except asyncio.CancelledError:
         logger.debug("Results WebSocket cancelled during shutdown")
@@ -272,6 +336,10 @@ async def results_websocket(websocket: WebSocket) -> None:
         logger.info("Results WebSocket disconnected")
     except Exception as e:
         logger.error(f"Results WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @api_router.get("/results/history")
@@ -290,3 +358,195 @@ async def clear_results_history() -> dict[str, str]:
     state = get_app_state()
     state.results_history.clear()
     return {"status": "ok", "message": "Results history cleared"}
+
+
+@ws_router.websocket("/browser-stream")
+async def browser_stream_websocket(websocket: WebSocket) -> None:
+    """WebSocket endpoint for browser camera frame streaming.
+
+    Accepts frames from the browser camera and forwards them to the inference server.
+    Results are sent back to the browser via this same connection.
+    """
+    state = get_app_state()
+    await websocket.accept()
+
+    # Get inference server URL from config
+    inference_ws_url = state.config.server.ws_url
+    logger.info("Browser stream connecting to inference server at %s", inference_ws_url)
+
+    # Track connection state
+    frame_count = 0
+    start_time = time.time()
+    results_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    async def forward_to_inference(
+        server_ws: websockets.WebSocketClientProtocol,
+    ) -> None:
+        """Receive frames from browser and forward to inference server."""
+        nonlocal frame_count
+        try:
+            while True:
+                # Receive frame from browser
+                data = await websocket.receive_text()
+                frame_data = json.loads(data)
+
+                # Forward to inference server with same format
+                message = {
+                    "frame": frame_data["frame"],
+                    "frame_id": frame_data.get("frame_id", frame_count),
+                    "timestamp": frame_data.get("timestamp", time.time()),
+                    "fps": frame_data.get("fps", 5.0),
+                    "measured_fps": frame_data.get("measured_fps", 0.0),
+                }
+                await server_ws.send(json.dumps(message))
+                frame_count += 1
+        except WebSocketDisconnect:
+            logger.info("Browser disconnected from browser-stream")
+            raise
+        except Exception as e:
+            logger.error("Error forwarding frame to inference server: %s", e)
+            raise
+
+    async def receive_from_inference(
+        server_ws: websockets.WebSocketClientProtocol,
+    ) -> None:
+        """Receive results from inference server and queue for browser."""
+        try:
+            while True:
+                response = await server_ws.recv()
+                message = json.loads(response)
+
+                # Store result in history (same as StreamingClient)
+                if message.get("type") == "result":
+                    state.results_history.append(message)
+                    if len(state.results_history) > state.max_results_history:
+                        state.results_history.pop(0)
+
+                # Check for batch submission in log messages
+                elif message.get("type") == "log":
+                    log_text = message.get("message", "")
+                    log_job = message.get("job_id")
+
+                    if "Submitted video_job_" in log_text:
+                        match = re.search(
+                            r"Submitted (video_job_\w+_batch_\d+)", log_text
+                        )
+                        if match:
+                            job_id = match.group(1)
+                            batch_msg = {
+                                "type": "batch_submitted",
+                                "job_id": job_id,
+                                "timestamp": time.time(),
+                                "status": "processing",
+                            }
+                            state.results_history.append(batch_msg)
+                            await results_queue.put(batch_msg)
+
+                    if "Starting inference:" in log_text:
+                        log_msg = {
+                            "type": "log",
+                            "message": log_text,
+                            "job_id": log_job,
+                            "timestamp": time.time(),
+                        }
+                        state.results_history.append(log_msg)
+                        await results_queue.put(log_msg)
+
+                # Queue result to send back to browser
+                await results_queue.put(message)
+
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(
+                "Inference server connection closed: code=%s reason=%s",
+                getattr(e, "code", None),
+                getattr(e, "reason", None),
+            )
+            raise
+        except Exception as e:
+            logger.error("Error receiving from inference server: %s", e)
+            raise
+
+    async def send_to_browser() -> None:
+        """Send queued results back to browser."""
+        try:
+            while True:
+                result = await results_queue.get()
+                await websocket.send_json(result)
+        except WebSocketDisconnect:
+            logger.info("Browser disconnected while sending results")
+            raise
+        except Exception as e:
+            logger.error("Error sending result to browser: %s", e)
+            raise
+
+    try:
+        # Connect to inference server
+        async with websockets.connect(
+            inference_ws_url,
+            ping_interval=20,
+            ping_timeout=60,
+            close_timeout=30.0,
+            max_queue=None,
+        ) as server_ws:
+            logger.info("Connected to inference server for browser stream")
+
+            # Run all three tasks concurrently
+            forward_task = asyncio.create_task(forward_to_inference(server_ws))
+            receive_task = asyncio.create_task(receive_from_inference(server_ws))
+            send_task = asyncio.create_task(send_to_browser())
+
+            try:
+                _, pending = await asyncio.wait(
+                    [forward_task, receive_task, send_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                # Cancel remaining tasks
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+            except Exception as e:
+                forward_task.cancel()
+                receive_task.cancel()
+                send_task.cancel()
+                raise e
+
+    except websockets.exceptions.InvalidStatusCode as e:
+        logger.error("Inference server returned invalid status: %s", e)
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Failed to connect to inference server: {e}",
+        })
+        await websocket.close()
+    except (ConnectionRefusedError, OSError, TimeoutError) as e:
+        logger.error("Inference server connection failed at %s: %s", inference_ws_url, e)
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Cannot connect to inference server. Is it running? ({type(e).__name__})",
+        })
+        await websocket.close()
+    except WebSocketDisconnect:
+        logger.info("Browser stream WebSocket disconnected")
+    except Exception as e:
+        logger.error("Browser stream error: %s", e)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Unexpected error: {e}",
+            })
+            await websocket.close()
+        except Exception:
+            pass  # WebSocket may already be closed
+    finally:
+        elapsed = time.time() - start_time
+        fps = frame_count / elapsed if elapsed > 0 else 0.0
+        logger.info(
+            "Browser stream ended: %d frames in %.1fs (%.1f fps)",
+            frame_count,
+            elapsed,
+            fps,
+        )

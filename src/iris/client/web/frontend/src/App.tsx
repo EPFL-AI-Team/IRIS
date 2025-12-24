@@ -1,35 +1,65 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect } from "react";
+import { ToastProvider } from "./context/ToastContext";
+import { VideoCanvas } from "./components/VideoCanvas";
+import { ResultsViewer } from "./components/ResultsViewer";
+import { Sidebar } from "./components/Sidebar";
+import { ControlButtons } from "./components/ControlButtons";
+import { LogViewer } from "./components/LogViewer";
+import { CameraSelector } from "./components/CameraSelector";
+import { useResultsWebSocket } from "./hooks/useResultsWebSocket";
+import { useAppStore } from "./store/useAppStore";
+import "./index.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+function AppContent() {
+  const addLog = useAppStore((state) => state.addLog);
+
+  // Connect to results WebSocket (handles status updates and results)
+  useResultsWebSocket();
+
+  // Log initialization on mount
+  useEffect(() => {
+    addLog("IRIS Client initializing...", "INFO");
+  }, [addLog]);
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="container">
+      <h1>IRIS Streaming Client</h1>
+
+      {/* Main Content: Video + Results Side by Side */}
+      <div className="main-content">
+        <div className="video-section">
+          <h2>Camera Preview</h2>
+          <VideoCanvas />
+        </div>
+
+        <div className="results-section">
+          <ResultsViewer />
+        </div>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
+
+      {/* Configuration and Status Side by Side */}
+      <div className="config-status-row">
+        <Sidebar />
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+
+      {/* Control Buttons */}
+      <ControlButtons />
+
+      {/* Activity Log */}
+      <LogViewer />
+
+      {/* Camera Configuration */}
+      <CameraSelector />
+    </div>
+  );
 }
 
-export default App
+function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}
+
+export default App;
