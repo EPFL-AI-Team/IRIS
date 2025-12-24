@@ -19,6 +19,14 @@ export interface SSHTunnelConfig {
   remote_host: string;
 }
 
+export interface ClientVideoConfig {
+  width: number;
+  height: number;
+  capture_fps: number;
+  jpeg_quality: number;
+  camera_index: number;
+}
+
 // Log entry
 export type LogLevel = "INFO" | "WARNING" | "ERROR" | "DEBUG";
 
@@ -82,6 +90,7 @@ export interface StatusUpdateMessage {
   fps: number;
   config: {
     server: ServerConfig;
+    video: ClientVideoConfig;
     ssh_tunnel: SSHTunnelConfig;
   };
   timestamp: number;

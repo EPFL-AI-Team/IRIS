@@ -19,7 +19,7 @@ jobs:
   video:
     buffer_size: 8
     overlap_frames: 4
-    default_fps: 5
+    default_fps: 10
     max_new_tokens: 128
     prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
 
@@ -27,7 +27,7 @@ client:
   video:
     width: 640
     height: 480
-    capture_fps: 5
+    capture_fps: 10
     jpeg_quality: 80
     camera_index: 0
   server:

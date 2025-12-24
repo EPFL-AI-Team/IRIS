@@ -212,7 +212,8 @@ async def preview_websocket(websocket: WebSocket) -> None:
                 frame_jpeg = state.camera.get_frame_jpeg(quality=70)
                 if frame_jpeg:
                     await websocket.send_text(base64.b64encode(frame_jpeg).decode())
-            await asyncio.sleep(0.05)  # 20 FPS preview
+            # Match preview rate to configured capture FPS
+            await asyncio.sleep(1.0 / state.config.video.capture_fps)
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -239,7 +240,8 @@ async def results_websocket(websocket: WebSocket) -> None:
     last_sent_index = 0
     loop = asyncio.get_event_loop()
     last_keepalive = loop.time()
-    last_status_update = loop.time()
+    # Send an initial status update immediately on connect.
+    last_status_update = 0.0
     keepalive_interval = 15.0  # seconds
     status_update_interval = 1.0  # seconds - send status every second
 
@@ -279,7 +281,9 @@ async def results_websocket(websocket: WebSocket) -> None:
 
                     try:
                         if state.streaming_client:
-                            streaming_server_status = state.streaming_client.connection_state
+                            streaming_server_status = (
+                                state.streaming_client.connection_state
+                            )
                             streaming_active = state.streaming_client.running
                             current_fps = state.streaming_client.get_fps()
                     except Exception:
@@ -302,6 +306,13 @@ async def results_websocket(websocket: WebSocket) -> None:
                                 "host": state.config.server.host,
                                 "port": state.config.server.port,
                                 "endpoint": state.config.server.endpoint,
+                            },
+                            "video": {
+                                "width": state.config.video.width,
+                                "height": state.config.video.height,
+                                "capture_fps": state.config.video.capture_fps,
+                                "jpeg_quality": state.config.video.jpeg_quality,
+                                "camera_index": state.config.video.camera_index,
                             },
                             "ssh_tunnel": {
                                 "remote_host": state.config.ssh_tunnel.remote_host,
@@ -523,7 +534,9 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
         })
         await websocket.close()
     except (ConnectionRefusedError, OSError, TimeoutError) as e:
-        logger.error("Inference server connection failed at %s: %s", inference_ws_url, e)
+        logger.error(
+            "Inference server connection failed at %s: %s", inference_ws_url, e
+        )
         await websocket.send_json({
             "type": "error",
             "message": f"Cannot connect to inference server. Is it running? ({type(e).__name__})",

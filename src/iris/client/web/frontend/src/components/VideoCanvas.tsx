@@ -15,6 +15,7 @@ export function VideoCanvas() {
 
   const cameraMode = useAppStore((state) => state.cameraMode);
   const isStreaming = useAppStore((state) => state.isStreaming);
+  const clientVideoConfig = useAppStore((state) => state.clientVideoConfig);
   const clientCameraRequested = useAppStore(
     (state) => state.clientCameraRequested
   );
@@ -89,15 +90,17 @@ export function VideoCanvas() {
 
       // Send to inference server if streaming is active
       if (isStreaming) {
-        browserStream.sendFrame(base64Jpeg, 5);
+        browserStream.sendFrame(base64Jpeg, clientVideoConfig.capture_fps);
       }
     },
-    [isStreaming, browserStream, renderFrame]
+    [isStreaming, browserStream, renderFrame, clientVideoConfig.capture_fps]
   );
 
   // Client camera for capturing browser camera frames
   const clientCamera = useClientCamera({
-    fps: 5, // Match server capture rate
+    fps: clientVideoConfig.capture_fps,
+    width: clientVideoConfig.width,
+    height: clientVideoConfig.height,
     onFrame: handleClientFrame,
   });
 

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   CameraMode,
   ConnectionStatus,
+  ClientVideoConfig,
   LogEntry,
   LogLevel,
   ResultItem,
@@ -46,6 +47,10 @@ interface AppState {
 
   sshTunnelConfig: SSHTunnelConfig;
   setSSHTunnelConfig: (config: SSHTunnelConfig) => void;
+
+  // Client (browser) capture configuration (from backend config.yaml)
+  clientVideoConfig: ClientVideoConfig;
+  setClientVideoConfig: (config: ClientVideoConfig) => void;
 
   // Results
   results: ResultItem[];
@@ -117,6 +122,15 @@ export const useAppStore = create<AppState>((set) => ({
     remote_host: "",
   },
   setSSHTunnelConfig: (config) => set({ sshTunnelConfig: config }),
+
+  clientVideoConfig: {
+    width: 640,
+    height: 480,
+    capture_fps: 10,
+    jpeg_quality: 80,
+    camera_index: 0,
+  },
+  setClientVideoConfig: (config) => set({ clientVideoConfig: config }),
 
   // Results
   results: [],

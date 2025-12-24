@@ -15,6 +15,7 @@ const RECONNECT_DELAY = 2000;
 export function useResultsWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const connectRef = useRef<(() => void) | null>(null);
 
   const setResultsConnection = useAppStore(
     (state) => state.setResultsConnection
@@ -30,6 +31,7 @@ export function useResultsWebSocket() {
   );
   const setServerConfig = useAppStore((state) => state.setServerConfig);
   const setSSHTunnelConfig = useAppStore((state) => state.setSSHTunnelConfig);
+  const setClientVideoConfig = useAppStore((state) => state.setClientVideoConfig);
 
   const handleMessage = useCallback(
     (data: WebSocketMessage) => {
@@ -48,6 +50,9 @@ export function useResultsWebSocket() {
           );
           if (data.config?.server) {
             setServerConfig(data.config.server);
+          }
+          if (data.config?.video) {
+            setClientVideoConfig(data.config.video);
           }
           if (data.config?.ssh_tunnel) {
             setSSHTunnelConfig(data.config.ssh_tunnel);
@@ -109,6 +114,7 @@ export function useResultsWebSocket() {
       setFps,
       setStreamingServerStatus,
       setServerConfig,
+      setClientVideoConfig,
       setSSHTunnelConfig,
     ]
   );
@@ -152,10 +158,15 @@ export function useResultsWebSocket() {
 
       // Auto-reconnect
       reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect();
+        connectRef.current?.();
       }, RECONNECT_DELAY);
     };
   }, [handleMessage, setResultsConnection, addLog]);
+
+  // Keep a stable reference to the latest connect() to avoid TDZ/self-reference issues.
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
