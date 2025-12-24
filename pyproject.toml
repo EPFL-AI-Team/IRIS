@@ -54,6 +54,7 @@ server = [
 
 [project.scripts]
 iris-train = "iris.cli.finetune.train:main"
+iris-client-dev = "iris.client.web.run_dev:main"
 iris-client = "iris.client.web.app:main"
 iris-server = "iris.server.app:main"
 iris-benchmark = "iris.cli.benchmark:run"

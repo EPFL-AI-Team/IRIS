@@ -6,6 +6,15 @@ let statusInterval = null;
 // Configuration
 const SHOW_PENDING_CARDS = true;
 
+// HTTP API prefix (WebSockets remain on /ws/...)
+const API_PREFIX = window.__IRIS_API_PREFIX__ || "/api";
+function apiUrl(path) {
+  // Accept "/status" or "status" and normalize to "/api/status"
+  const p = String(path || "");
+  const normalized = p.startsWith("/") ? p : `/${p}`;
+  return `${API_PREFIX}${normalized}`;
+}
+
 // Canvas preview state
 let previewCanvas = null;
 let previewCtx = null;
@@ -339,7 +348,7 @@ function stopServerPreview() {
 function connectPreview() {
   updateConnectionStatus("preview-connection", "Connecting");
   addLog("Connecting to preview WebSocket...", "INFO");
-  previewWs = new WebSocket(`ws://${window.location.host}/preview`);
+  previewWs = new WebSocket(`ws://${window.location.host}/ws/preview`);
 
   previewWs.onopen = () => {
     updateConnectionStatus("preview-connection", "Connected");
@@ -382,7 +391,7 @@ function connectPreview() {
 function connectResults() {
   updateConnectionStatus("results-connection", "Connecting");
   addLog("Connecting to results WebSocket...", "INFO");
-  resultsWs = new WebSocket(`ws://${window.location.host}/results`);
+  resultsWs = new WebSocket(`ws://${window.location.host}/ws/results`);
 
   resultsWs.onopen = () => {
     updateConnectionStatus("results-connection", "Connected");
@@ -646,7 +655,7 @@ function displayResult(data) {
 // Update status display
 async function updateStatus() {
   try {
-    const response = await fetch("/status");
+    const response = await fetch(apiUrl("/status"));
     const data = await response.json();
 
     document.getElementById("camera-status").textContent = data.camera_active
@@ -696,14 +705,14 @@ document.getElementById("config-form").addEventListener("submit", async (e) => {
 
   try {
     // Update server config
-    const response = await fetch("/config", {
+    const response = await fetch(apiUrl("/config"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });
 
     // Update tunnel hostname
-    const tunnelResponse = await fetch("/tunnel/config", {
+    const tunnelResponse = await fetch(apiUrl("/tunnel/config"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ remote_host: tunnelHostname }),
@@ -724,7 +733,7 @@ document.getElementById("config-form").addEventListener("submit", async (e) => {
 document.getElementById("start-btn").addEventListener("click", async () => {
   try {
     addLog("Starting streaming...", "INFO");
-    const response = await fetch("/start", { method: "POST" });
+    const response = await fetch(apiUrl("/start"), { method: "POST" });
     const data = await response.json();
 
     if (data.status === "ok") {
@@ -745,7 +754,7 @@ document.getElementById("start-btn").addEventListener("click", async () => {
 document.getElementById("stop-btn").addEventListener("click", async () => {
   try {
     addLog("Stopping streaming...", "INFO");
-    const response = await fetch("/stop", { method: "POST" });
+    const response = await fetch(apiUrl("/stop"), { method: "POST" });
     const data = await response.json();
 
     if (data.status === "ok") {
@@ -762,7 +771,7 @@ document.getElementById("stop-btn").addEventListener("click", async () => {
 // Load available server cameras
 async function loadServerCameras() {
   try {
-    const response = await fetch("/cameras");
+    const response = await fetch(apiUrl("/cameras"));
     const data = await response.json();
 
     const select = document.getElementById("server-camera-select");
@@ -822,7 +831,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const cameraIndex = parseInt(e.target.value);
 
       try {
-        const response = await fetch("/camera/select", {
+        const response = await fetch(apiUrl("/camera/select"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ camera_index: cameraIndex }),
@@ -867,7 +876,9 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("clear-results-btn")
     .addEventListener("click", async () => {
       try {
-        const response = await fetch("/results/clear", { method: "POST" });
+        const response = await fetch(apiUrl("/results/clear"), {
+          method: "POST",
+        });
         const data = await response.json();
 
         if (data.status === "ok") {

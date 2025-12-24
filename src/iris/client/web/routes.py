@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 
 from iris.client.capture.camera import CameraCapture
 from iris.client.config import ServerConfig
@@ -16,17 +15,11 @@ from iris.client.streaming.websocket_client import StreamingClient
 from iris.client.web.dependencies import get_app_state
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+api_router = APIRouter(prefix="/api")  # HTTP endpoints
+ws_router = APIRouter(prefix="/ws")  # WebSocket endpoints
 
 
-@router.get("/", response_class=HTMLResponse)
-async def home() -> HTMLResponse:
-    """Serve web UI."""
-    html_file = Path(__file__).parent / "static" / "index.html"
-    return HTMLResponse(content=html_file.read_text())
-
-
-@router.get("/status")
+@api_router.get("/status")
 async def get_status() -> dict[str, Any]:
     """Get current status."""
     state = get_app_state()
@@ -47,7 +40,7 @@ async def get_status() -> dict[str, Any]:
     }
 
 
-@router.post("/config")
+@api_router.post("/config")
 async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     """Update server configuration."""
     state = get_app_state()
@@ -55,7 +48,7 @@ async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     return {"status": "ok", "config": state.config.server.model_dump()}
 
 
-@router.post("/tunnel/config")
+@api_router.post("/tunnel/config")
 async def update_tunnel_config(request: dict[str, str]) -> dict[str, Any]:
     """Update SSH tunnel remote hostname."""
     state = get_app_state()
@@ -66,7 +59,7 @@ async def update_tunnel_config(request: dict[str, str]) -> dict[str, Any]:
     return {"status": "ok", "remote_host": state.config.ssh_tunnel.remote_host}
 
 
-@router.post("/start")
+@api_router.post("/start")
 async def start_streaming() -> dict[str, Any]:
     """Start camera and streaming."""
     state = get_app_state()
@@ -117,7 +110,7 @@ async def start_streaming() -> dict[str, Any]:
     return {"status": "ok", "message": "Streaming started"}
 
 
-@router.post("/stop")
+@api_router.post("/stop")
 async def stop_streaming() -> dict[str, str]:
     """Stop streaming and camera."""
     state = get_app_state()
@@ -139,7 +132,7 @@ async def stop_streaming() -> dict[str, str]:
     return {"status": "ok", "message": "Stopped"}
 
 
-@router.get("/cameras")
+@api_router.get("/cameras")
 async def list_cameras() -> dict[str, Any]:
     """List available camera devices on server."""
     import cv2
@@ -163,7 +156,7 @@ async def list_cameras() -> dict[str, Any]:
     return {"cameras": cameras}
 
 
-@router.post("/camera/select")
+@api_router.post("/camera/select")
 async def select_camera(request: dict[str, int]) -> dict[str, Any]:
     """Switch server to different camera device."""
     state = get_app_state()
@@ -190,7 +183,7 @@ async def select_camera(request: dict[str, int]) -> dict[str, Any]:
     return {"status": "ok", "camera_index": camera_index}
 
 
-@router.websocket("/preview")
+@ws_router.websocket("/preview")
 async def preview_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for local video preview."""
     state = get_app_state()
@@ -227,7 +220,7 @@ async def preview_websocket(websocket: WebSocket) -> None:
             state.camera = None
 
 
-@router.websocket("/results")
+@ws_router.websocket("/results")
 async def results_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for inference results."""
     state = get_app_state()
@@ -281,7 +274,7 @@ async def results_websocket(websocket: WebSocket) -> None:
         logger.error(f"Results WebSocket error: {e}")
 
 
-@router.get("/results/history")
+@api_router.get("/results/history")
 async def get_results_history() -> dict[str, Any]:
     """Get all stored inference results."""
     state = get_app_state()
@@ -291,7 +284,7 @@ async def get_results_history() -> dict[str, Any]:
     }
 
 
-@router.post("/results/clear")
+@api_router.post("/results/clear")
 async def clear_results_history() -> dict[str, str]:
     """Clear stored inference results history."""
     state = get_app_state()

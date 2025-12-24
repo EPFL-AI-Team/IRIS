@@ -227,7 +227,7 @@ class VideoJob(Job):
                 videos=video_inputs,
                 return_tensors="pt",
                 **(video_kwargs or {}),
-            ).to(self.model.device)
+            ).to(self.model.device) # pyright: ignore[reportOptionalCall]
 
             outputs = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
             generated_ids = outputs[0][len(inputs.input_ids[0]) :]

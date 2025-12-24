@@ -5,14 +5,19 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from iris.client.web import routes
+from iris.client.web.routes import api_router, ws_router
 
 app = FastAPI(title="IRIS Streaming client")
 
-static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.include_router(api_router)
+app.include_router(ws_router)
 
-app.include_router(routes.router)
+# static_dir = Path(__file__).parent / "static"
+# app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+frontend_dist = Path(__file__).parent / "frontend" / "dist"
+app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+
+
 
 
 def main() -> None:
