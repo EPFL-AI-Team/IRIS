@@ -14,11 +14,13 @@ export function usePreviewWebSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const enabledRef = useRef(enabled);
+  const connectRef = useRef<(() => void) | null>(null);
 
   const setPreviewConnection = useAppStore(
     (state) => state.setPreviewConnection
   );
   const addLog = useAppStore((state) => state.addLog);
+  const previewReconnectToken = useAppStore((state) => state.previewReconnectToken);
 
   // Keep enabled ref in sync
   useEffect(() => {
@@ -27,6 +29,11 @@ export function usePreviewWebSocket(
 
   const connect = useCallback(() => {
     if (!enabledRef.current) return;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
 
     // Clean up existing connection
     if (wsRef.current) {
@@ -63,11 +70,16 @@ export function usePreviewWebSocket(
       if (enabledRef.current) {
         addLog("Preview WebSocket closed, reconnecting...", "WARNING");
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          connect();
+          connectRef.current?.();
         }, RECONNECT_DELAY);
       }
     };
   }, [onFrame, setPreviewConnection, addLog]);
+
+  // Keep a stable reference to the latest connect() implementation.
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -95,6 +107,14 @@ export function usePreviewWebSocket(
       disconnect();
     };
   }, [enabled, connect, disconnect]);
+
+  // Manual reconnect requests from UI
+  useEffect(() => {
+    if (previewReconnectToken <= 0) return;
+    if (!enabledRef.current) return;
+    disconnect();
+    connect();
+  }, [previewReconnectToken, connect, disconnect]);
 
   return {
     disconnect,

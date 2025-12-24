@@ -79,6 +79,12 @@ interface AppState {
   clientCameraRequested: boolean;
   requestClientCamera: () => void;
   clearClientCameraRequest: () => void;
+
+  // Manual reconnect triggers (increment to request)
+  resultsReconnectToken: number;
+  requestResultsReconnect: () => void;
+  previewReconnectToken: number;
+  requestPreviewReconnect: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -195,4 +201,12 @@ export const useAppStore = create<AppState>((set) => ({
   clientCameraRequested: false,
   requestClientCamera: () => set({ clientCameraRequested: true }),
   clearClientCameraRequest: () => set({ clientCameraRequested: false }),
+
+  // Manual reconnect triggers
+  resultsReconnectToken: 0,
+  requestResultsReconnect: () =>
+    set((state) => ({ resultsReconnectToken: state.resultsReconnectToken + 1 })),
+  previewReconnectToken: 0,
+  requestPreviewReconnect: () =>
+    set((state) => ({ previewReconnectToken: state.previewReconnectToken + 1 })),
 }));

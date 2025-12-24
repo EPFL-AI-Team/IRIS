@@ -32,6 +32,7 @@ export function useResultsWebSocket() {
   const setServerConfig = useAppStore((state) => state.setServerConfig);
   const setSSHTunnelConfig = useAppStore((state) => state.setSSHTunnelConfig);
   const setClientVideoConfig = useAppStore((state) => state.setClientVideoConfig);
+  const resultsReconnectToken = useAppStore((state) => state.resultsReconnectToken);
 
   const handleMessage = useCallback(
     (data: WebSocketMessage) => {
@@ -120,6 +121,11 @@ export function useResultsWebSocket() {
   );
 
   const connect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
     // Clean up existing connection
     if (wsRef.current) {
       wsRef.current.close();
@@ -190,6 +196,13 @@ export function useResultsWebSocket() {
       disconnect();
     };
   }, [connect, disconnect]);
+
+  // Manual reconnect requests from UI
+  useEffect(() => {
+    if (resultsReconnectToken <= 0) return;
+    disconnect();
+    connect();
+  }, [resultsReconnectToken, connect, disconnect]);
 
   return {
     disconnect,
