@@ -1,4 +1,13 @@
-import { useEffect, type ChangeEvent } from "react";
+import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { RefreshCw, Camera, Video } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import type { CameraMode } from "../types";
 
@@ -45,17 +54,16 @@ export function CameraSelector() {
     }
   };
 
-  const handleModeChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const mode = e.target.value as CameraMode;
-    setCameraMode(mode);
+  const handleModeChange = (value: string) => {
+    setCameraMode(value as CameraMode);
   };
 
   const handleEnableClientCamera = () => {
     requestClientCamera();
   };
 
-  const handleServerCameraChange = async (e: ChangeEvent<HTMLSelectElement>) => {
-    const cameraIndex = parseInt(e.target.value);
+  const handleServerCameraChange = async (value: string) => {
+    const cameraIndex = parseInt(value);
 
     try {
       const response = await fetch("/api/camera/select", {
@@ -90,63 +98,94 @@ export function CameraSelector() {
   };
 
   return (
-    <div className="camera-config-section">
-      <h2>Camera Selection</h2>
-
-      <div className="form-group">
-        <label htmlFor="camera-mode">Camera Source:</label>
-        <select
-          id="camera-mode"
-          value={cameraMode}
-          onChange={handleModeChange}
-        >
-          <option value="client">Browser Camera (This Device)</option>
-          <option value="server">Server Camera</option>
-        </select>
+    <div className="space-y-3">
+      {/* Camera Mode Select */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium">Camera Source</label>
+        <Select value={cameraMode} onValueChange={handleModeChange}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="client">
+              <div className="flex items-center">
+                <Camera className="w-4 h-4 mr-2" />
+                Browser Camera
+              </div>
+            </SelectItem>
+            <SelectItem value="server">
+              <div className="flex items-center">
+                <Video className="w-4 h-4 mr-2" />
+                Server Camera
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Client Camera Options */}
-      <div
-        id="client-camera-options"
-        style={{ display: cameraMode === "client" ? "block" : "none" }}
-      >
-        <button
-          type="button"
-          id="enable-client-camera-btn"
-          onClick={handleEnableClientCamera}
-        >
-          Enable Camera Access
-        </button>
-        <div id="camera-permission-status">{getPermissionStatus()}</div>
-      </div>
+      {cameraMode === "client" && (
+        <div className="space-y-2">
+          <Button
+            variant="outline"
+            onClick={handleEnableClientCamera}
+            className="w-full"
+          >
+            <Camera className="w-4 h-4 mr-2" />
+            Enable Camera Access
+          </Button>
+          {getPermissionStatus() && (
+            <p className={`text-xs ${
+              clientCameraPermission === "granted"
+                ? "text-green-600"
+                : "text-destructive"
+            }`}>
+              {getPermissionStatus()}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Server Camera Selection */}
-      <div
-        id="server-camera-options"
-        style={{ display: cameraMode === "server" ? "block" : "none" }}
-      >
-        <div className="form-group">
-          <label htmlFor="server-camera-select">Server Camera:</label>
-          <select
-            id="server-camera-select"
-            value={selectedServerCamera}
-            onChange={handleServerCameraChange}
+      {cameraMode === "server" && (
+        <div className="space-y-2">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Server Camera</label>
+            <Select
+              value={selectedServerCamera.toString()}
+              onValueChange={handleServerCameraChange}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select camera" />
+              </SelectTrigger>
+              <SelectContent>
+                {serverCameras.length === 0 ? (
+                  <SelectItem value="-1" disabled>
+                    No cameras found
+                  </SelectItem>
+                ) : (
+                  serverCameras.map((camera) => (
+                    <SelectItem
+                      key={camera.index}
+                      value={camera.index.toString()}
+                    >
+                      Camera {camera.index} ({camera.resolution})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="outline"
+            onClick={loadServerCameras}
+            className="w-full"
           >
-            {serverCameras.length === 0 ? (
-              <option>No cameras found</option>
-            ) : (
-              serverCameras.map((camera) => (
-                <option key={camera.index} value={camera.index}>
-                  Camera {camera.index} ({camera.resolution})
-                </option>
-              ))
-            )}
-          </select>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh Cameras
+          </Button>
         </div>
-        <button type="button" id="refresh-cameras-btn" onClick={loadServerCameras}>
-          Refresh Cameras
-        </button>
-      </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,16 @@
 import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { useAppStore } from "../store/useAppStore";
-import { useToast } from "../context/ToastContext";
+import { ControlButtons } from "./ControlButtons";
+import { CameraSelector } from "./CameraSelector";
 import type { ConnectionStatus } from "../types";
 
 /**
- * Sidebar component with server configuration and status display.
+ * Sidebar component with server configuration, status display, controls, and camera selection.
  */
 export function Sidebar() {
   const serverConfig = useAppStore((state) => state.serverConfig);
@@ -18,8 +24,6 @@ export function Sidebar() {
   const [tunnelHostname, setTunnelHostname] = useState(
     sshTunnelConfig.remote_host
   );
-
-  const { showToast } = useToast();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -42,110 +46,121 @@ export function Sidebar() {
       if (configResponse.ok && tunnelResponse.ok) {
         setServerConfig({ host, port, endpoint });
         setSSHTunnelConfig({ remote_host: tunnelHostname });
-        showToast("Configuration updated successfully", "success");
+        toast.success("Configuration updated successfully");
       } else {
-        showToast("Configuration update partially failed", "error");
+        toast.error("Configuration update partially failed");
       }
     } catch (error) {
-      showToast("Configuration update failed", "error");
+      toast.error("Configuration update failed");
       console.error("Config update error:", error);
     }
   };
 
   return (
-    <>
-      <ConfigSection
-        host={host}
-        port={port}
-        endpoint={endpoint}
-        tunnelHostname={tunnelHostname}
-        onHostChange={setHost}
-        onPortChange={setPort}
-        onEndpointChange={setEndpoint}
-        onTunnelHostnameChange={setTunnelHostname}
-        onSubmit={handleSubmit}
-      />
-      <StatusSection />
-    </>
-  );
-}
+    <aside className="w-full lg:w-[350px] lg:border-r bg-muted/30 p-4 flex flex-col gap-4 overflow-y-auto">
+      {/* Server Configuration */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Server Configuration</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-1.5">
+              <label htmlFor="host" className="text-sm font-medium">
+                Server Host
+              </label>
+              <input
+                type="text"
+                id="host"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                required
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="port" className="text-sm font-medium">
+                Server Port
+              </label>
+              <input
+                type="number"
+                id="port"
+                value={port}
+                onChange={(e) => setPort(parseInt(e.target.value) || 8005)}
+                min={1024}
+                max={65535}
+                required
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="endpoint" className="text-sm font-medium">
+                Endpoint
+              </label>
+              <input
+                type="text"
+                id="endpoint"
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+                required
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="tunnel-hostname" className="text-sm font-medium">
+                IZAR Hostname (SSH Tunnel)
+              </label>
+              <input
+                type="text"
+                id="tunnel-hostname"
+                value={tunnelHostname}
+                onChange={(e) => setTunnelHostname(e.target.value)}
+                placeholder="i27 or icn042.iccluster"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave empty if not using IZAR
+              </p>
+            </div>
+            <Button type="submit" className="w-full">
+              Update Config
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-/**
- * Configuration form section.
- */
-function ConfigSection({
-  host,
-  port,
-  endpoint,
-  tunnelHostname,
-  onHostChange,
-  onPortChange,
-  onEndpointChange,
-  onTunnelHostnameChange,
-  onSubmit,
-}: {
-  host: string;
-  port: number;
-  endpoint: string;
-  tunnelHostname: string;
-  onHostChange: (value: string) => void;
-  onPortChange: (value: number) => void;
-  onEndpointChange: (value: string) => void;
-  onTunnelHostnameChange: (value: string) => void;
-  onSubmit: (e: FormEvent) => void;
-}) {
-  return (
-    <div className="config-section">
-      <h2>Server Configuration</h2>
-      <form id="config-form" onSubmit={onSubmit}>
-        <div className="form-group">
-          <label htmlFor="host">Server Host:</label>
-          <input
-            type="text"
-            id="host"
-            value={host}
-            onChange={(e) => onHostChange(e.target.value)}
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="port">Server Port:</label>
-          <input
-            type="number"
-            id="port"
-            value={port}
-            onChange={(e) => onPortChange(parseInt(e.target.value) || 8005)}
-            min={1024}
-            max={65535}
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="endpoint">Endpoint:</label>
-          <input
-            type="text"
-            id="endpoint"
-            value={endpoint}
-            onChange={(e) => onEndpointChange(e.target.value)}
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="tunnel-hostname">IZAR Hostname (SSH Tunnel):</label>
-          <input
-            type="text"
-            id="tunnel-hostname"
-            value={tunnelHostname}
-            onChange={(e) => onTunnelHostnameChange(e.target.value)}
-            placeholder="i27 or icn042.iccluster"
-          />
-          <small style={{ display: "block", marginTop: 4, color: "#666" }}>
-            Leave empty if not using IZAR
-          </small>
-        </div>
-        <button type="submit">Update Config</button>
-      </form>
-    </div>
+      {/* Status */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <StatusSection />
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      {/* Controls */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Controls</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ControlButtons />
+        </CardContent>
+      </Card>
+
+      {/* Camera Selection */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Camera Selection</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CameraSelector />
+        </CardContent>
+      </Card>
+    </aside>
   );
 }
 
@@ -166,52 +181,64 @@ function StatusSection() {
   const target = `${serverConfig.host}:${serverConfig.port}${serverConfig.endpoint}`;
 
   return (
-    <div className="status-section">
-      <h2>Status</h2>
-      <div id="status">
-        <p>
-          <strong>Camera:</strong>{" "}
-          <span id="camera-status">{isCameraActive ? "Active" : "Inactive"}</span>
-        </p>
-        <p>
-          <strong>Streaming:</strong>{" "}
-          <span id="streaming-status">
-            {isStreaming ? "Active" : "Inactive"}
-          </span>
-        </p>
-        <p>
-          <strong>FPS:</strong> <span id="fps">{fps.toFixed(1)}</span>
-        </p>
-        <p>
-          <strong>Target:</strong> <span id="target">{target}</span>
-        </p>
-        <p>
-          <strong>Preview Connection:</strong>{" "}
-          <StatusIndicator status={previewConnection} />
-        </p>
-        <p>
-          <strong>Results Connection:</strong>{" "}
-          <StatusIndicator status={resultsConnection} />
-        </p>
-        <p>
-          <strong>Streaming Server:</strong>{" "}
-          <StatusIndicator status={streamingServerStatus} />
-        </p>
+    <div className="space-y-2 text-sm">
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Camera</span>
+        <Badge variant={isCameraActive ? "default" : "secondary"}>
+          {isCameraActive ? "Active" : "Inactive"}
+        </Badge>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Streaming</span>
+        <Badge variant={isStreaming ? "default" : "secondary"}>
+          {isStreaming ? "Active" : "Inactive"}
+        </Badge>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">FPS</span>
+        <span className="font-mono">{fps.toFixed(1)}</span>
+      </div>
+      <div className="flex justify-between items-center gap-2">
+        <span className="text-muted-foreground shrink-0">Target</span>
+        <span className="font-mono text-xs truncate">{target}</span>
+      </div>
+      <Separator className="my-2" />
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Preview</span>
+        <StatusBadge status={previewConnection} />
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Results</span>
+        <StatusBadge status={resultsConnection} />
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Server</span>
+        <StatusBadge status={streamingServerStatus} />
       </div>
     </div>
   );
 }
 
 /**
- * Status indicator component with color-coded background.
+ * Status badge with color-coded variants.
  */
-function StatusIndicator({ status }: { status: ConnectionStatus }) {
+function StatusBadge({ status }: { status: ConnectionStatus }) {
   const displayText =
     status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 
-  return (
-    <span className={`status-indicator status-${status.toLowerCase()}`}>
-      {displayText}
-    </span>
-  );
+  const getVariant = (): "default" | "secondary" | "destructive" | "outline" => {
+    switch (status.toLowerCase()) {
+      case "connected":
+        return "default";
+      case "connecting":
+        return "secondary";
+      case "disconnected":
+      case "error":
+        return "destructive";
+      default:
+        return "outline";
+    }
+  };
+
+  return <Badge variant={getVariant()}>{displayText}</Badge>;
 }

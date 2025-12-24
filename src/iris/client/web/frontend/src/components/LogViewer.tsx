@@ -1,4 +1,7 @@
 import { useRef, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Trash2 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import type { LogEntry } from "../types";
 
@@ -25,19 +28,25 @@ export function LogViewer() {
   };
 
   return (
-    <div className="log-section">
-      <div className="log-header">
-        <h2>Activity Log</h2>
-        <button className="btn-clear" onClick={handleClearLogs}>
-          Clear Log
-        </button>
-      </div>
-      <div id="log-container" className="log-container" ref={containerRef}>
-        {logs.map((log) => (
-          <LogEntryItem key={log.id} log={log} />
-        ))}
-      </div>
-    </div>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between py-3 px-4">
+        <CardTitle className="text-base">Activity Log</CardTitle>
+        <Button variant="ghost" size="sm" onClick={handleClearLogs}>
+          <Trash2 className="w-4 h-4 mr-1" />
+          Clear
+        </Button>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div
+          ref={containerRef}
+          className="h-48 overflow-y-auto font-mono text-xs p-3 bg-muted/30"
+        >
+          {logs.map((log) => (
+            <LogEntryItem key={log.id} log={log} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -58,7 +67,9 @@ function LogEntryItem({ log }: { log: LogEntry }) {
       try {
         const parsed = JSON.parse(trimmed);
         return (
-          <pre className="log-json">{JSON.stringify(parsed, null, 2)}</pre>
+          <pre className="whitespace-pre-wrap break-all text-muted-foreground">
+            {JSON.stringify(parsed, null, 2)}
+          </pre>
         );
       } catch {
         // Not valid JSON, return as-is
@@ -73,7 +84,9 @@ function LogEntryItem({ log }: { log: LogEntry }) {
       try {
         const parsed = JSON.parse(content);
         return (
-          <pre className="log-json">{JSON.stringify(parsed, null, 2)}</pre>
+          <pre className="whitespace-pre-wrap break-all text-muted-foreground">
+            {JSON.stringify(parsed, null, 2)}
+          </pre>
         );
       } catch {
         return <span>{content}</span>;
@@ -83,11 +96,28 @@ function LogEntryItem({ log }: { log: LogEntry }) {
     return <span>{message}</span>;
   };
 
+  const getLevelColor = () => {
+    switch (log.level) {
+      case "ERROR":
+        return "text-red-500";
+      case "WARNING":
+        return "text-yellow-500";
+      case "INFO":
+        return "text-blue-500";
+      case "DEBUG":
+        return "text-gray-500";
+      default:
+        return "text-foreground";
+    }
+  };
+
   return (
-    <div className={`log-entry log-level-${log.level}`}>
-      <span className="log-timestamp">[{timestamp}]</span>
-      <span className="log-level">{log.level}</span>
-      <span className="log-message">{formatMessage(log.message)}</span>
+    <div className="flex gap-2 py-0.5">
+      <span className="text-muted-foreground shrink-0">[{timestamp}]</span>
+      <span className={`shrink-0 font-semibold ${getLevelColor()}`}>
+        {log.level}
+      </span>
+      <span className="break-all">{formatMessage(log.message)}</span>
     </div>
   );
 }

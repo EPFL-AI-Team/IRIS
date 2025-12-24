@@ -1,4 +1,8 @@
 import { useRef, useEffect } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Loader2, Trash2 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import type { ResultItem } from "../types";
 
@@ -31,17 +35,23 @@ export function ResultsViewer() {
   };
 
   return (
-    <>
-      <div className="log-header">
-        <h2>Inference Results</h2>
-        <button className="btn-clear" onClick={handleClearResults}>
-          Clear Results
-        </button>
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-2 shrink-0">
+        <h2 className="text-lg font-semibold">Inference Results</h2>
+        <Button variant="outline" size="sm" onClick={handleClearResults}>
+          <Trash2 className="w-4 h-4 mr-1" />
+          Clear
+        </Button>
       </div>
-      <div id="results-container" ref={containerRef}>
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto space-y-3 min-h-0"
+      >
         {results.length === 0 ? (
-          <div className="results-placeholder">
-            <p>No results yet. Start streaming to see inference results.</p>
+          <div className="h-full flex items-center justify-center">
+            <p className="text-muted-foreground text-sm">
+              No results yet. Start streaming to see inference results.
+            </p>
           </div>
         ) : (
           results.map((result, index) => (
@@ -49,7 +59,7 @@ export function ResultsViewer() {
           ))
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -77,67 +87,71 @@ function ResultCard({ result, number }: { result: ResultItem; number: number }) 
     try {
       const parsed = JSON.parse(cleaned);
       return (
-        <div
-          className="formatted-result"
-          style={{
-            fontFamily: "monospace",
-            lineHeight: 1.5,
-            textAlign: "left",
-            paddingLeft: 20,
-          }}
-        >
+        <div className="font-mono text-sm space-y-1">
           {Object.entries(parsed).map(([key, value]) => (
-            <div key={key}>
-              <strong>{key.charAt(0).toUpperCase() + key.slice(1)}:</strong>{" "}
-              {typeof value === "object" && value !== null
-                ? JSON.stringify(value)
-                : String(value)}
+            <div key={key} className="flex gap-2">
+              <span className="font-semibold text-muted-foreground">
+                {key.charAt(0).toUpperCase() + key.slice(1)}:
+              </span>
+              <span>
+                {typeof value === "object" && value !== null
+                  ? JSON.stringify(value)
+                  : String(value)}
+              </span>
             </div>
           ))}
         </div>
       );
     } catch {
       // Not JSON, return as plain text
-      return <p>{cleaned}</p>;
+      return <p className="text-sm">{cleaned}</p>;
     }
   };
 
   if (isPending) {
     return (
-      <div className={`result-item pending`} id={`result-${result.job_id}`}>
-        <div className="result-header">
-          <span className="result-number">#{number}</span>
-          <span className="result-timestamp">{timestamp}</span>
-          <span className="result-status">
-            {result.status === "processing" ? "Processing" : "Queued"}
-          </span>
-        </div>
-        <div className="result-text">
-          <div className="loading-spinner"></div>
-          <p>
-            <em>Processing batch...</em>
-          </p>
+      <Card className="border-l-4 border-l-yellow-500">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">#{number}</Badge>
+              <span className="text-xs text-muted-foreground">{timestamp}</span>
+            </div>
+            <Badge variant="secondary">
+              {result.status === "processing" ? "Processing" : "Queued"}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm italic">Processing batch...</span>
+          </div>
           {result.pendingDetails && (
-            <div className="pending-details">{result.pendingDetails}</div>
+            <p className="text-xs text-muted-foreground mt-2">
+              {result.pendingDetails}
+            </p>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="result-item" id={`result-${result.job_id}`}>
-      <div className="result-header">
-        <span className="result-number">#{number}</span>
-        <span className="result-timestamp">{timestamp}</span>
-        <span className="result-frames">
-          Frames: {result.frames_processed || 0}
-        </span>
-      </div>
-      <div className="result-text">{formatResult(result.result)}</div>
-      <div className="result-metrics">
-        <span>Inference: {(result.inference_time || 0).toFixed(3)}s</span>
-      </div>
-    </div>
+    <Card className="border-l-4 border-l-green-500">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">#{number}</Badge>
+            <span className="text-xs text-muted-foreground">{timestamp}</span>
+          </div>
+          <Badge variant="secondary">
+            Frames: {result.frames_processed || 0}
+          </Badge>
+        </div>
+        <div className="mb-2">{formatResult(result.result)}</div>
+        <div className="text-xs text-muted-foreground">
+          Inference: {(result.inference_time || 0).toFixed(3)}s
+        </div>
+      </CardContent>
+    </Card>
   );
 }
