@@ -2,9 +2,7 @@ import { useEffect } from "react";
 import { Toaster, toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sidebar } from "./components/Sidebar";
-import { VideoCanvas } from "./components/VideoCanvas";
-import { ResultsViewer } from "./components/ResultsViewer";
-import { LogViewer } from "./components/LogViewer";
+import { LiveView } from "./components/views/LiveView";
 import { AnalysisView } from "./components/AnalysisView";
 import { useResultsWebSocket } from "./hooks/useResultsWebSocket";
 import { useAppStore } from "./store/useAppStore";
@@ -23,40 +21,28 @@ function App() {
   }, [addLog]);
 
   return (
-    <div className="h-screen w-full flex flex-col lg:flex-row overflow-hidden bg-background text-foreground">
+    <div className="h-screen w-full flex flex-col lg:flex-row bg-background text-foreground">
       {/* Sidebar - hidden on mobile, shown on desktop */}
-      <aside className="hidden lg:flex lg:h-full">
+      <aside className="hidden lg:flex lg:h-full overflow-y-scroll">
         <Sidebar />
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-y-scroll">
         <Tabs defaultValue="live" className="flex-1 flex flex-col">
           <div className="border-b px-4 shrink-0">
-            <TabsList className="h-12">
+            <TabsList className="h-12 my-5">
               <TabsTrigger value="live">Live Inference</TabsTrigger>
               <TabsTrigger value="analysis">Analysis & Benchmark</TabsTrigger>
             </TabsList>
           </div>
 
-          <TabsContent value="live" className="flex-1 p-4 overflow-auto m-0">
-            {/* Desktop: side-by-side | Mobile: stacked */}
-            <div className="flex flex-col lg:grid lg:grid-cols-2 gap-4 h-full">
-              <div className="flex flex-col min-h-[300px] lg:min-h-0">
-                <h2 className="text-lg font-semibold mb-2">Camera Preview</h2>
-                <div className="flex-1 flex flex-col">
-                  <VideoCanvas />
-                </div>
-              </div>
-              <div className="flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
-                <ResultsViewer />
-              </div>
-            </div>
-
-            {/* Activity Log */}
-            <div className="mt-4">
-              <LogViewer />
-            </div>
+          <TabsContent
+            value="live"
+            forceMount
+            className="flex-1 p-4 overflow-auto m-0"
+          >
+            <LiveView />
 
             {/* Mobile: show sidebar content below */}
             <div className="lg:hidden mt-4">
@@ -64,7 +50,10 @@ function App() {
             </div>
           </TabsContent>
 
-          <TabsContent value="analysis" className="flex-1 p-4 overflow-auto m-0">
+          <TabsContent
+            value="analysis"
+            className="flex-1 p-4 overflow-auto m-0"
+          >
             <AnalysisView />
           </TabsContent>
         </Tabs>

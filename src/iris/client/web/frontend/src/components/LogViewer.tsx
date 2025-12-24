@@ -1,5 +1,11 @@
 import { useRef, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
@@ -29,12 +35,14 @@ export function LogViewer() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between py-3 px-4">
+      <CardHeader className="pb-3">
         <CardTitle className="text-base">Activity Log</CardTitle>
-        <Button variant="ghost" size="sm" onClick={handleClearLogs}>
-          <Trash2 className="w-4 h-4 mr-1" />
-          Clear
-        </Button>
+        <CardAction>
+          <Button variant="outline" size="sm" onClick={handleClearLogs}>
+            <Trash2 className="w-4 h-4 mr-1" />
+            Clear
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="p-0">
         <div

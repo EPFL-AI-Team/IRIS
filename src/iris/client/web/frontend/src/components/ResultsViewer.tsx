@@ -1,8 +1,7 @@
 import { useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import type { ResultItem } from "../types";
 
@@ -14,7 +13,6 @@ export function ResultsViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const results = useAppStore((state) => state.results);
-  const clearResults = useAppStore((state) => state.clearResults);
 
   // Auto-scroll to bottom when new results arrive
   useEffect(() => {
@@ -23,26 +21,8 @@ export function ResultsViewer() {
     }
   }, [results]);
 
-  const handleClearResults = async () => {
-    try {
-      const response = await fetch("/api/results/clear", { method: "POST" });
-      if (response.ok) {
-        clearResults();
-      }
-    } catch (error) {
-      console.error("Failed to clear results:", error);
-    }
-  };
-
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-2 shrink-0">
-        <h2 className="text-lg font-semibold">Inference Results</h2>
-        <Button variant="outline" size="sm" onClick={handleClearResults}>
-          <Trash2 className="w-4 h-4 mr-1" />
-          Clear
-        </Button>
-      </div>
       <div
         ref={containerRef}
         className="flex-1 overflow-y-auto space-y-3 min-h-0"
@@ -66,8 +46,15 @@ export function ResultsViewer() {
 /**
  * Individual result card component.
  */
-function ResultCard({ result, number }: { result: ResultItem; number: number }) {
-  const isPending = result.status === "pending" || result.status === "processing";
+function ResultCard({
+  result,
+  number,
+}: {
+  result: ResultItem;
+  number: number;
+}) {
+  const isPending =
+    result.status === "pending" || result.status === "processing";
 
   // Format timestamp
   const timestamp = result.timestamp.toLocaleTimeString();
@@ -77,7 +64,7 @@ function ResultCard({ result, number }: { result: ResultItem; number: number }) 
     if (!resultText) return null;
 
     // Remove markdown code fences
-    let cleaned = resultText
+    const cleaned = resultText
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/, "")
       .replace(/```\s*$/, "")

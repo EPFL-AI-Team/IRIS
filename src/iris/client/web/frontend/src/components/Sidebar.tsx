@@ -5,12 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "../store/useAppStore";
-import { ControlButtons } from "./ControlButtons";
-import { CameraSelector } from "./CameraSelector";
-import type { ConnectionStatus } from "../types";
+import { StatusBadge } from "./StatusBadge";
 
 /**
- * Sidebar component with server configuration, status display, controls, and camera selection.
+ * Sidebar component with server configuration and status display.
  */
 export function Sidebar() {
   const serverConfig = useAppStore((state) => state.serverConfig);
@@ -138,28 +136,6 @@ export function Sidebar() {
           <StatusSection />
         </CardContent>
       </Card>
-
-      <Separator />
-
-      {/* Controls */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Controls</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ControlButtons />
-        </CardContent>
-      </Card>
-
-      {/* Camera Selection */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Camera Selection</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <CameraSelector />
-        </CardContent>
-      </Card>
     </aside>
   );
 }
@@ -217,28 +193,4 @@ function StatusSection() {
       </div>
     </div>
   );
-}
-
-/**
- * Status badge with color-coded variants.
- */
-function StatusBadge({ status }: { status: ConnectionStatus }) {
-  const displayText =
-    status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
-
-  const getVariant = (): "default" | "secondary" | "destructive" | "outline" => {
-    switch (status.toLowerCase()) {
-      case "connected":
-        return "default";
-      case "connecting":
-        return "secondary";
-      case "disconnected":
-      case "error":
-        return "destructive";
-      default:
-        return "outline";
-    }
-  };
-
-  return <Badge variant={getVariant()}>{displayText}</Badge>;
 }

@@ -1,7 +1,7 @@
-import * as React from "react"
-import * as TabsPrimitive from "@radix-ui/react-tabs"
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function Tabs({
   className,
@@ -13,7 +13,7 @@ function Tabs({
       className={cn("flex flex-col gap-2", className)}
       {...props}
     />
-  )
+  );
 }
 
 function TabsList({
@@ -29,7 +29,7 @@ function TabsList({
       )}
       {...props}
     />
-  )
+  );
 }
 
 function TabsTrigger({
@@ -45,7 +45,7 @@ function TabsTrigger({
       )}
       {...props}
     />
-  )
+  );
 }
 
 function TabsContent({
@@ -55,10 +55,16 @@ function TabsContent({
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn("flex-1 outline-none", className)}
+      className={cn(
+        // Radix uses `hidden`/`data-state=inactive` for inactive tabs. Tailwind
+        // display utilities (e.g. `flex`) can override the browser's `[hidden]`.
+        // Force inactive content to be display:none.
+        "flex-1 outline-none data-[state=inactive]:hidden",
+        className
+      )}
       {...props}
     />
-  )
+  );
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent }
+export { Tabs, TabsList, TabsTrigger, TabsContent };

@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { Badge } from "@/components/ui/badge";
 import { usePreviewWebSocket } from "../hooks/usePreviewWebSocket";
 import { useBrowserStream } from "../hooks/useBrowserStream";
 import { useClientCamera } from "../hooks/useClientCamera";
@@ -137,24 +138,41 @@ export function VideoCanvas() {
     }
   }, [cameraMode, isStreaming, clientCamera.isActive, browserStream]);
 
-  // Get preview status text
-  const getPreviewStatus = () => {
+  const getPreviewStatus = (): {
+    label: string;
+    detail?: string;
+    variant: "default" | "secondary" | "destructive" | "outline";
+  } => {
     if (cameraMode === "client") {
-      if (clientCamera.isActive) {
-        return "Using: Browser Camera";
-      }
       if (clientCamera.error) {
-        return `Error: ${clientCamera.error}`;
+        return {
+          label: "Camera Error",
+          detail: clientCamera.error,
+          variant: "destructive",
+        };
       }
-      return "Camera inactive";
+      if (clientCamera.isActive) {
+        return { label: "Browser Camera", variant: "outline" };
+      }
+      return { label: "Camera Inactive", variant: "secondary" };
     }
-    return "Using: Server Camera";
+
+    return { label: "Server Camera", variant: "outline" };
   };
+
+  const previewStatus = getPreviewStatus();
 
   return (
     <>
       <canvas ref={canvasRef} id="preview"></canvas>
-      <div id="preview-status">{getPreviewStatus()}</div>
+      <div id="preview-status" className="mt-2 flex items-center gap-2">
+        <Badge variant={previewStatus.variant}>{previewStatus.label}</Badge>
+        {previewStatus.detail ? (
+          <span className="text-xs text-muted-foreground truncate">
+            {previewStatus.detail}
+          </span>
+        ) : null}
+      </div>
     </>
   );
 }

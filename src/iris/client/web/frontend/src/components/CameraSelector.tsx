@@ -14,7 +14,11 @@ import type { CameraMode } from "../types";
 /**
  * CameraSelector component for switching between browser and server cameras.
  */
-export function CameraSelector() {
+interface CameraSelectorProps {
+  variant?: 'vertical' | 'horizontal';
+}
+
+export function CameraSelector({ variant = 'vertical' }: CameraSelectorProps) {
   const cameraMode = useAppStore((state) => state.cameraMode);
   const setCameraMode = useAppStore((state) => state.setCameraMode);
   const clientCameraPermission = useAppStore(
@@ -97,6 +101,85 @@ export function CameraSelector() {
     }
   };
 
+  // Horizontal variant for toolbar
+  if (variant === 'horizontal') {
+    return (
+      <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center flex-wrap">
+        {/* Camera Mode Select - Compact */}
+        <Select value={cameraMode} onValueChange={handleModeChange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="client">
+              <div className="flex items-center">
+                <Camera className="w-4 h-4 mr-2" />
+                Browser Camera
+              </div>
+            </SelectItem>
+            <SelectItem value="server">
+              <div className="flex items-center">
+                <Video className="w-4 h-4 mr-2" />
+                Server Camera
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Client Camera Options - Inline */}
+        {cameraMode === "client" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleEnableClientCamera}
+          >
+            <Camera className="w-4 h-4 mr-2" />
+            Enable Camera
+          </Button>
+        )}
+
+        {/* Server Camera Selection - Inline */}
+        {cameraMode === "server" && (
+          <>
+            <Select
+              value={selectedServerCamera.toString()}
+              onValueChange={handleServerCameraChange}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select camera" />
+              </SelectTrigger>
+              <SelectContent>
+                {serverCameras.length === 0 ? (
+                  <SelectItem value="-1" disabled>
+                    No cameras found
+                  </SelectItem>
+                ) : (
+                  serverCameras.map((camera) => (
+                    <SelectItem
+                      key={camera.index}
+                      value={camera.index.toString()}
+                    >
+                      Camera {camera.index} ({camera.resolution})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={loadServerCameras}
+              title="Refresh Cameras"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Vertical variant (default) for sidebar
   return (
     <div className="space-y-3">
       {/* Camera Mode Select */}
