@@ -16,14 +16,13 @@ from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from PIL import Image
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
 from iris.server.frame_buffer import FrameBuffer
 from iris.server.inference.executor import InferenceExecutor
-from iris.server.jobs.config import JobConfig
 from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
 
@@ -150,7 +149,7 @@ async def global_result_drainer(state: Any) -> None:
     """Drain global results queue to prevent memory leaks."""
     try:
         while True:
-            job = await state.queue.results.get()
+            _job = await state.queue.results.get()
             state.queue.results.task_done()
             # Results are handled by per-job callbacks
     except asyncio.CancelledError:
@@ -230,6 +229,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="IRIS Inference Server", lifespan=lifespan)
+
 
 @app.websocket("/ws/stream")
 async def inference_endpoint(websocket: WebSocket) -> None:
@@ -558,9 +558,6 @@ async def log_streaming_endpoint(websocket: WebSocket) -> None:
             "Log streaming client removed (remaining: %d)",
             log_streaming_handler.get_connection_count(),
         )
-
-
-
 
 
 def main() -> None:

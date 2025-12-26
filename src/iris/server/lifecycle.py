@@ -137,7 +137,7 @@ class LifecycleHandler:
         async def _drain_loop() -> None:
             try:
                 while True:
-                    job = await state.queue.results.get()
+                    _job = await state.queue.results.get()
                     state.queue.results.task_done()
                     # Results are handled by per-job callbacks
             except asyncio.CancelledError:
