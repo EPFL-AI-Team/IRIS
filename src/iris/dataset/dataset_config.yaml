@@ -4,15 +4,20 @@
 # - Prefer absolute paths. Only `~` is expanded automatically.
 # - Edit the profile paths to match your machine/environment.
 
-default_profile: mac
+default_profile: rcp-container
 
-default_split_name: default
+default_split_name: train_10k_4_frames
 
 profiles:
   mac:
     annotations_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/annotations/finebio_action_annotations"
     videos_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/videos/w640"
     output_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio_processed"
+
+  rcp-container:
+    annotations_dir: "/scratch/iris/finebio_raw/annotations/finebio_action_annotations"
+    videos_dir: "/scratch/iris/finebio_raw/videos/w640"
+    output_dir: "/scratch/iris/finebio_processed"
 
   rcp:
     annotations_dir: "/mnt/aiteam/scratch/iris/finebio_raw/annotations/finebio_action_annotations"

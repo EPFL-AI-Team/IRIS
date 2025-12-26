@@ -48,12 +48,16 @@ def parse_arguments() -> argparse.Namespace:
 
 # Parameters
 TOTAL_SAMPLES_PER_VERB = 1000
-NUM_FRAMES_TO_SAMPLE = 8  # Configurable frame count (multiple of 2)
+NUM_FRAMES_TO_SAMPLE = 4  # Configurable frame count (multiple of 2)
 assert (
     NUM_FRAMES_TO_SAMPLE % 2 == 0 and NUM_FRAMES_TO_SAMPLE <= 16
 )  # Since we have 16 frames extracted for everything
 MIN_DURATION = 0.5
 MAX_DURATION = 3.0
+
+# VIDEO TO HOLD OUT (For Demo)
+# P25_02_01 = Participant 25, Protocol 2, take 1
+HOLDOUT_VIDEO_IDS = ["P25_02_01"]
 
 # Prompt templates
 # all explicitly specify the 5 required JSON keys
@@ -109,8 +113,12 @@ def generate_visual_analysis(row: pd.Series) -> str:
     return f"The {hand} hand is {verb_ing} the {tool} {prep} the {target}."
 
 
-def filter_data(annotations_df: pd.DataFrame) -> pd.DataFrame:
-    """Apply quality filters to the annotation DataFrame."""
+def filter_data(annotations_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Apply quality filters AND separate holdout videos.
+
+    Returns:
+        (filtered_training_pool, holdout_demo_pool)
+    """
     logger.info("Initial pool: %d", len(annotations_df))
     logger.info(
         "Filter parameters: NUM_FRAMES=%d, MIN_DURATION=%.1f, MAX_DURATION=%.1f",
@@ -119,6 +127,7 @@ def filter_data(annotations_df: pd.DataFrame) -> pd.DataFrame:
         MAX_DURATION,
     )
 
+    # 1. Duration & Object Filters
     annotations_df["duration"] = annotations_df["end_sec"] - annotations_df["start_sec"]
 
     # Log rows with duration issues
@@ -147,16 +156,28 @@ def filter_data(annotations_df: pd.DataFrame) -> pd.DataFrame:
             ].to_string(),
         )
 
-    filtered_df = annotations_df[
+    valid_df = annotations_df[
         (annotations_df["duration"] >= MIN_DURATION)
         & (annotations_df["duration"] <= MAX_DURATION)
-    ]
-    filtered_df = filtered_df[
-        filtered_df["manipulated_object"].notna()
-        & (filtered_df["manipulated_object"] != "nan")
-    ]
-    logger.info("Valid pool after filtering: %d", len(filtered_df))
-    return filtered_df
+        & (annotations_df["manipulated_object"].notna())
+        & (annotations_df["manipulated_object"] != "nan")
+    ].copy()
+
+    logger.info("Pool after quality filtering: %d", len(valid_df))
+
+    # 2. Holdout Logic
+    # Identify rows belonging to holdout videos
+    is_holdout = valid_df["video_id"].isin(HOLDOUT_VIDEO_IDS)
+
+    demo_df = valid_df[is_holdout].copy()
+    train_pool_df = valid_df[~is_holdout].copy()
+
+    if len(demo_df) > 0:
+        logger.info(f"Held out {len(demo_df)} samples from videos: {HOLDOUT_VIDEO_IDS}")
+    else:
+        logger.warning(f"No samples found for holdout videos: {HOLDOUT_VIDEO_IDS}")
+
+    return train_pool_df, demo_df
 
 
 def get_stratified_splits(
@@ -277,6 +298,7 @@ if __name__ == "__main__":
     out_train = out_dir / "finebio_train.jsonl"
     out_val = out_dir / "finebio_val.jsonl"
     out_test = out_dir / "finebio_test.jsonl"
+    out_demo = out_dir / "finebio_demo.jsonl"  # New output file
 
     logger.info("Dataset profile: %s", resolved.profile.name)
     logger.info("Using split_name: %s", effective_split_name)
@@ -291,18 +313,23 @@ if __name__ == "__main__":
         )
     annotations_df = pd.read_csv(input_csv)
 
-    # Filter
-    filtered_df = filter_data(annotations_df)
+    # Filter & Holdout
+    train_pool_df, demo_df = filter_data(annotations_df)
 
-    # Split
-    train_df, val_df, test_df = get_stratified_splits(filtered_df)
+    # Split the main pool
+    train_df, val_df, test_df = get_stratified_splits(train_pool_df)
 
-    logger.info("--- Split Statistics ---")
-    logger.info("Train Size: %d", len(train_df))
-    logger.info("Val Size:   %d", len(val_df))
-    logger.info("Test Size:  %d", len(test_df))
+    logger.info("--- Final File Statistics ---")
+    logger.info("Train: %d samples", len(train_df))
+    logger.info("Val:   %d samples", len(val_df))
+    logger.info("Test:  %d samples", len(test_df))
+    logger.info("Demo:  %d samples (from %s)", len(demo_df), HOLDOUT_VIDEO_IDS)
 
     # Generate Files
     create_jsonl(train_df, frame_base_dir=frame_base_dir, output_path=out_train)
     create_jsonl(val_df, frame_base_dir=frame_base_dir, output_path=out_val)
     create_jsonl(test_df, frame_base_dir=frame_base_dir, output_path=out_test)
+
+    # Save Demo Set
+    if not demo_df.empty:
+        create_jsonl(demo_df, frame_base_dir=frame_base_dir, output_path=out_demo)
