@@ -1,0 +1,25 @@
+# Dataset script configuration
+#
+# Notes:
+# - Prefer absolute paths. Only `~` is expanded automatically.
+# - Edit the profile paths to match your machine/environment.
+
+default_profile: mac
+
+default_split_name: default
+
+profiles:
+  mac:
+    annotations_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/annotations/finebio_action_annotations"
+    videos_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/videos/w640"
+    output_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio_processed"
+
+  rcp:
+    annotations_dir: "/ABS/PATH/TO/finebio/annotations/finebio_action_annotations"
+    videos_dir: "/ABS/PATH/TO/finebio/videos/w640"
+    output_dir: "/ABS/PATH/TO/finebio_processed"
+
+  izar:
+    annotations_dir: "/ABS/PATH/TO/finebio/annotations/finebio_action_annotations"
+    videos_dir: "/ABS/PATH/TO/finebio/videos/w640"
+    output_dir: "/ABS/PATH/TO/finebio_processed"

@@ -18,11 +18,12 @@ dependencies = [
     "websockets>=15.0.1",
     "fastapi>=0.121.1",
     "uvicorn>=0.38.0",
-    "opencv-python>=4.11.0.86 ; sys_platform == 'darwin'",         # Mac: full version with GUI
+    "opencv-python>=4.11.0.86 ; sys_platform == 'darwin'", # Mac: full version with GUI
     "opencv-python-headless>=4.11.0.86 ; sys_platform == 'linux'", # Pi/V100: headless
     "threaded-videocapture>=1.0.1",
     "ffmpeg-python>=0.2.0",
     "google-genai>=1.53.0",
+    "scikit-learn>=1.8.0",
 ]
 
 [dependency-groups]
