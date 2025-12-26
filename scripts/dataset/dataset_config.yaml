@@ -15,9 +15,9 @@ profiles:
     output_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio_processed"
 
   rcp:
-    annotations_dir: "/ABS/PATH/TO/finebio/annotations/finebio_action_annotations"
-    videos_dir: "/ABS/PATH/TO/finebio/videos/w640"
-    output_dir: "/ABS/PATH/TO/finebio_processed"
+    annotations_dir: "/mnt/aiteam/scratch/iris/finebio_raw/annotations/finebio_action_annotations"
+    videos_dir: "/mnt/aiteam/scratch/iris/finebio_raw/videos/w640"  # Point to existing frames
+    output_dir: "/mnt/aiteam/scratch/iris/finebio_processed"
 
   izar:
     annotations_dir: "/ABS/PATH/TO/finebio/annotations/finebio_action_annotations"

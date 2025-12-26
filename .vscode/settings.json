@@ -1,6 +1,6 @@
 {
     "files.exclude": {
-        "**/wandb": true,
+        // "**/wandb": true,
         "**/mlruns": true,
         "**/data/raw": true,
         "**/*.pth": true,

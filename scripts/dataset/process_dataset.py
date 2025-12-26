@@ -7,7 +7,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
 import pandas as pd
 from dataset_config import (
@@ -20,6 +19,15 @@ from dataset_config import (
 )
 from PIL import Image
 from tqdm import tqdm
+
+# Make OpenCV optional - only needed if extracting frames
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    cv2 = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +127,10 @@ def extract_frames_for_segment(
     video_path: Path, start_sec: float, end_sec: float, segment_dir: Path
 ) -> list[str]:
     """Handles the OpenCV logic to extract frames."""
+    if not CV2_AVAILABLE:
+        logger.error("OpenCV (cv2) not available. Cannot extract frames.")
+        return []
+
     if not video_path.exists():
         return []
 
@@ -291,6 +303,14 @@ def process_video_annotations(
 
 def main() -> None:
     args = parse_arguments()
+
+    # Validate OpenCV availability if frame extraction is requested
+    if args.extract_frames and not CV2_AVAILABLE:
+        logger.error(
+            "Frame extraction requested but OpenCV (cv2) is not installed. "
+            "Install with: pip install opencv-python-headless"
+        )
+        return
 
     configure_logging(args.log_level)
 

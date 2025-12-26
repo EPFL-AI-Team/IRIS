@@ -112,7 +112,41 @@ def generate_visual_analysis(row: pd.Series) -> str:
 def filter_data(annotations_df: pd.DataFrame) -> pd.DataFrame:
     """Apply quality filters to the annotation DataFrame."""
     logger.info("Initial pool: %d", len(annotations_df))
+    logger.info(
+        "Filter parameters: NUM_FRAMES=%d, MIN_DURATION=%.1f, MAX_DURATION=%.1f",
+        NUM_FRAMES_TO_SAMPLE,
+        MIN_DURATION,
+        MAX_DURATION,
+    )
+
     annotations_df["duration"] = annotations_df["end_sec"] - annotations_df["start_sec"]
+
+    # Log rows with duration issues
+    too_short = annotations_df[annotations_df["duration"] < MIN_DURATION]
+    too_long = annotations_df[annotations_df["duration"] > MAX_DURATION]
+
+    if len(too_short) > 0:
+        logger.info(
+            "Rows with duration < MIN_DURATION (%.1f): %d", MIN_DURATION, len(too_short)
+        )
+        logger.debug(
+            "Too short rows:\n%s",
+            too_short[
+                ["video_id", "start_sec", "end_sec", "duration", "verb"]
+            ].to_string(),
+        )
+
+    if len(too_long) > 0:
+        logger.info(
+            "Rows with duration > MAX_DURATION (%.1f): %d", MAX_DURATION, len(too_long)
+        )
+        logger.debug(
+            "Too long rows:\n%s",
+            too_long[
+                ["video_id", "start_sec", "end_sec", "duration", "verb"]
+            ].to_string(),
+        )
+
     filtered_df = annotations_df[
         (annotations_df["duration"] >= MIN_DURATION)
         & (annotations_df["duration"] <= MAX_DURATION)

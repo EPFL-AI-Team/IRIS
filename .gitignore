@@ -691,3 +691,4 @@ tags
 # End of https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
 notebooks/vlm/Qwen2_5_VL_(7B)_Vision.ipynb
 SCITAS-checkpoints
+wandb
