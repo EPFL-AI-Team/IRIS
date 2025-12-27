@@ -6,7 +6,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from dataset_config import (
     DatasetPaths,
@@ -16,17 +15,9 @@ from dataset_config import (
     resolve_paths,
     validate_inputs,
 )
-from PIL import Image
 from tqdm import tqdm
 
-# Make OpenCV optional - only needed if extracting frames
-try:
-    import cv2
-
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
-    cv2 = None  # type: ignore
+from iris.dataset.logic import _target_frame_slots, fill_task_column, is_valid_action
 
 logger = logging.getLogger(__name__)
 
@@ -55,18 +46,7 @@ def parse_arguments() -> argparse.Namespace:
         default="INFO",
         help="Logging level (e.g. DEBUG, INFO, WARNING).",
     )
-    parser.add_argument(
-        "--extract-frames",
-        action="store_true",
-        default=False,
-        help="If set, extracts frames from videos. Default is False (annotation processing only).",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=int(os.environ.get("SLURM_CPUS_PER_TASK", 8)),
-        help="Number of parallel workers.",
-    )
+    # Worker count is internal; not exposed on CLI for this script.
     return parser.parse_args()
 
 
@@ -80,150 +60,13 @@ def _build_paths(profile_paths: DatasetPaths) -> dict[str, Path]:
     }
 
 
-def _target_frame_slots(
-    *, canonical_max_frames: int, frames_per_segment: int
-) -> np.ndarray:
-    """Return the canonical slot indices to materialize on disk.
-
-    Example: canonical_max_frames=16, frames_per_segment=4 -> [0, 5, 10, 15]
-    """
-    if canonical_max_frames <= 0:
-        raise ValueError("canonical_max_frames must be > 0")
-    if frames_per_segment <= 0:
-        raise ValueError("frames_per_segment must be > 0")
-    if frames_per_segment > canonical_max_frames:
-        raise ValueError("frames_per_segment cannot exceed canonical_max_frames")
-
-    slots = np.linspace(0, canonical_max_frames - 1, frames_per_segment, dtype=int)
-    return np.unique(slots)
-
-
 # Helpers
 
 
-def fill_task_column(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    FineBio txt files mix 'tasks' (high-level steps) and 'atomic actions'
-    in the same list. Tasks usually have empty verbs.
-    This maps the 'task' label to all atomic actions that fall within its time window.
-    """
-    # Identify rows that define a Task (Step) vs Atomic Actions
-    # In FineBio, task rows have a 'task' string, action rows usually have empty 'task' but have 'verb'
-    task_rows = df[df["task"].notna() & (df["task"] != "")].copy()
-    action_rows = df[df["verb"].notna() & (df["verb"] != "")].copy()
-
-    # If no tasks are defined, return actions as is (context will be NaN)
-    if task_rows.empty:
-        return action_rows
-
-    # Sort to ensure logical time progression
-    task_rows = task_rows.sort_values("start_sec")
-
-    # Efficiently assign tasks to actions
-    # We create a new column 'context_task' to avoid overwriting original structure if needed
-    action_rows["context_task"] = None
-
-    for _, t_row in task_rows.iterrows():
-        t_start, t_end = t_row["start_sec"], t_row["end_sec"]
-        t_label = t_row["task"]
-
-        # Find actions fully or partially inside this task window
-        mask = (action_rows["start_sec"] >= t_start) & (
-            action_rows["start_sec"] < t_end
-        )
-        action_rows.loc[mask, "context_task"] = t_label
-
-    return action_rows
+# Task/slot logic lives in iris.dataset.logic; frame extraction moved to create_training_data.
 
 
-def extract_frames_for_segment(
-    video_path: Path,
-    start_sec: float,
-    end_sec: float,
-    segment_dir: Path,
-    *,
-    canonical_max_frames: int,
-    frames_per_segment: int,
-) -> list[str]:
-    """Handles the OpenCV logic to extract frames."""
-    if not CV2_AVAILABLE:
-        logger.error("OpenCV (cv2) not available. Cannot extract frames.")
-        return []
-
-    if not video_path.exists():
-        return []
-
-    target_slots = _target_frame_slots(
-        canonical_max_frames=canonical_max_frames,
-        frames_per_segment=frames_per_segment,
-    )
-
-    # Per-segment policy:
-    # - If folder doesn't exist -> create and extract all expected frames.
-    # - If folder exists -> check each expected frame and extract only missing ones.
-    target_paths = [segment_dir / f"frame_{slot:02d}.jpg" for slot in target_slots]
-
-    if segment_dir.exists():
-        missing_paths = [p for p in target_paths if not p.exists()]
-        if not missing_paths:
-            return [str(p) for p in target_paths]
-    else:
-        segment_dir.mkdir(parents=True, exist_ok=True)
-        missing_paths = target_paths
-
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        return []
-
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if not fps or fps <= 0:
-        cap.release()
-        return []
-
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-
-    vid_start_f = int(start_sec * fps)
-    vid_end_f = int(end_sec * fps)
-    if vid_end_f <= vid_start_f:
-        vid_end_f = vid_start_f + 1
-
-    duration_f = max(vid_end_f - vid_start_f, 1)
-
-    for out_path in missing_paths:
-        # Map the canonical slot to a position within the segment's frame window.
-        # fraction: slot 0 -> start, slot (N-1) -> end
-        slot_idx = int(out_path.stem.split("_")[-1])
-        fraction = (
-            slot_idx / float(canonical_max_frames - 1)
-            if canonical_max_frames > 1
-            else 0.0
-        )
-        video_frame_idx = vid_start_f + int(round(fraction * duration_f))
-        if total_frames > 0:
-            video_frame_idx = max(0, min(video_frame_idx, total_frames - 1))
-
-        cap.set(cv2.CAP_PROP_POS_FRAMES, video_frame_idx)
-        ret, frame = cap.read()
-
-        # --- SAFETY CLAMP ---
-        # If we missed the target frame (often due to segment timestamps slightly past
-        # the video end), retry with the very last frame to guarantee we can still write.
-        if not ret and total_frames > 0:
-            last_frame_idx = total_frames - 1
-            cap.set(cv2.CAP_PROP_POS_FRAMES, last_frame_idx)
-            ret, frame = cap.read()
-        # --------------------
-
-        if ret:
-            Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(
-                out_path, quality=85
-            )
-        else:
-            logger.warning("Failed to extract %s even after clamping.", out_path)
-
-    cap.release()
-    # Return the canonical ordering (even if a few couldn't be decoded).
-    return [str(p) for p in target_paths]
+# Frame extraction logic moved to create_training_data.py per "filter early, extract late".
 
 
 # Worker
@@ -232,10 +75,11 @@ def extract_frames_for_segment(
 def process_video_annotations(
     video_id: str,
     txt_path: Path,
-    extract_frames: bool,
     paths: dict[str, Path],
     canonical_max_frames: int,
     frames_per_segment: int,
+    min_duration: float = 0.5,
+    max_duration: float = 3.0,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """
     1. Loads raw txt.
@@ -252,6 +96,13 @@ def process_video_annotations(
     processed_df = fill_task_column(raw_df)
     processed_df["video_id"] = video_id
 
+    # Early filter: drop invalid actions now so the consolidated CSV is clean.
+    processed_df = processed_df[
+        processed_df.apply(
+            lambda r: is_valid_action(r, min_duration, max_duration), axis=1
+        )
+    ]
+
     # Clean up columns (we want: video_id, start, end, verb, tool, target, task)
     # Mapping dataset columns to standard names
     # Dataset: verb, manipulated_object, affected_object, context_task
@@ -261,13 +112,8 @@ def process_video_annotations(
         canonical_max_frames=canonical_max_frames,
         frames_per_segment=frames_per_segment,
     ).tolist()
-    video_file_path = paths["videos"] / f"{video_id}.mp4"
 
     for _, row in processed_df.iterrows():
-        # Skip if no verb (not an atomic action)
-        if pd.isna(row.get("verb")):
-            continue
-
         # Data Row
         segment_id = f"{video_id}_{row['start_sec']:.1f}_{row['end_sec']:.1f}"
 
@@ -286,21 +132,7 @@ def process_video_annotations(
         }
         final_rows.append(item)
 
-        # JSONL / Frame Logic
-        # We define where frames SHOULD be
-        segment_dir = paths["output_frames"] / segment_id
-
-        # Extract if requested (extract_frames_for_segment will instantly no-op if files exist)
-        if extract_frames:
-            extracted = extract_frames_for_segment(
-                video_file_path,
-                row["start_sec"],
-                row["end_sec"],
-                segment_dir,
-                canonical_max_frames=canonical_max_frames,
-                frames_per_segment=frames_per_segment,
-            )
-            _ = extracted
+        # Frame extraction is deferred to create_training_data.py (just-in-time).
 
     # Save Individual Files
     if final_rows:
@@ -318,13 +150,7 @@ def process_video_annotations(
 def main() -> None:
     args = parse_arguments()
 
-    # Validate OpenCV availability if frame extraction is requested
-    if args.extract_frames and not CV2_AVAILABLE:
-        logger.error(
-            "Frame extraction requested but OpenCV (cv2) is not installed. "
-            "Install with: pip install opencv-python-headless"
-        )
-        return
+    # Frame extraction has been removed from this script (extract late in create_training_data)
 
     configure_logging(args.log_level)
 
@@ -352,8 +178,8 @@ def main() -> None:
         if k not in ["videos", "annotations", "consolidated_csv"]:
             p.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Extract frames: %s", args.extract_frames)
-    logger.info("Workers: %d", args.workers)
+    # internal worker count for parallel processing (not part of CLI)
+    workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 8))
 
     # List all txt files
     txt_files = list(paths["annotations"].glob("*.txt"))
@@ -369,17 +195,20 @@ def main() -> None:
     err_count = 0
 
     # Parallel Processing
-    with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        # Submit tasks
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        # Submit tasks (pass min/max duration so worker can filter consistently)
+        min_duration = getattr(config, "min_duration", 0.5)
+        max_duration = getattr(config, "max_duration", 3.0)
         future_map = {
             executor.submit(
                 process_video_annotations,
                 f.stem,
                 f,
-                args.extract_frames,
                 paths,
                 config.canonical_max_frames,
                 config.frames_per_segment,
+                min_duration,
+                max_duration,
             ): f.stem
             for f in txt_files
         }
@@ -389,7 +218,7 @@ def main() -> None:
         ):
             vid_id = future_map[future]
             try:
-                rows, lines = future.result()
+                rows, _ = future.result()
                 if rows:
                     all_csv_rows.extend(rows)
                 ok_count += 1
