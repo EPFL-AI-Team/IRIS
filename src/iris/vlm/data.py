@@ -35,11 +35,9 @@ class QwenDataCollator:
         messages_batch = [self._process_messages(msgs) for msgs in messages_batch]
 
         # 3. Extract visual inputs (images/videos) using official Qwen util
-        # process_vision_info returns (images, videos) by default
         image_inputs, video_inputs = process_vision_info(messages_batch)  # pyright: ignore[reportAssignmentType]
 
         # 4. Prepare text inputs
-        # We use apply_chat_template to format the text (adding <|im_start|>, etc.)
         texts = [
             self.processor.apply_chat_template(
                 msg, tokenize=False, add_generation_prompt=False
@@ -48,7 +46,6 @@ class QwenDataCollator:
         ]
 
         # 5. Process everything into tensors
-        # This handles loading images from disk and padding
         batch = self.processor(
             text=texts,
             images=image_inputs,
@@ -57,13 +54,37 @@ class QwenDataCollator:
             return_tensors="pt",
         )
 
-        # 6. Create Labels for Training
-        # We clone input_ids to create labels, then mask the parts we don't want to train on.
+        # 6. Robust VLM-safe masking: mask all tokens up to and including the assistant header
         labels = batch["input_ids"].clone()
 
-        # Mask padding tokens (standard practice)
-        if self.processor.tokenizer.pad_token_id is not None:
-            labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        # Get dynamic token IDs from the tokenizer (future-proof, no hardcoding)
+        im_start_token = self.processor.tokenizer.convert_tokens_to_ids("<|im_start|>")
+        assistant_token = self.processor.tokenizer.convert_tokens_to_ids("assistant")
+        pad_token = self.processor.tokenizer.pad_token_id
+        IGNORE_INDEX = -100
+
+        # Mask padding
+        if pad_token is not None:
+            labels[labels == pad_token] = IGNORE_INDEX
+
+        input_ids = batch["input_ids"]
+        for i, seq in enumerate(input_ids):
+            # Find all indices where <|im_start|> appears
+            start_indices = (seq == im_start_token).nonzero(as_tuple=True)[0]
+            assistant_start_index = None
+            # Look for the specific sequence [<|im_start|>, assistant]
+            # Iterate backwards: mask up to the last assistant turn (multi-turn safe)
+            for idx in reversed(start_indices):
+                if idx + 1 < len(seq) and seq[idx + 1] == assistant_token:
+                    # Found the header! Mask up to and including 'assistant'
+                    assistant_start_index = idx + 2
+                    break
+            if assistant_start_index is not None:
+                labels[i, :assistant_start_index] = IGNORE_INDEX
+            else:
+                # Fallback: mask everything to avoid bad gradients
+                labels[i, :] = IGNORE_INDEX
+                print(f"WARNING: Could not find assistant start in sample {i}")
 
         batch["labels"] = labels
         return batch
@@ -103,7 +124,7 @@ class QwenDataCollator:
 
                         # Inject max_pixels if configured (forces resolution limit)
                         if self.max_pixels:
-                            img_dict["max_pixels"] = self.max_pixels # pyright: ignore[reportArgumentType]
+                            img_dict["max_pixels"] = self.max_pixels  # pyright: ignore[reportArgumentType]
 
                         images.append(img_dict)
 

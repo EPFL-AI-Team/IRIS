@@ -154,15 +154,22 @@ def extract_frames_for_segment(
         return []
 
     target_slots = _target_frame_slots(
-        canonical_max_frames=canonical_max_frames, frames_per_segment=frames_per_segment
+        canonical_max_frames=canonical_max_frames,
+        frames_per_segment=frames_per_segment,
     )
 
-    # Fast path: if all target files exist, skip any OpenCV work.
-    segment_dir.mkdir(parents=True, exist_ok=True)
+    # Per-segment policy:
+    # - If folder doesn't exist -> create and extract all expected frames.
+    # - If folder exists -> check each expected frame and extract only missing ones.
     target_paths = [segment_dir / f"frame_{slot:02d}.jpg" for slot in target_slots]
-    missing = [p for p in target_paths if not p.exists()]
-    if not missing:
-        return [str(p) for p in target_paths]
+
+    if segment_dir.exists():
+        missing_paths = [p for p in target_paths if not p.exists()]
+        if not missing_paths:
+            return [str(p) for p in target_paths]
+    else:
+        segment_dir.mkdir(parents=True, exist_ok=True)
+        missing_paths = target_paths
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -173,6 +180,8 @@ def extract_frames_for_segment(
         cap.release()
         return []
 
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
     vid_start_f = int(start_sec * fps)
     vid_end_f = int(end_sec * fps)
     if vid_end_f <= vid_start_f:
@@ -180,7 +189,7 @@ def extract_frames_for_segment(
 
     duration_f = max(vid_end_f - vid_start_f, 1)
 
-    for out_path in missing:
+    for out_path in missing_paths:
         # Map the canonical slot to a position within the segment's frame window.
         # fraction: slot 0 -> start, slot (N-1) -> end
         slot_idx = int(out_path.stem.split("_")[-1])
@@ -190,15 +199,27 @@ def extract_frames_for_segment(
             else 0.0
         )
         video_frame_idx = vid_start_f + int(round(fraction * duration_f))
+        if total_frames > 0:
+            video_frame_idx = max(0, min(video_frame_idx, total_frames - 1))
 
         cap.set(cv2.CAP_PROP_POS_FRAMES, video_frame_idx)
         ret, frame = cap.read()
-        if not ret:
-            continue
 
-        Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(
-            out_path, quality=85
-        )
+        # --- SAFETY CLAMP ---
+        # If we missed the target frame (often due to segment timestamps slightly past
+        # the video end), retry with the very last frame to guarantee we can still write.
+        if not ret and total_frames > 0:
+            last_frame_idx = total_frames - 1
+            cap.set(cv2.CAP_PROP_POS_FRAMES, last_frame_idx)
+            ret, frame = cap.read()
+        # --------------------
+
+        if ret:
+            Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(
+                out_path, quality=85
+            )
+        else:
+            logger.warning("Failed to extract %s even after clamping.", out_path)
 
     cap.release()
     # Return the canonical ordering (even if a few couldn't be decoded).

@@ -184,6 +184,11 @@ def create_jsonl(
     """Generate a JSONL file for a given DataFrame."""
     entries: list[str] = []
 
+    missing_files_total = 0
+    missing_segments_total = 0
+    warned_segments = 0
+    max_segment_warnings = 25
+
     if canonical_max_frames <= 0:
         raise ValueError("canonical_max_frames must be > 0")
     if frames_per_segment <= 0:
@@ -205,6 +210,32 @@ def create_jsonl(
         # Build absolute paths for frames
         image_paths = [str(segment_dir / f"frame_{i:02d}.jpg") for i in frame_slots]
 
+        # Quick sanity logging: warn when expected frames are missing on disk.
+        # This usually means process_dataset.py wasn't run with --extract-frames,
+        # or the frames YAML settings differ from what was used during extraction.
+        missing_paths = [p for p in image_paths if not Path(p).exists()]
+        if missing_paths:
+            missing_segments_total += 1
+            missing_files_total += len(missing_paths)
+
+            if warned_segments < max_segment_warnings:
+                warned_segments += 1
+                shown = missing_paths[:8]
+                extra = len(missing_paths) - len(shown)
+                suffix = f" (+{extra} more)" if extra > 0 else ""
+                logger.warning(
+                    "Missing %d/%d frame files for segment_id=%s (dir=%s). Missing: %s%s. "
+                    "Config: per_segment=%d canonical=%d. Fix: rerun process_dataset.py --extract-frames with the same config.",
+                    len(missing_paths),
+                    len(image_paths),
+                    segment_id,
+                    segment_dir,
+                    shown,
+                    suffix,
+                    frames_per_segment,
+                    canonical_max_frames,
+                )
+
         prompt = pick_prompt()
         response_json = expected_output_json(row)
         entries.append(
@@ -222,6 +253,16 @@ def create_jsonl(
     with open(output_path, "w") as f:
         f.write("\n".join(entries))
     logger.info("Saved %d samples to %s", len(entries), output_path)
+
+    if missing_segments_total > 0:
+        logger.warning(
+            "Frame check: %d missing files across %d/%d segments (warnings shown=%d/%d).",
+            missing_files_total,
+            missing_segments_total,
+            len(annotations_df),
+            warned_segments,
+            max_segment_warnings,
+        )
 
 
 if __name__ == "__main__":
