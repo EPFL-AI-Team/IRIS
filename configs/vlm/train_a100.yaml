@@ -5,8 +5,8 @@ model:
   attn_implementation: "flash_attention_2"
 
 lora:
-  r: 64
-  alpha: 128
+  r: 32
+  alpha: 64
   dropout: 0.05
   finetune_attention_modules: true
   finetune_mlp_modules: true
@@ -25,9 +25,9 @@ training:
   
   # Optimization
   optim: "adamw_torch"
-  learning_rate: 2.0e-4
+  learning_rate: 5.0e-5
   weight_decay: 0.01
-  warmup_ratio: 0.05
+  warmup_ratio: 0.1
   
   # Epoch-based training
   num_train_epochs: 3

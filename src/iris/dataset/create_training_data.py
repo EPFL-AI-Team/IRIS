@@ -11,8 +11,13 @@ from dataset_config import (
     load_dataset_config,
     resolve_paths,
 )
-from sklearn.model_selection import train_test_split
-from training_format import chat_jsonl_entry, expected_output_json, pick_prompt
+
+from iris.dataset.dataset_utils import filter_data
+from iris.dataset.training_format import (
+    chat_jsonl_entry,
+    expected_output_json,
+    pick_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,131 +51,93 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-# Parameters
 TOTAL_SAMPLES_PER_VERB = 1000
-NUM_FRAMES_TO_SAMPLE = 4  # Default; overridden from dataset_config.yaml at runtime.
-MIN_DURATION = 0.5
-MAX_DURATION = 3.0
-
 # VIDEO TO HOLD OUT (For Demo)
 # P25_02_01 = Participant 25, Protocol 2, take 1
 HOLDOUT_VIDEO_IDS = ["P25_02_01"]
 
 
-def filter_data(annotations_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Apply quality filters AND separate holdout videos.
-
-    Returns:
-        (filtered_training_pool, holdout_demo_pool)
-    """
-    logger.info("Initial pool: %d", len(annotations_df))
-    logger.info(
-        "Filter parameters: NUM_FRAMES=%d, MIN_DURATION=%.1f, MAX_DURATION=%.1f",
-        NUM_FRAMES_TO_SAMPLE,
-        MIN_DURATION,
-        MAX_DURATION,
-    )
-
-    # 1. Duration & Object Filters
-    annotations_df["duration"] = annotations_df["end_sec"] - annotations_df["start_sec"]
-
-    # Log rows with duration issues
-    too_short = annotations_df[annotations_df["duration"] < MIN_DURATION]
-    too_long = annotations_df[annotations_df["duration"] > MAX_DURATION]
-
-    if len(too_short) > 0:
-        logger.info(
-            "Rows with duration < MIN_DURATION (%.1f): %d", MIN_DURATION, len(too_short)
-        )
-        logger.debug(
-            "Too short rows:\n%s",
-            too_short[
-                ["video_id", "start_sec", "end_sec", "duration", "verb"]
-            ].to_string(),
-        )
-
-    if len(too_long) > 0:
-        logger.info(
-            "Rows with duration > MAX_DURATION (%.1f): %d", MAX_DURATION, len(too_long)
-        )
-        logger.debug(
-            "Too long rows:\n%s",
-            too_long[
-                ["video_id", "start_sec", "end_sec", "duration", "verb"]
-            ].to_string(),
-        )
-
-    valid_df = annotations_df[
-        (annotations_df["duration"] >= MIN_DURATION)
-        & (annotations_df["duration"] <= MAX_DURATION)
-        & (annotations_df["manipulated_object"].notna())
-        & (annotations_df["manipulated_object"] != "nan")
-    ].copy()
-
-    logger.info("Pool after quality filtering: %d", len(valid_df))
-
-    # 2. Holdout Logic
-    # Identify rows belonging to holdout videos
-    is_holdout = valid_df["video_id"].isin(HOLDOUT_VIDEO_IDS)
-
-    demo_df = valid_df[is_holdout].copy()
-    train_pool_df = valid_df[~is_holdout].copy()
-
-    if len(demo_df) > 0:
-        logger.info(f"Held out {len(demo_df)} samples from videos: {HOLDOUT_VIDEO_IDS}")
-    else:
-        logger.warning(f"No samples found for holdout videos: {HOLDOUT_VIDEO_IDS}")
-
-    return train_pool_df, demo_df
-
-
 def get_stratified_splits(
     annotations_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Create per-verb 80/10/10 train/val/test splits with downsampling."""
-    train_dfs = []
-    val_dfs = []
-    test_dfs = []
+    """
+    Split data using the OFFICIAL FineBio participant splits (Subject-Independent).
+    Ref: FineBio-Dataset-essentials.pdf (Section C.1 Dataset split details)
+    """
+    logger.info("Splitting by Official Participant IDs...")
 
-    all_verbs = annotations_df["verb"].unique()
+    # Extract Participant ID (PXX from PXX_YY_ZZ)
+    annotations_df = annotations_df.copy()
+    annotations_df["participant_id"] = annotations_df["video_id"].apply(
+        lambda x: x.split("_")[0]
+    )
 
-    logger.info("Processing splits (target per verb: %d)...", TOTAL_SAMPLES_PER_VERB)
+    # Official Splits
+    TRAIN_IDS = {
+        "P01",
+        "P02",
+        "P04",
+        "P06",
+        "P07",
+        "P10",
+        "P11",
+        "P12",
+        "P14",
+        "P16",
+        "P17",
+        "P18",
+        "P19",
+        "P21",
+        "P22",
+        "P23",
+        "P25",
+        "P26",
+        "P27",
+        "P29",
+        "P30",
+        "P31",
+    }
+    VAL_IDS = {"P05", "P09", "P15", "P24", "P32"}
+    TEST_IDS = {"P03", "P08", "P13", "P20", "P28"}
 
-    for verb in all_verbs:
-        v_df = annotations_df[annotations_df["verb"] == verb]
-        count = len(v_df)
+    # Filter into pools
+    train_pool = annotations_df[annotations_df["participant_id"].isin(TRAIN_IDS)].copy()
+    val_df = annotations_df[annotations_df["participant_id"].isin(VAL_IDS)].copy()
+    test_df = annotations_df[annotations_df["participant_id"].isin(TEST_IDS)].copy()
 
-        if count <= TOTAL_SAMPLES_PER_VERB:
-            # Take everything (Rare case)
-            selected_df = v_df
-            logger.info("[%s] Rare: keeping all %d", verb, count)
-        else:
-            # Weighted downsampling: weight = 1 / tool frequency
-            tool_counts = v_df["manipulated_object"].value_counts()
-            weights = 1.0 / v_df["manipulated_object"].map(tool_counts)
-
-            selected_df = v_df.sample(
-                n=TOTAL_SAMPLES_PER_VERB, weights=weights, random_state=42
-            )
-            logger.info(
-                "[%s] Common: downsampled %d -> %d (weighted)",
-                verb,
-                count,
-                TOTAL_SAMPLES_PER_VERB,
-            )
-
-        # 80/10/10 split
-        train, temp = train_test_split(
-            selected_df, test_size=0.2, random_state=42, shuffle=True
+    # Sanity Check
+    total_assigned = len(train_pool) + len(val_df) + len(test_df)
+    if total_assigned != len(annotations_df):
+        logger.warning(
+            f"Dropping {len(annotations_df) - total_assigned} samples with unknown IDs."
         )
 
-        val, test = train_test_split(temp, test_size=0.5, random_state=42, shuffle=True)
+    # --- DOWNSAMPLING (TRAIN ONLY) ---
+    logger.info(
+        f"Downsampling Training Set (Target: {TOTAL_SAMPLES_PER_VERB} per verb)..."
+    )
+    train_downsampled_dfs = []
+    all_verbs = train_pool["verb"].unique()
+    for verb in all_verbs:
+        v_df = train_pool[train_pool["verb"] == verb]
+        count = len(v_df)
+        if count <= TOTAL_SAMPLES_PER_VERB:
+            train_downsampled_dfs.append(v_df)
+        else:
+            tool_counts = v_df["manipulated_object"].value_counts()
+            weights = 1.0 / v_df["manipulated_object"].map(tool_counts)
+            selected = v_df.sample(
+                n=TOTAL_SAMPLES_PER_VERB, weights=weights, random_state=42
+            )
+            train_downsampled_dfs.append(selected)
+    train_final = pd.concat(train_downsampled_dfs)
 
-        train_dfs.append(train)
-        val_dfs.append(val)
-        test_dfs.append(test)
+    logger.info("--- Official Split Statistics ---")
+    logger.info(f"Train: {len(train_final)} (Downsampled from {len(train_pool)})")
+    logger.info(f"Val:   {len(val_df)} (Natural Distribution)")
+    logger.info(f"Test:  {len(test_df)} (Natural Distribution)")
 
-    return pd.concat(train_dfs), pd.concat(val_dfs), pd.concat(test_dfs)
+    return train_final, val_df, test_df
 
 
 def create_jsonl(
@@ -275,9 +242,6 @@ if __name__ == "__main__":
     )
     ensure_output_dirs(resolved)
 
-    # Keep producer/consumer aligned via dataset_config.yaml
-    NUM_FRAMES_TO_SAMPLE = config.frames_per_segment
-
     input_csv = resolved.consolidated_csv
     frame_base_dir = resolved.frames_dir
     out_dir = resolved.splits_dir
@@ -285,7 +249,6 @@ if __name__ == "__main__":
     out_train = out_dir / "finebio_train.jsonl"
     out_val = out_dir / "finebio_val.jsonl"
     out_test = out_dir / "finebio_test.jsonl"
-    out_demo = out_dir / "finebio_demo.jsonl"  # New output file
 
     logger.info("Dataset profile: %s", resolved.profile.name)
     logger.info("Using split_name: %s", effective_split_name)
@@ -298,6 +261,10 @@ if __name__ == "__main__":
         config.canonical_max_frames,
     )
 
+    # Filtering parameters from config (add these to your config if not present)
+    min_duration = getattr(config, "min_duration", 0.5)
+    max_duration = getattr(config, "max_duration", 3.0)
+
     # Load
     if not input_csv.exists():
         raise FileNotFoundError(
@@ -305,17 +272,16 @@ if __name__ == "__main__":
         )
     annotations_df = pd.read_csv(input_csv)
 
-    # Filter & Holdout
-    train_pool_df, demo_df = filter_data(annotations_df)
+    # Quality filter (duration/object)
+    filtered_df = filter_data(annotations_df, min_duration, max_duration)
 
-    # Split the main pool
-    train_df, val_df, test_df = get_stratified_splits(train_pool_df)
+    # Official split
+    train_df, val_df, test_df = get_stratified_splits(filtered_df)
 
     logger.info("--- Final File Statistics ---")
     logger.info("Train: %d samples", len(train_df))
     logger.info("Val:   %d samples", len(val_df))
     logger.info("Test:  %d samples", len(test_df))
-    logger.info("Demo:  %d samples (from %s)", len(demo_df), HOLDOUT_VIDEO_IDS)
 
     # Generate Files
     create_jsonl(
@@ -339,13 +305,3 @@ if __name__ == "__main__":
         canonical_max_frames=config.canonical_max_frames,
         frames_per_segment=config.frames_per_segment,
     )
-
-    # Save Demo Set
-    if not demo_df.empty:
-        create_jsonl(
-            demo_df,
-            frame_base_dir=frame_base_dir,
-            output_path=out_demo,
-            canonical_max_frames=config.canonical_max_frames,
-            frames_per_segment=config.frames_per_segment,
-        )
