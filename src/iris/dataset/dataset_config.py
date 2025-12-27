@@ -39,6 +39,10 @@ class DatasetConfig:
     canonical_max_frames: int
     frames_per_segment: int
 
+    # Quotas for downsampling when creating splits
+    train_per_verb: int
+    val_test_per_verb: int
+
     profiles: dict[str, DatasetProfile]
 
 
@@ -115,6 +119,8 @@ def load_dataset_config(config_path: Path) -> DatasetConfig:
         default_split_name=default_split_name,
         canonical_max_frames=canonical_max_frames,
         frames_per_segment=frames_per_segment,
+        train_per_verb=int(data.get("quotas", {}).get("train_per_verb", 1000)),
+        val_test_per_verb=int(data.get("quotas", {}).get("val_test_per_verb", 200)),
         profiles=profiles,
     )
 
