@@ -22,6 +22,7 @@ training:
   batch_size: 16
   gradient_accumulation_steps: 1
   # Effective Batch Size = 16 * 1 * num_gpus = 16.
+  eval_batch_size: 16
   
   # Optimization
   optim: "adamw_torch"
@@ -30,7 +31,7 @@ training:
   warmup_ratio: 0.1
   
   # Epoch-based training
-  num_train_epochs: 3
+  num_train_epochs: 2
 
   # A100 Specifics
   bf16: true
@@ -39,13 +40,22 @@ training:
   
   # Checkpointing
   output_dir: "/scratch/iris/checkpoints/qwen3b_finebio_run2"
-  
-  save_strategy: "steps"
-  save_steps: 400         # Save ~3 times per epoch (since epoch is ~1370 steps)
-  save_total_limit: 2     # Keep only the last 2 checkpoints to save disk space
-  
+
+  # Evaluation
   eval_strategy: "steps"
-  eval_steps: 50
-  logging_steps: 5
+  eval_steps: 100  # Evaluate every 100 steps
+  
+  # Saving
+  save_strategy: "steps"
+  save_steps: 100
+  save_total_limit: 3     # Keep only the last 3 checkpoints
+  
+  # Best model selection
+  load_best_model_at_end: true
+  metric_for_best_model: "loss"  # Use "eval_loss" or just "loss"
+  greater_is_better: false  # For loss, lower is better
+  
+  # Logging
+  logging_steps: 10
   
   
