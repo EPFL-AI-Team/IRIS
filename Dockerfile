@@ -11,7 +11,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #####################################
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        software-properties-common curl git && \
+        software-properties-common curl git \
+        libgl1 libglib2.0-0 && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -39,28 +40,36 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN mkdir -p /home/${LDAP_USERNAME}
 WORKDIR /home/${LDAP_USERNAME}
 
+#####################################
+# Set Build-Critical ENVs BEFORE copy/sync
+# Changing runtime envs later won't invalidate the deps layer.
+#####################################
+ENV PATH="/home/${LDAP_USERNAME}/.venv/bin:$PATH" \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    MAX_JOBS=4 \
+    TORCH_CUDA_ARCH_LIST="8.0" \
+    PYTHONUNBUFFERED=1
+
 # Copy ONLY dependency files first (for caching)
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} pyproject.toml uv.lock README.md ./
-
-#####################################
-# Environment setup
-#####################################
-ENV HF_HOME=/scratch/iris/cache/hf_cache \
-    HF_CACHE=/scratch/iris/cache/hf_cache \
-    HF_DATASETS_CACHE=/scratch/iris/cache/hf_cache/datasets \
-    TORCH_HOME=/scratch/iris/cache/torch_cache \
-    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-    TRANSFORMERS_VERBOSITY=warning \
-    PYTHONUNBUFFERED=1 \
-    PATH="/home/${LDAP_USERNAME}/.venv/bin:$PATH" \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
 
 #####################################
 # Install dependencies with uv (with caching)
 #####################################
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --group server
+
+#####################################
+# Set Runtime ENVs AFTER build
+# Changing these later won't trigger a re-build of dependencies.
+#####################################
+ENV HF_HOME=/scratch/iris/cache/hf_cache \
+    HF_CACHE=/scratch/iris/cache/hf_cache \
+    HF_DATASETS_CACHE=/scratch/iris/cache/hf_cache/datasets \
+    TORCH_HOME=/scratch/iris/cache/torch_cache \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    TRANSFORMERS_VERBOSITY=warning
 
 RUN chown -R ${LDAP_USERNAME}:${LDAP_GROUPNAME} /home/${LDAP_USERNAME}
 #####################################

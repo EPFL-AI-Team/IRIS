@@ -45,7 +45,7 @@ server = [
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
     "torchcodec>=0.7.0 ; sys_platform == 'darwin'",
-    "flash-attn>=2.8.0",
+    "flash-attn>=2.7.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "scikit-learn>=1.8.0",
     # Logging
     "tensorboard>=2.14.0",
@@ -81,7 +81,7 @@ explicit = true
 # Define Flash Attention pre-built wheels index
 # [[tool.uv.index]]
 # name = "flash-attn-wheels"
-# url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/"
+# url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/"
 # explicit = true
 
 # Point PyTorch packages to CUDA 12.1 index on Linux
@@ -90,6 +90,9 @@ explicit = true
 torch = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
 torchvision = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
 torchaudio = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
+# flash-attn = [
+#     { index = "flash-attn-wheels", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+# ]
 
 [tool.uv.extra-build-dependencies]
 flash-attn = [
