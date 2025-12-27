@@ -222,7 +222,7 @@ class VLMTrainer:
                 "logging_steps": train_cfg.get("logging_steps", 10),
                 "save_strategy": train_cfg.get("save_strategy", "steps"),
                 "save_steps": train_cfg.get("save_steps", 50),
-                "save_total_limit": 3,
+                "save_total_limit": train_cfg.get("save_total_limit", 3),
                 "eval_strategy": "steps" if val_dataset else "no",
                 "eval_steps": train_cfg.get("eval_steps", 50),
                 "per_device_eval_batch_size": train_cfg.get("batch_size", 1),

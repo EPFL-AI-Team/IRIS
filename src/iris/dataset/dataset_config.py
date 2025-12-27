@@ -36,6 +36,9 @@ class DatasetConfig:
     default_profile: str
     default_split_name: str
 
+    canonical_max_frames: int
+    frames_per_segment: int
+
     profiles: dict[str, DatasetProfile]
 
 
@@ -66,6 +69,23 @@ def load_dataset_config(config_path: Path) -> DatasetConfig:
     default_profile = str(data.get("default_profile", "mac"))
     default_split_name = str(data.get("default_split_name", "default"))
 
+    frames_cfg = data.get("frames", {})
+    if frames_cfg is None:
+        frames_cfg = {}
+    if not isinstance(frames_cfg, dict):
+        raise ValueError("Invalid YAML: expected 'frames' to be a mapping")
+
+    canonical_max_frames = int(frames_cfg.get("canonical_max_frames", 16))
+    frames_per_segment = int(frames_cfg.get("per_segment", 4))
+    if canonical_max_frames <= 0:
+        raise ValueError("Invalid frames.canonical_max_frames: must be > 0")
+    if frames_per_segment <= 0:
+        raise ValueError("Invalid frames.per_segment: must be > 0")
+    if frames_per_segment > canonical_max_frames:
+        raise ValueError(
+            "Invalid frames.per_segment: cannot exceed frames.canonical_max_frames"
+        )
+
     raw_profiles = data.get("profiles")
     if not isinstance(raw_profiles, dict):
         raise ValueError("Invalid YAML: expected 'profiles' mapping")
@@ -93,6 +113,8 @@ def load_dataset_config(config_path: Path) -> DatasetConfig:
     return DatasetConfig(
         default_profile=default_profile,
         default_split_name=default_split_name,
+        canonical_max_frames=canonical_max_frames,
+        frames_per_segment=frames_per_segment,
         profiles=profiles,
     )
 

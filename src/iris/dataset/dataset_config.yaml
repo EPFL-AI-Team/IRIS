@@ -8,6 +8,16 @@ default_profile: rcp-container
 
 default_split_name: train_10k_4_frames
 
+# Frame extraction/sampling settings
+#
+# Strategy: keep a canonical filename grid (0..canonical_max_frames-1) so that when
+# you change per_segment later (e.g., 4 -> 8), already-extracted frames can be reused.
+#
+# Example (canonical_max_frames=16, per_segment=4): frames [0, 5, 10, 15]
+frames:
+  canonical_max_frames: 16
+  per_segment: 4
+
 profiles:
   mac:
     annotations_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/annotations/finebio_action_annotations"

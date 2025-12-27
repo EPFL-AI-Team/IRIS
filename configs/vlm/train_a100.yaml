@@ -5,8 +5,8 @@ model:
   attn_implementation: "flash_attention_2"
 
 lora:
-  r: 16
-  alpha: 32
+  r: 32
+  alpha: 64
   dropout: 0.05
   finetune_attention_modules: true
   finetune_mlp_modules: true
@@ -38,8 +38,12 @@ training:
   gradient_checkpointing: true
   
   # Checkpointing
-  output_dir: "/scratch/iris/checkpoints/qwen3b_finebio_run1"
-  save_strategy: "epoch"
+  output_dir: "/scratch/iris/checkpoints/qwen3b_finebio_run2"
+  
+  save_strategy: "steps"
+  save_steps: 400         # Save ~3 times per epoch (since epoch is ~1370 steps)
+  save_total_limit: 2     # Keep only the last 2 checkpoints to save disk space
+  
   eval_strategy: "steps"
   eval_steps: 50
   logging_steps: 5

@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import time
@@ -77,13 +76,27 @@ def _build_paths(profile_paths: DatasetPaths) -> dict[str, Path]:
         "annotations": profile_paths.profile.annotations_dir,
         "output_frames": profile_paths.frames_dir,
         "csv_out": profile_paths.csv_per_video_dir,
-        "jsonl_out": profile_paths.jsonl_per_video_dir,
-        "manifest_file": profile_paths.consolidated_jsonl,
         "consolidated_csv": profile_paths.consolidated_csv,
     }
 
 
-MAX_FRAMES = 16
+def _target_frame_slots(
+    *, canonical_max_frames: int, frames_per_segment: int
+) -> np.ndarray:
+    """Return the canonical slot indices to materialize on disk.
+
+    Example: canonical_max_frames=16, frames_per_segment=4 -> [0, 5, 10, 15]
+    """
+    if canonical_max_frames <= 0:
+        raise ValueError("canonical_max_frames must be > 0")
+    if frames_per_segment <= 0:
+        raise ValueError("frames_per_segment must be > 0")
+    if frames_per_segment > canonical_max_frames:
+        raise ValueError("frames_per_segment cannot exceed canonical_max_frames")
+
+    slots = np.linspace(0, canonical_max_frames - 1, frames_per_segment, dtype=int)
+    return np.unique(slots)
+
 
 # Helpers
 
@@ -124,7 +137,13 @@ def fill_task_column(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def extract_frames_for_segment(
-    video_path: Path, start_sec: float, end_sec: float, segment_dir: Path
+    video_path: Path,
+    start_sec: float,
+    end_sec: float,
+    segment_dir: Path,
+    *,
+    canonical_max_frames: int,
+    frames_per_segment: int,
 ) -> list[str]:
     """Handles the OpenCV logic to extract frames."""
     if not CV2_AVAILABLE:
@@ -134,36 +153,56 @@ def extract_frames_for_segment(
     if not video_path.exists():
         return []
 
+    target_slots = _target_frame_slots(
+        canonical_max_frames=canonical_max_frames, frames_per_segment=frames_per_segment
+    )
+
+    # Fast path: if all target files exist, skip any OpenCV work.
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    target_paths = [segment_dir / f"frame_{slot:02d}.jpg" for slot in target_slots]
+    missing = [p for p in target_paths if not p.exists()]
+    if not missing:
+        return [str(p) for p in target_paths]
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return []
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-    start_f = int(start_sec * fps)
-    end_f = int(end_sec * fps)
-    if end_f <= start_f:
-        end_f = start_f + 1
+    if not fps or fps <= 0:
+        cap.release()
+        return []
 
-    indices = np.linspace(start_f, end_f, MAX_FRAMES, dtype=int)
-    indices = np.unique(indices)
+    vid_start_f = int(start_sec * fps)
+    vid_end_f = int(end_sec * fps)
+    if vid_end_f <= vid_start_f:
+        vid_end_f = vid_start_f + 1
 
-    frame_paths: list[str] = []
+    duration_f = max(vid_end_f - vid_start_f, 1)
 
-    for i, idx in enumerate(indices):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+    for out_path in missing:
+        # Map the canonical slot to a position within the segment's frame window.
+        # fraction: slot 0 -> start, slot (N-1) -> end
+        slot_idx = int(out_path.stem.split("_")[-1])
+        fraction = (
+            slot_idx / float(canonical_max_frames - 1)
+            if canonical_max_frames > 1
+            else 0.0
+        )
+        video_frame_idx = vid_start_f + int(round(fraction * duration_f))
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, video_frame_idx)
         ret, frame = cap.read()
-        if ret:
-            # Save frame
-            out_path = segment_dir / f"frame_{i:02d}.jpg"
-            # Only save if we strictly need to (though function is called only when needed usually)
-            if not out_path.exists():
-                Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(
-                    out_path, quality=85
-                )
-            frame_paths.append(str(out_path))
+        if not ret:
+            continue
+
+        Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(
+            out_path, quality=85
+        )
 
     cap.release()
-    return frame_paths
+    # Return the canonical ordering (even if a few couldn't be decoded).
+    return [str(p) for p in target_paths]
 
 
 # Worker
@@ -174,13 +213,14 @@ def process_video_annotations(
     txt_path: Path,
     extract_frames: bool,
     paths: dict[str, Path],
+    canonical_max_frames: int,
+    frames_per_segment: int,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """
     1. Loads raw txt.
     2. Processes/Fills tasks.
     3. Generates CSV.
-    4. Generates JSONL entries.
-    5. (Optional) Extracts frames.
+    4. (Optional) Extracts frames.
     """
     try:
         raw_df = pd.read_csv(txt_path)
@@ -196,8 +236,10 @@ def process_video_annotations(
     # Dataset: verb, manipulated_object, affected_object, context_task
 
     final_rows: list[dict[str, Any]] = []
-    jsonl_entries: list[str] = []
-
+    target_slots = _target_frame_slots(
+        canonical_max_frames=canonical_max_frames,
+        frames_per_segment=frames_per_segment,
+    ).tolist()
     video_file_path = paths["videos"] / f"{video_id}.mp4"
 
     for _, row in processed_df.iterrows():
@@ -206,8 +248,11 @@ def process_video_annotations(
             continue
 
         # Data Row
+        segment_id = f"{video_id}_{row['start_sec']:.1f}_{row['end_sec']:.1f}"
+
         item = {
             "video_id": video_id,
+            "segment_id": segment_id,
             "start_sec": row["start_sec"],
             "end_sec": row["end_sec"],
             "verb": str(row.get("verb", "unknown")),
@@ -215,73 +260,26 @@ def process_video_annotations(
             "affected_object": str(row.get("affected_object", "none")),
             "task_step": str(row.get("context_task", "unknown")),
             "hand": str(row.get("hand_side", "unknown")),
+            # CSV metadata to keep downstream consumers aligned with YAML-driven frame policy.
+            "frame_slots": str(target_slots),
         }
         final_rows.append(item)
 
         # JSONL / Frame Logic
         # We define where frames SHOULD be
-        segment_id = f"{video_id}_{row['start_sec']:.1f}_{row['end_sec']:.1f}"
         segment_dir = paths["output_frames"] / segment_id
 
-        frame_paths = []
-
-        # Check existing frames
-        if segment_dir.exists():
-            found = sorted(segment_dir.glob("frame_*.jpg"))
-            if found:
-                frame_paths = [str(p) for p in found]
-
-        # Extract if requested AND frames are missing
-        if extract_frames and (not frame_paths or len(frame_paths) < MAX_FRAMES):
-            segment_dir.mkdir(parents=True, exist_ok=True)
+        # Extract if requested (extract_frames_for_segment will instantly no-op if files exist)
+        if extract_frames:
             extracted = extract_frames_for_segment(
-                video_file_path, row["start_sec"], row["end_sec"], segment_dir
+                video_file_path,
+                row["start_sec"],
+                row["end_sec"],
+                segment_dir,
+                canonical_max_frames=canonical_max_frames,
+                frames_per_segment=frames_per_segment,
             )
-            if extracted:
-                frame_paths = extracted
-
-        # Create JSONL Entry (Even if frames are missing, we create the metadata entry)
-        # Note: If frames are missing and extraction is False, path list might be empty.
-        # Ideally, we construct the paths assuming they exist if we plan to generate them later.
-
-        if not frame_paths:
-            # Construct theoretical paths if we assume they will be generated later
-            frame_paths = [
-                str(segment_dir / f"frame_{i:02d}.jpg") for i in range(MAX_FRAMES)
-            ]
-
-        prompt_text = (
-            "Analyze this video segment of a biological experiment. "
-            "Output a valid JSON object with keys: action, tool, target, context."
-        )
-
-        model_response = {
-            "action": item["verb"],
-            "tool": item["manipulated_object"],
-            "target": item["affected_object"],
-            "context": item["task_step"],
-        }
-
-        json_entry = {
-            "id": segment_id,
-            "image_paths": frame_paths,  # Custom field for reference
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        *[{"type": "image", "image": fp} for fp in frame_paths],
-                        {"type": "text", "text": prompt_text},
-                    ],
-                },
-                {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "text", "text": json.dumps(model_response, indent=2)}
-                    ],
-                },
-            ],
-        }
-        jsonl_entries.append(json.dumps(json_entry))
+            _ = extracted
 
     # Save Individual Files
     if final_rows:
@@ -290,12 +288,7 @@ def process_video_annotations(
         csv_path = paths["csv_out"] / f"{video_id}.csv"
         df_out.to_csv(csv_path, index=False)
 
-        # JSONL
-        jsonl_path = paths["jsonl_out"] / f"{video_id}.jsonl"
-        with open(jsonl_path, "w") as f:
-            f.write("\n".join(jsonl_entries))
-
-    return final_rows, jsonl_entries
+    return final_rows, []
 
 
 # Main
@@ -327,10 +320,15 @@ def main() -> None:
     logger.info("annotations_dir: %s", resolved.profile.annotations_dir)
     logger.info("videos_dir: %s", resolved.profile.videos_dir)
     logger.info("output_dir: %s", resolved.profile.output_dir)
+    logger.info(
+        "Frames: per_segment=%d (canonical grid=%d)",
+        config.frames_per_segment,
+        config.canonical_max_frames,
+    )
 
     # Create Directories
     for k, p in paths.items():
-        if k not in ["videos", "annotations", "manifest_file", "consolidated_csv"]:
+        if k not in ["videos", "annotations", "consolidated_csv"]:
             p.mkdir(parents=True, exist_ok=True)
 
     logger.info("Extract frames: %s", args.extract_frames)
@@ -345,8 +343,6 @@ def main() -> None:
     logger.info("Found %d annotation files.", len(txt_files))
 
     all_csv_rows = []
-    all_jsonl_lines = []
-
     start_time = time.perf_counter()
     ok_count = 0
     err_count = 0
@@ -356,7 +352,13 @@ def main() -> None:
         # Submit tasks
         future_map = {
             executor.submit(
-                process_video_annotations, f.stem, f, args.extract_frames, paths
+                process_video_annotations,
+                f.stem,
+                f,
+                args.extract_frames,
+                paths,
+                config.canonical_max_frames,
+                config.frames_per_segment,
             ): f.stem
             for f in txt_files
         }
@@ -369,7 +371,6 @@ def main() -> None:
                 rows, lines = future.result()
                 if rows:
                     all_csv_rows.extend(rows)
-                    all_jsonl_lines.extend(lines)
                 ok_count += 1
             except Exception as e:
                 err_count += 1
@@ -398,12 +399,7 @@ def main() -> None:
         full_df.to_csv(paths["consolidated_csv"], index=False)
         logger.info("Saved consolidated CSV to: %s", paths["consolidated_csv"])
 
-        # 2. Consolidated JSONL
-        with open(paths["manifest_file"], "w") as f:
-            f.write("\n".join(all_jsonl_lines))
-        logger.info("Saved consolidated JSONL to: %s", paths["manifest_file"])
-
-        # 3. Metrics
+        # 2. Metrics
         logger.info("Total Atomic Actions: %d", len(full_df))
         logger.info("Total Videos Processed: %d", full_df["video_id"].nunique())
 
