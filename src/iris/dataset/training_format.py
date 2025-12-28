@@ -68,12 +68,18 @@ def generate_visual_analysis(
 
 def expected_output_json(row: pd.Series | Mapping[str, Any]) -> dict[str, str]:
     """Build the target/expected JSON fields from a CSV row."""
+    def clean(val: Any) -> str:
+        # Convert actual NaNs or "nan" strings to a semantic "none"
+        if pd.isna(val) or str(val).lower() == "nan" or str(val).strip() == "":
+            return "none"
+        return str(val)
+
     return {
         "visual_analysis": generate_visual_analysis(row),
-        "verb": str(row.get("verb", "unknown")),  # type: ignore[call-arg]
-        "tool": str(row.get("manipulated_object", "unknown")),  # type: ignore[call-arg]
-        "target": str(row.get("affected_object", "unknown")),  # type: ignore[call-arg]
-        "context": str(row.get("task_step", "unknown")),  # type: ignore[call-arg]
+        "verb": clean(row.get("verb")),
+        "tool": clean(row.get("manipulated_object")),
+        "target": clean(row.get("affected_object")),
+        "context": clean(row.get("task_step")),
     }
 
 

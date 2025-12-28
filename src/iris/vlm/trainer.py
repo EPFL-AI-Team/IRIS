@@ -224,6 +224,7 @@ class VLMTrainer:
                 "fp16": train_cfg.get("fp16", False),
                 "bf16": train_cfg.get("bf16", False),
                 "gradient_checkpointing": train_cfg.get("gradient_checkpointing", True),
+                "label_smoothing_factor": train_cfg.get("label_smoothing_factor", 0.1),
                 "logging_dir": logging_dir,
                 "logging_steps": train_cfg.get("logging_steps", 10),
                 # Evaluation strategy
