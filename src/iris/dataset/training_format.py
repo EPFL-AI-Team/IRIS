@@ -75,7 +75,7 @@ def expected_output_json(row: pd.Series | Mapping[str, Any]) -> dict[str, str]:
         return str(val)
 
     return {
-        "visual_analysis": generate_visual_analysis(row),
+        # "visual_analysis": generate_visual_analysis(row),
         "verb": clean(row.get("verb")),
         "tool": clean(row.get("manipulated_object")),
         "target": clean(row.get("affected_object")),

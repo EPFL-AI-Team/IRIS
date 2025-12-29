@@ -28,18 +28,18 @@ class QwenDataCollator:
         # DEBUG: Print warning if limits are missing
         if self.max_pixels is None:
             print("WARNING: max_pixels is None! Training will crash on V100.")
-        
+
         messages_batch = [x["messages"] for x in examples]
         messages_batch = [self._process_messages(msgs) for msgs in messages_batch]
         image_inputs, video_inputs = process_vision_info(messages_batch)
-        
+
         texts = [
             self.processor.apply_chat_template(
                 msg, tokenize=False, add_generation_prompt=False
             )
             for msg in messages_batch
         ]
-        
+
         batch = self.processor(
             text=texts,
             images=image_inputs,
@@ -48,38 +48,37 @@ class QwenDataCollator:
             return_tensors="pt",
         )
 
-        # 5. Create labels the OFFICIAL way: start masked, unmask assistant
+        # 5. Robust VLM-safe masking: mask all tokens up to and including the assistant header
+        labels = batch["input_ids"].clone()
 
+        # Get dynamic token IDs from the tokenizer (future-proof, no hardcoding)
+        im_start_token = self.processor.tokenizer.convert_tokens_to_ids("<|im_start|>")
+        assistant_token = self.processor.tokenizer.convert_tokens_to_ids("assistant")
+        pad_token = self.processor.tokenizer.pad_token_id
         IGNORE_INDEX = -100
+
+        # Mask padding
+        if pad_token is not None:
+            labels[labels == pad_token] = IGNORE_INDEX
+
         input_ids = batch["input_ids"]
-        labels = torch.full_like(input_ids, IGNORE_INDEX)  # All masked by default
-
-        # Token IDs (use Qwen's official values, not dynamic lookup)
-        ASSISTANT_TOKEN = 77091  # <|im_start|>assistant in Qwen2.5-VL tokenizer
-        EOS_TOKEN = 151645  # <|im_end|> in Qwen2.5-VL tokenizer
-
-        # Unmask assistant responses only
         for i, seq in enumerate(input_ids):
-            seq_list = seq.tolist()
-            pos = 0
-            while pos < len(seq_list):
-                # Find assistant marker
-                if seq_list[pos] == ASSISTANT_TOKEN:
-                    # Assistant response starts 2 tokens after <|im_start|>assistant
-                    ans_start = pos + 2
-                    ans_end = ans_start
-
-                    # Find end of assistant response (next <|im_end|>)
-                    while ans_end < len(seq_list) and seq_list[ans_end] != EOS_TOKEN:
-                        ans_end += 1
-
-                    # Unmask assistant response INCLUDING the EOS token
-                    if ans_end < len(seq_list):
-                        labels[i, ans_start : ans_end + 1] = input_ids[
-                            i, ans_start : ans_end + 1
-                        ]
-                        pos = ans_end
-                pos += 1
+            # Find all indices where <|im_start|> appears
+            start_indices = (seq == im_start_token).nonzero(as_tuple=True)[0]
+            assistant_start_index = None
+            # Look for the specific sequence [<|im_start|>, assistant]
+            # Iterate backwards: mask up to the last assistant turn (multi-turn safe)
+            for idx in reversed(start_indices):
+                if idx + 1 < len(seq) and seq[idx + 1] == assistant_token:
+                    # Found the header! Mask up to and including 'assistant'
+                    assistant_start_index = idx + 2
+                    break
+            if assistant_start_index is not None:
+                labels[i, :assistant_start_index] = IGNORE_INDEX
+            else:
+                # Fallback: mask everything to avoid bad gradients
+                labels[i, :] = IGNORE_INDEX
+                print(f"WARNING: Could not find assistant start in sample {i}")
 
         batch["labels"] = labels
         return batch

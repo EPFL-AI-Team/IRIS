@@ -6,7 +6,7 @@
 
 default_profile: rcp-container
 
-default_split_name: train_10k_4_frames_v2
+default_split_name: train_without_vis_analysis
 
 # Frame extraction/sampling settings
 #

@@ -12,8 +12,8 @@ lora:
   finetune_mlp_modules: true
 
 data:
-  train_path: "/scratch/iris/finebio_processed/splits/train_10k_4_frames_v2/finebio_train.jsonl"
-  val_path: "/scratch/iris/finebio_processed/splits/train_10k_4_frames_v2/finebio_val.jsonl"
+  train_path: "/scratch/iris/finebio_processed/splits/train_without_vis_analysis/finebio_train.jsonl"
+  val_path: "/scratch/iris/finebio_processed/splits/train_without_vis_analysis/finebio_val.jsonl"
   max_frames: 4
   # 640x640 = 409,600. Setting slightly higher to avoid accidental downsampling.
   max_pixels: 600000      # 700x700
@@ -27,7 +27,7 @@ training:
   # Optimization
   optim: "adamw_torch"
   learning_rate: 5.0e-5
-  weight_decay: 0.3
+  weight_decay: 0.01
   warmup_ratio: 0.1
   
   # Epoch-based training
@@ -37,10 +37,10 @@ training:
   bf16: true
   fp16: false
   gradient_checkpointing: true
-  label_smoothing_factor: 0.1
+  label_smoothing_factor: 0.0
   
   # Checkpointing
-  output_dir: "/scratch/iris/checkpoints/qwen3b_finebio_run5"
+  output_dir: "/scratch/iris/checkpoints/qwen3b_finebio_run8_wo_vis"
 
   # Evaluation
   eval_strategy: "steps"
