@@ -942,12 +942,17 @@ def main() -> None:
     create_visualizations(ft_df, args.checkpoint_dir)
 
     # 8. Save outputs (include comparison data)
+    # Make a copy to avoid circular references when adding nested metrics
+    metrics_to_save = dict(ft_metrics)
     if base_metrics:
-        ft_metrics["base_model_comparison"] = base_metrics
+        metrics_to_save["base_model_comparison"] = base_metrics
     if len(prompts_to_test) > 1:
-        ft_metrics["prompt_comparison"] = prompt_comparison
+        # Copy each prompt's metrics to avoid circular reference
+        metrics_to_save["prompt_comparison"] = {
+            k: dict(v) for k, v in prompt_comparison.items()
+        }
 
-    save_outputs(ft_metrics, ft_df, ft_predictions, args.checkpoint_dir)
+    save_outputs(metrics_to_save, ft_df, ft_predictions, args.checkpoint_dir)
 
     logger.info("Evaluation complete!")
     logger.info(f"Results saved to {args.checkpoint_dir / 'evaluation'}")
