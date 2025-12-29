@@ -84,6 +84,12 @@ def parse_args() -> argparse.Namespace:
         default="with_visual",
         help="Prompt mode: with/without visual_analysis request",
     )
+    parser.add_argument(
+        "--eval-name",
+        type=str,
+        default=None,
+        help="Name for this evaluation run (creates subdirectory). If not specified, uses 'evaluation'.",
+    )
     return parser.parse_args()
 
 
@@ -306,8 +312,11 @@ def run_inference(
     return predictions
 
 
+import re
+
+
 def parse_predictions(predictions: list[dict]) -> list[dict]:
-    """Parse JSON from raw model outputs."""
+    """Parse JSON from raw model outputs, handling markdown fences."""
     logger.info("Parsing predictions...")
 
     parsed = []
@@ -318,9 +327,25 @@ def parse_predictions(predictions: list[dict]) -> list[dict]:
             "parse_success": False,
         }
 
+        text = pred["raw_output"]
+
+        # 1. Strip Markdown code blocks (```json ... ```)
+        if "```" in text:
+            pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                text = match.group(1)
+
+        # 2. If no code blocks, look for the first '{' and last '}'
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1:
+                text = text[start : end + 1]
+
         try:
             # Try to parse JSON
-            parsed_json = json.loads(pred["raw_output"])
+            parsed_json = json.loads(text)
             result.update({
                 "parse_success": True,
                 "visual_analysis": parsed_json.get("visual_analysis", ""),
@@ -409,6 +434,19 @@ def compute_metrics(
             row["context_correct"],
         ])
 
+        # Visual Triplet: verb + tool + target only (excludes context)
+        # Context requires temporal reasoning beyond single clip
+        row["visual_triplet_match"] = all([
+            row["verb_correct"],
+            row["tool_correct"],
+            row["target_correct"],
+        ])
+        row["visual_triplet_fields"] = sum([
+            row["verb_correct"],
+            row["tool_correct"],
+            row["target_correct"],
+        ])
+
         # Token-level F1 scores (partial credit for partial matches)
         row["verb_f1"] = token_f1(row["pred_verb"], row["gt_verb"])
         row["tool_f1"] = token_f1(row["pred_tool"], row["gt_tool"])
@@ -417,6 +455,11 @@ def compute_metrics(
         row["avg_f1"] = (
             row["verb_f1"] + row["tool_f1"] + row["target_f1"] + row["context_f1"]
         ) / 4
+
+        # Visual triplet F1 (excludes context)
+        row["visual_triplet_f1"] = (
+            row["verb_f1"] + row["tool_f1"] + row["target_f1"]
+        ) / 3
 
         data.append(row)
 
@@ -439,6 +482,10 @@ def compute_metrics(
         "target_f1_mean": df["target_f1"].mean(),
         "context_f1_mean": df["context_f1"].mean(),
         "overall_f1": df["avg_f1"].mean(),
+        # Visual Triplet metrics (perception only, no temporal reasoning)
+        "visual_triplet_accuracy": df["visual_triplet_match"].mean(),
+        "visual_triplet_partial": df["visual_triplet_fields"].mean(),
+        "visual_triplet_f1": df["visual_triplet_f1"].mean(),
     }
 
     # Fields correct distribution (how many samples got 0/1/2/3/4 fields right)
@@ -487,10 +534,15 @@ def compute_metrics(
     return metrics, df
 
 
-def create_visualizations(df: pd.DataFrame, output_dir: Path) -> None:
+def create_visualizations(
+    df: pd.DataFrame, output_dir: Path, eval_name: str | None = None
+) -> None:
     """Create and save visualization plots."""
     logger.info("Creating visualizations...")
-    viz_dir = output_dir / "evaluation"
+    if eval_name:
+        viz_dir = output_dir / "evaluation" / eval_name
+    else:
+        viz_dir = output_dir / "evaluation"
     viz_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Per-field accuracy bar plot
@@ -594,10 +646,14 @@ def save_outputs(
     df: pd.DataFrame,
     predictions: list[dict],
     output_dir: Path,
+    eval_name: str | None = None,
 ) -> None:
     """Save all outputs to disk."""
     logger.info("Saving outputs...")
-    eval_dir = output_dir / "evaluation"
+    if eval_name:
+        eval_dir = output_dir / "evaluation" / eval_name
+    else:
+        eval_dir = output_dir / "evaluation"
     eval_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Metrics JSON
@@ -681,6 +737,15 @@ def save_outputs(
             f.write(f"Target F1:   {metrics['target_f1_mean']:.3f}\n")
             f.write(f"Context F1:  {metrics['context_f1_mean']:.3f}\n")
             f.write(f"Overall F1:  {metrics['overall_f1']:.3f}\n")
+
+        # Add Visual Triplet metrics
+        if "visual_triplet_accuracy" in metrics:
+            f.write("\nVISUAL TRIPLET METRICS (perception only)\n")
+            f.write("-" * 80 + "\n")
+            f.write(f"Exact match (verb+tool+target): {metrics['visual_triplet_accuracy']:.1%}\n")
+            f.write(f"Partial match (0-3 scale):      {metrics['visual_triplet_partial']:.2f}\n")
+            f.write(f"Token F1:                       {metrics['visual_triplet_f1']:.3f}\n")
+            f.write("\nNote: Context excluded - requires temporal reasoning beyond single clip.\n")
 
     # 5. Example comparisons file
     with open(eval_dir / "examples.txt", "w") as f:
@@ -807,6 +872,14 @@ def print_comparison_table(
         print(f"  Target F1:   {ft_metrics['target_f1_mean']:.3f}")
         print(f"  Context F1:  {ft_metrics['context_f1_mean']:.3f}")
         print(f"  Overall F1:  {ft_metrics['overall_f1']:.3f}")
+
+    # Visual Triplet metrics (perception without context)
+    if "visual_triplet_accuracy" in ft_metrics:
+        print("\nVISUAL TRIPLET (verb + tool + target, no context)")
+        print("-" * 40)
+        print(f"  Exact match:     {ft_metrics['visual_triplet_accuracy']:.1%}")
+        print(f"  Partial (0-3):   {ft_metrics['visual_triplet_partial']:.2f}")
+        print(f"  Token F1:        {ft_metrics['visual_triplet_f1']:.3f}")
 
     print("=" * 70 + "\n")
 
@@ -939,7 +1012,7 @@ def main() -> None:
     print_example_comparisons(ft_df, n=10)
 
     # 7. Create visualizations
-    create_visualizations(ft_df, args.checkpoint_dir)
+    create_visualizations(ft_df, args.checkpoint_dir, args.eval_name)
 
     # 8. Save outputs (include comparison data)
     # Make a copy to avoid circular references when adding nested metrics
@@ -952,10 +1025,13 @@ def main() -> None:
             k: dict(v) for k, v in prompt_comparison.items()
         }
 
-    save_outputs(metrics_to_save, ft_df, ft_predictions, args.checkpoint_dir)
+    save_outputs(metrics_to_save, ft_df, ft_predictions, args.checkpoint_dir, args.eval_name)
 
     logger.info("Evaluation complete!")
-    logger.info(f"Results saved to {args.checkpoint_dir / 'evaluation'}")
+    eval_path = args.checkpoint_dir / "evaluation"
+    if args.eval_name:
+        eval_path = eval_path / args.eval_name
+    logger.info(f"Results saved to {eval_path}")
 
 
 if __name__ == "__main__":
