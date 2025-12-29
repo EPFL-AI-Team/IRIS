@@ -145,6 +145,34 @@ def normalize_value(val: str | None) -> str:
     return val
 
 
+def token_f1(pred: str, gt: str) -> float:
+    """Calculate F1 score based on underscore-separated tokens.
+
+    Gives partial credit for predictions like "yellow_pipette" vs "pipette".
+    Returns 1.0 for exact matches, 0.0 for no overlap.
+    """
+    pred_norm = normalize_value(pred)
+    gt_norm = normalize_value(gt)
+
+    # Handle null/none cases
+    if pred_norm == "none" or gt_norm == "none":
+        return 1.0 if pred_norm == gt_norm else 0.0
+
+    pred_tokens = set(pred_norm.split("_"))
+    gt_tokens = set(gt_norm.split("_"))
+
+    if not pred_tokens or not gt_tokens:
+        return 0.0
+
+    intersection = pred_tokens & gt_tokens
+    if not intersection:
+        return 0.0
+
+    precision = len(intersection) / len(pred_tokens)
+    recall = len(intersection) / len(gt_tokens)
+    return 2 * precision * recall / (precision + recall)
+
+
 def extract_ground_truth(sample: dict) -> dict[str, str]:
     """Extract ground truth JSON from sample messages."""
     # Find assistant message in the conversation
@@ -381,6 +409,15 @@ def compute_metrics(
             row["context_correct"],
         ])
 
+        # Token-level F1 scores (partial credit for partial matches)
+        row["verb_f1"] = token_f1(row["pred_verb"], row["gt_verb"])
+        row["tool_f1"] = token_f1(row["pred_tool"], row["gt_tool"])
+        row["target_f1"] = token_f1(row["pred_target"], row["gt_target"])
+        row["context_f1"] = token_f1(row["pred_context"], row["gt_context"])
+        row["avg_f1"] = (
+            row["verb_f1"] + row["tool_f1"] + row["target_f1"] + row["context_f1"]
+        ) / 4
+
         data.append(row)
 
     df = pd.DataFrame(data)
@@ -396,6 +433,12 @@ def compute_metrics(
         "tool_accuracy": df["tool_correct"].mean(),
         "target_accuracy": df["target_correct"].mean(),
         "context_accuracy": df["context_correct"].mean(),
+        # Token F1 metrics (partial credit)
+        "verb_f1_mean": df["verb_f1"].mean(),
+        "tool_f1_mean": df["tool_f1"].mean(),
+        "target_f1_mean": df["target_f1"].mean(),
+        "context_f1_mean": df["context_f1"].mean(),
+        "overall_f1": df["avg_f1"].mean(),
     }
 
     # Fields correct distribution (how many samples got 0/1/2/3/4 fields right)
@@ -629,6 +672,39 @@ def save_outputs(
         for verb, stats in sorted_verbs:
             f.write(f"{verb:15s} - Acc: {stats['accuracy']:.3f} (n={stats['count']})\n")
 
+        # Add F1 metrics
+        if "overall_f1" in metrics:
+            f.write("\nTOKEN F1 METRICS (partial credit)\n")
+            f.write("-" * 80 + "\n")
+            f.write(f"Verb F1:     {metrics['verb_f1_mean']:.3f}\n")
+            f.write(f"Tool F1:     {metrics['tool_f1_mean']:.3f}\n")
+            f.write(f"Target F1:   {metrics['target_f1_mean']:.3f}\n")
+            f.write(f"Context F1:  {metrics['context_f1_mean']:.3f}\n")
+            f.write(f"Overall F1:  {metrics['overall_f1']:.3f}\n")
+
+    # 5. Example comparisons file
+    with open(eval_dir / "examples.txt", "w") as f:
+        f.write("EXAMPLE COMPARISONS\n")
+        f.write("=" * 80 + "\n\n")
+
+        # Get mix of correct and incorrect
+        correct_samples = df[df["exact_match"]].head(5)
+        incorrect_samples = df[~df["exact_match"]].head(5)
+        samples = pd.concat([correct_samples, incorrect_samples])
+
+        for _, row in samples.iterrows():
+            status = "CORRECT" if row["exact_match"] else "INCORRECT"
+            f.write(f"[{row['id']}] - {status}\n")
+            f.write(f"{'Field':<10} {'Ground Truth':<30} {'Prediction':<30} {'F1':>6}\n")
+            f.write("-" * 80 + "\n")
+            for field in ["verb", "tool", "target", "context"]:
+                gt = str(row[f"gt_{field}"])[:28]
+                pred = str(row[f"pred_{field}"])[:28]
+                f1 = row[f"{field}_f1"]
+                match = "=" if row[f"{field}_correct"] else "X"
+                f.write(f"{field:<10} {gt:<30} {pred:<30} {f1:>5.2f} {match}\n")
+            f.write("\n")
+
     logger.info(f"All outputs saved to {eval_dir}")
 
 
@@ -722,7 +798,50 @@ def print_comparison_table(
         for k, v in sorted(ft_metrics["fields_correct_distribution"].items()):
             print(f"  {k}: {v} samples")
 
+    # Token F1 metrics (partial credit)
+    if "overall_f1" in ft_metrics:
+        print("\nSOFT METRICS (Token F1 - partial credit)")
+        print("-" * 40)
+        print(f"  Verb F1:     {ft_metrics['verb_f1_mean']:.3f}")
+        print(f"  Tool F1:     {ft_metrics['tool_f1_mean']:.3f}")
+        print(f"  Target F1:   {ft_metrics['target_f1_mean']:.3f}")
+        print(f"  Context F1:  {ft_metrics['context_f1_mean']:.3f}")
+        print(f"  Overall F1:  {ft_metrics['overall_f1']:.3f}")
+
     print("=" * 70 + "\n")
+
+
+def print_example_comparisons(df: pd.DataFrame, n: int = 10) -> None:
+    """Print side-by-side GT vs Pred comparisons (mix of correct/incorrect)."""
+    print("\n" + "=" * 80)
+    print(f"EXAMPLE COMPARISONS ({n} samples)")
+    print("=" * 80)
+
+    # Get mix: half correct, half incorrect (or as many as available)
+    correct_df = df[df["exact_match"]]
+    incorrect_df = df[~df["exact_match"]]
+
+    n_correct = min(len(correct_df), n // 2)
+    n_incorrect = min(len(incorrect_df), n - n_correct)
+
+    samples = pd.concat([
+        correct_df.head(n_correct),
+        incorrect_df.head(n_incorrect),
+    ])
+
+    for _, row in samples.iterrows():
+        status = "CORRECT" if row["exact_match"] else "INCORRECT"
+        print(f"\n[{row['id']}] - {status}")
+        print(f"{'Field':<10} {'Ground Truth':<30} {'Prediction':<30} {'F1':>6}")
+        print("-" * 80)
+        for field in ["verb", "tool", "target", "context"]:
+            gt = str(row[f"gt_{field}"])[:28]
+            pred = str(row[f"pred_{field}"])[:28]
+            f1 = row[f"{field}_f1"]
+            match = "=" if row[f"{field}_correct"] else "X"
+            print(f"{field:<10} {gt:<30} {pred:<30} {f1:>5.2f} {match}")
+
+    print()
 
 
 def main() -> None:
@@ -815,6 +934,9 @@ def main() -> None:
         base_metrics=base_metrics,
         prompt_comparison=prompt_comparison if len(prompts_to_test) > 1 else None,
     )
+
+    # 6b. Print example comparisons
+    print_example_comparisons(ft_df, n=10)
 
     # 7. Create visualizations
     create_visualizations(ft_df, args.checkpoint_dir)
