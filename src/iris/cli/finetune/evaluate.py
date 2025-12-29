@@ -7,10 +7,13 @@ Features:
 - Compare fine-tuned model vs base model (--compare-base)
 - Test prompts with/without visual_analysis (--prompt-mode)
 - Comprehensive per-field and aggregate metrics
+
+Can be used as CLI or imported as module.
 """
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +48,32 @@ PROMPT_WITHOUT_VISUAL = (
 
 # Base model identifier
 BASE_MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
+
+
+# =============================================================================
+# Configuration Dataclass (for module import)
+# =============================================================================
+
+
+@dataclass
+class EvaluationConfig:
+    """Configuration for running evaluation.
+
+    Use this when importing as a module instead of CLI.
+    """
+
+    checkpoint_dir: Path
+    val_path: Path
+    batch_size: int = 8
+    max_samples: int = 100  # 0 for all
+    compare_base: bool = False
+    prompt_mode: str = "with_visual"  # "with_visual", "without_visual", "both"
+    eval_name: str | None = None
+
+
+# =============================================================================
+# CLI Argument Parsing
+# =============================================================================
 
 
 def parse_args() -> argparse.Namespace:
@@ -917,31 +946,42 @@ def print_example_comparisons(df: pd.DataFrame, n: int = 10) -> None:
     print()
 
 
-def main() -> None:
-    """Main evaluation pipeline."""
-    args = parse_args()
+def run_evaluation(config: EvaluationConfig) -> dict[str, Any]:
+    """Run evaluation pipeline.
 
+    This is the main evaluation function, usable both from CLI and as module import.
+
+    Args:
+        config: Evaluation configuration
+
+    Returns:
+        Dict containing:
+        - "metrics": Primary metrics dict
+        - "predictions": List of prediction dicts
+        - "df": DataFrame with all results
+        - "base_metrics": Base model metrics (if compare_base=True)
+    """
     # Create output directory
-    args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine which prompts to test
     prompts_to_test = []
-    if args.prompt_mode == "both":
+    if config.prompt_mode == "both":
         prompts_to_test = [
             ("with_visual", PROMPT_WITH_VISUAL),
             ("without_visual", PROMPT_WITHOUT_VISUAL),
         ]
-    elif args.prompt_mode == "with_visual":
+    elif config.prompt_mode == "with_visual":
         prompts_to_test = [("with_visual", PROMPT_WITH_VISUAL)]
     else:
         prompts_to_test = [("without_visual", PROMPT_WITHOUT_VISUAL)]
 
     # 1. Load fine-tuned model
-    model, processor = load_model_and_processor(args.checkpoint_dir)
+    model, processor = load_model_and_processor(config.checkpoint_dir)
 
     # 2. Load validation data
-    max_samples = args.max_samples if args.max_samples > 0 else None
-    samples = load_validation_data(args.val_path, max_samples)
+    max_samples = config.max_samples if config.max_samples > 0 else None
+    samples = load_validation_data(config.val_path, max_samples)
 
     # 3. Extract ground truths
     ground_truths = [extract_ground_truth(s) for s in samples]
@@ -957,7 +997,7 @@ def main() -> None:
             model,
             processor,
             samples,
-            args.batch_size,
+            config.batch_size,
             custom_prompt=prompt_text,
             desc=f"Fine-tuned ({prompt_name})",
         )
@@ -979,7 +1019,7 @@ def main() -> None:
 
     # 5. Optionally compare with base model
     base_metrics = None
-    if args.compare_base:
+    if config.compare_base:
         logger.info("Loading base model for comparison...")
         # Unload fine-tuned model to free memory
         del model
@@ -990,7 +1030,7 @@ def main() -> None:
             base_model,
             base_processor,
             samples,
-            args.batch_size,
+            config.batch_size,
             custom_prompt=PROMPT_WITH_VISUAL,
             desc="Base model",
         )
@@ -1012,7 +1052,7 @@ def main() -> None:
     print_example_comparisons(ft_df, n=10)
 
     # 7. Create visualizations
-    create_visualizations(ft_df, args.checkpoint_dir, args.eval_name)
+    create_visualizations(ft_df, config.checkpoint_dir, config.eval_name)
 
     # 8. Save outputs (include comparison data)
     # Make a copy to avoid circular references when adding nested metrics
@@ -1025,13 +1065,39 @@ def main() -> None:
             k: dict(v) for k, v in prompt_comparison.items()
         }
 
-    save_outputs(metrics_to_save, ft_df, ft_predictions, args.checkpoint_dir, args.eval_name)
+    save_outputs(metrics_to_save, ft_df, ft_predictions, config.checkpoint_dir, config.eval_name)
 
     logger.info("Evaluation complete!")
-    eval_path = args.checkpoint_dir / "evaluation"
-    if args.eval_name:
-        eval_path = eval_path / args.eval_name
+    eval_path = config.checkpoint_dir / "evaluation"
+    if config.eval_name:
+        eval_path = eval_path / config.eval_name
     logger.info(f"Results saved to {eval_path}")
+
+    # Return results for programmatic use
+    return {
+        "metrics": ft_metrics,
+        "predictions": ft_predictions,
+        "df": ft_df,
+        "base_metrics": base_metrics,
+        "all_results": all_results,
+    }
+
+
+def main() -> None:
+    """CLI entry point."""
+    args = parse_args()
+
+    config = EvaluationConfig(
+        checkpoint_dir=args.checkpoint_dir,
+        val_path=args.val_path,
+        batch_size=args.batch_size,
+        max_samples=args.max_samples,
+        compare_base=args.compare_base,
+        prompt_mode=args.prompt_mode,
+        eval_name=args.eval_name,
+    )
+
+    run_evaluation(config)
 
 
 if __name__ == "__main__":

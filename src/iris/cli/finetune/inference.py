@@ -1,6 +1,17 @@
+"""Video inference pipeline with layered architecture.
+
+This module provides three levels of abstraction:
+- Layer 1: infer_segment() - Single segment inference (atomic)
+- Layer 2: infer_video() - Whole video inference with one model
+- Layer 3: compare_models() - Compare base vs fine-tuned models
+
+Can be used as CLI or imported as module.
+"""
+
+import argparse
 import json
-import logging
-import os
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -9,97 +20,174 @@ from PIL import Image
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-# --- CONFIGURATION ---
-ADAPTER_PATH = "/scratch/iris/checkpoints/qwen3b_finebio_run4"
-BASE_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
-VIDEO_PATH = "/scratch/iris/test_videos/colony-counting-test-video.mp4"
+from iris.utils.logging import setup_logger
 
-SEGMENT_DURATION = 2.0  # T in seconds
-NUM_FRAMES = 4  # s samples
-FRAME_OVERLAP = 1  # k frames overlap between segments
-MAX_NEW_TOKENS = 2048
-# ----------------------
+logger = setup_logger(__name__)
 
-PROMPT = "Analyze this laboratory procedure clip. The context is colony counting, and the researcher is counting colonies on a petri dish. You need to analyze the specifics in these frames. Return JSON with: visual_analysis (describe what you see), verb (action type), tool (manipulated object), target (affected object or null), context (protocol step)."
+# --- DEFAULTS ---
+BASE_MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+DEFAULT_PROMPT = (
+    "Analyze this laboratory procedure clip. Return JSON with: "
+    "visual_analysis (describe what you see), verb (action type), "
+    "tool (manipulated object), target (affected object or null), "
+    "context (protocol step)."
+)
 
 
-def get_inference_segments(
-    video_path: str, t_sec: float, s_samples: int, k_overlap: int
+# =============================================================================
+# Configuration Dataclasses
+# =============================================================================
+
+
+@dataclass
+class VideoInferenceConfig:
+    """Configuration for video inference."""
+
+    segment_duration: float = 2.0
+    num_frames: int = 4
+    frame_overlap: int = 1
+    max_new_tokens: int = 512
+    prompt: str = DEFAULT_PROMPT
+
+
+@dataclass
+class ComparisonConfig:
+    """Configuration for model comparison."""
+
+    video_path: str | Path
+    output_dir: str | Path
+    checkpoint_dir: str | Path | None = None
+    run_base: bool = True
+    run_finetuned: bool = True
+    backend: str = "qwen"  # "qwen", "gemini", "openai"
+    api_key: str | None = None  # For external APIs
+    video_config: VideoInferenceConfig = field(default_factory=VideoInferenceConfig)
+
+
+# =============================================================================
+# Model Loading
+# =============================================================================
+
+
+def load_model(
+    model_path: str | Path,
+) -> tuple[Qwen2_5_VLForConditionalGeneration, AutoProcessor]:
+    """Load Qwen model and processor from path."""
+    model_path = str(model_path)
+    logger.info(f"Loading model from {model_path}")
+
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model_path,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        attn_implementation="flash_attention_2",
+    )
+    processor = AutoProcessor.from_pretrained(model_path)
+    model.eval()
+
+    logger.info("Model loaded successfully")
+    return model, processor
+
+
+# =============================================================================
+# Video Processing
+# =============================================================================
+
+
+def extract_video_segments(
+    video_path: str | Path,
+    config: VideoInferenceConfig,
 ) -> list[dict[str, Any]]:
-    """Extracts segments from video and converts frames to PIL Images."""
-    logging.info(f"Opening video file: {video_path}")
+    """Extract segments from video as PIL Images.
+
+    Returns:
+        List of {"start_sec": float, "frames": list[Image.Image]}
+    """
+    video_path = str(video_path)
+    logger.info(f"Extracting segments from {video_path}")
+
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frames_per_segment = int(t_sec * fps)
+    frames_per_segment = int(config.segment_duration * fps)
+    step = frames_per_segment - config.frame_overlap
 
-    step = frames_per_segment - k_overlap
-    segments = []
-
-    logging.info(
-        f"Video FPS: {fps}, Total frames: {total_frames}, Frames per segment: {frames_per_segment}, Step: {step}"
+    logger.info(
+        f"Video: {fps:.1f} FPS, {total_frames} frames, "
+        f"{frames_per_segment} frames/segment, step={step}"
     )
 
-    for seg_idx, start_idx in enumerate(
-        range(0, total_frames - frames_per_segment + 1, step)
-    ):
-        segment_frames = []
+    segments = []
+    for start_idx in range(0, total_frames - frames_per_segment + 1, step):
+        # Sample frames evenly within segment
         indices = [
-            start_idx + int(i * (frames_per_segment - 1) / (s_samples - 1))
-            for i in range(s_samples)
+            start_idx + int(i * (frames_per_segment - 1) / (config.num_frames - 1))
+            for i in range(config.num_frames)
         ]
 
+        segment_frames = []
         for idx in indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
             if ret:
-                # Convert BGR (OpenCV) to RGB
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # Convert NumPy array to PIL Image (Critical for Qwen Processor)
                 pil_image = Image.fromarray(rgb_frame)
                 segment_frames.append(pil_image)
-            else:
-                logging.warning(f"Failed to read frame at index {idx}")
 
-        if len(segment_frames) == s_samples:
-            segments.append({"start_sec": start_idx / fps, "frames": segment_frames})
-        else:
-            logging.debug(f"Segment {seg_idx} skipped due to insufficient frames.")
+        if len(segment_frames) == config.num_frames:
+            segments.append({
+                "start_sec": start_idx / fps,
+                "frames": segment_frames,
+            })
 
     cap.release()
-    logging.info(
-        f"Generated {len(segments)} segments with {s_samples} frames each (T={t_sec}s, k={k_overlap})."
-    )
+    logger.info(f"Extracted {len(segments)} segments")
     return segments
 
 
-def inference_single_segment(
-    model, processor, frames: list[Image.Image], prompt: str
+# =============================================================================
+# Layer 1: Segment-level Inference (Atomic)
+# =============================================================================
+
+
+def infer_segment(
+    frames: list[Image.Image],
+    model: Any,
+    processor: Any,
+    prompt: str,
+    max_new_tokens: int = 512,
+    num_frames: int = 4,
+    segment_duration: float = 2.0,
 ) -> str:
+    """Run inference on a single video segment (list of frames).
+
+    This is the atomic inference unit. Used by infer_video().
+
+    Args:
+        frames: List of PIL Images for this segment
+        model: Loaded Qwen model
+        processor: Loaded processor
+        prompt: Text prompt for the model
+        max_new_tokens: Maximum tokens to generate
+        num_frames: Number of frames (for FPS calculation)
+        segment_duration: Duration in seconds (for FPS calculation)
+
+    Returns:
+        Model response as string
     """
-    Runs inference on a single list of PIL images (one video segment).
-    Mimics VideoJob._inference_qwen logic.
-    """
-    # Calculate effective FPS for the model context
-    sample_fps = NUM_FRAMES / SEGMENT_DURATION
+    sample_fps = num_frames / segment_duration
 
     messages = [
         {
             "role": "user",
             "content": [
-                {
-                    "type": "video",
-                    "video": frames,
-                    "sample_fps": sample_fps,
-                },
+                {"type": "video", "video": frames, "fps": sample_fps},
                 {"type": "text", "text": prompt},
             ],
         }
     ]
 
-    # Prepare inputs using Qwen utils
     image_inputs, video_inputs, video_kwargs = process_vision_info(
         messages, return_video_kwargs=True
     )
@@ -108,7 +196,6 @@ def inference_single_segment(
         messages, tokenize=False, add_generation_prompt=True
     )
 
-    # Move inputs to device
     inputs = processor(
         text=[text],
         images=image_inputs,
@@ -118,85 +205,299 @@ def inference_single_segment(
         **video_kwargs,
     ).to(model.device)
 
-    # Generate
     with torch.no_grad():
-        output_ids = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
+        output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
 
-    # Decode (trimming the input tokens)
+    # Decode only generated tokens
     generated_ids = [
-        output_ids[len(input_ids) :]
-        for input_ids, output_ids in zip(inputs.input_ids, output_ids)
+        out_ids[len(in_ids) :]
+        for in_ids, out_ids in zip(inputs.input_ids, output_ids, strict=True)
     ]
     response = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
     return response
 
 
-def run_eye_test() -> None:
-    logging.info("Loading model and adapters...")
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        BASE_MODEL, torch_dtype="auto", device_map="auto"
-    )
-    logging.info("Base model loaded.")
+# =============================================================================
+# Layer 1 Alternative: External API Backends (Placeholders)
+# =============================================================================
 
-    # model.load_adapter(ADAPTER_PATH)
-    # logging.info(f"Adapter loaded from {ADAPTER_PATH}.")
 
-    processor = AutoProcessor.from_pretrained(BASE_MODEL)
-    logging.info("Processor loaded.")
+def infer_segment_gemini(
+    frames: list[Image.Image],
+    prompt: str,
+    api_key: str,
+    max_new_tokens: int = 512,
+) -> str:
+    """Gemini API inference (placeholder).
 
-    # Prepare output file paths in adapter path under 'chuv_video_evaluation'
-    video_base = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
-    output_dir = os.path.join(ADAPTER_PATH, "chuv_video_evaluation")
-    os.makedirs(output_dir, exist_ok=True)
-    jsonl_path = os.path.join(output_dir, f"{video_base}_inference_output.jsonl")
-    txt_path = os.path.join(output_dir, f"{video_base}_inference_output.txt")
-
-    logging.info(f"Output files will be: {jsonl_path}, {txt_path}")
-
-    # 1. Get all segments (images loaded into memory)
-    segments = get_inference_segments(
-        VIDEO_PATH, SEGMENT_DURATION, NUM_FRAMES, FRAME_OVERLAP
+    TODO: Implement with google.generativeai
+    """
+    raise NotImplementedError(
+        "Gemini backend not implemented. "
+        "Install google-generativeai and implement with gemini-1.5-flash or gemini-1.5-pro"
     )
 
-    logging.info(f"Starting sequential inference on {len(segments)} segments...")
 
-    prompt = PROMPT
+def infer_segment_openai(
+    frames: list[Image.Image],
+    prompt: str,
+    api_key: str,
+    max_new_tokens: int = 512,
+) -> str:
+    """OpenAI API inference (placeholder).
 
-    # Clear files to start fresh
-    with open(jsonl_path, "w", encoding="utf-8") as f:
-        pass
-    with open(txt_path, "w", encoding="utf-8") as f:
-        pass
+    TODO: Implement with openai client (gpt-4-vision)
+    """
+    raise NotImplementedError(
+        "OpenAI backend not implemented. "
+        "Install openai and implement with gpt-4-vision-preview"
+    )
 
-    # 2. Iterate and process sequentially
+
+# =============================================================================
+# Layer 2: Video-level Inference
+# =============================================================================
+
+
+def infer_video(
+    video_path: str | Path,
+    model: Any,
+    processor: Any,
+    config: VideoInferenceConfig | None = None,
+) -> list[dict]:
+    """Run inference on entire video, returning results per segment.
+
+    Args:
+        video_path: Path to video file
+        model: Loaded model
+        processor: Loaded processor
+        config: Video inference configuration (uses defaults if None)
+
+    Returns:
+        List of {"start_sec": float, "response": str} dicts
+    """
+    config = config or VideoInferenceConfig()
+    segments = extract_video_segments(video_path, config)
+
+    results = []
     for i, seg in enumerate(segments):
-        start_sec = seg["start_sec"]
-        frames = seg["frames"]
-
-        logging.info(
-            f"Processing segment {i + 1}/{len(segments)} at {start_sec:.2f}s..."
-        )
+        logger.info(f"Processing segment {i + 1}/{len(segments)} at {seg['start_sec']:.2f}s")
 
         try:
-            response = inference_single_segment(model, processor, frames, prompt)
+            response = infer_segment(
+                frames=seg["frames"],
+                model=model,
+                processor=processor,
+                prompt=config.prompt,
+                max_new_tokens=config.max_new_tokens,
+                num_frames=config.num_frames,
+                segment_duration=config.segment_duration,
+            )
         except Exception as e:
-            logging.error(f"Error processing segment {i}: {e}")
+            logger.error(f"Error processing segment {i}: {e}")
             response = json.dumps({"error": str(e)})
 
-        # 3. Write results immediately (append mode)
-        with open(jsonl_path, "a", encoding="utf-8") as jf:
-            jsonl_obj = {"start_sec": start_sec, "response": response}
-            jf.write(json.dumps(jsonl_obj, ensure_ascii=False) + "\n")
+        results.append({
+            "start_sec": seg["start_sec"],
+            "response": response,
+        })
 
-        with open(txt_path, "a", encoding="utf-8") as tf:
-            tf.write(f"--- Segment Start: {start_sec:.2f}s ---\n{response}\n\n")
+    return results
 
-        print(f"--- Segment Start: {start_sec:.2f}s ---")
-        print(response)
 
-    logging.info("All segments processed successfully.")
+# =============================================================================
+# Layer 3: Model Comparison
+# =============================================================================
+
+
+def compare_models(config: ComparisonConfig) -> dict[str, list[dict]]:
+    """Compare base vs fine-tuned model on a video.
+
+    Args:
+        config: Comparison configuration
+
+    Returns:
+        Dict with keys "base" and/or "finetuned", each containing
+        list of {"start_sec": float, "response": str} dicts
+    """
+    results = {}
+
+    # Run base model
+    if config.run_base:
+        logger.info("Running base model inference...")
+        model, processor = load_model(BASE_MODEL_NAME)
+        results["base"] = infer_video(
+            config.video_path, model, processor, config.video_config
+        )
+        del model
+        torch.cuda.empty_cache()
+        logger.info("Base model complete, VRAM freed")
+
+    # Run fine-tuned model
+    if config.run_finetuned and config.checkpoint_dir:
+        logger.info("Running fine-tuned model inference...")
+        model, processor = load_model(config.checkpoint_dir)
+        results["finetuned"] = infer_video(
+            config.video_path, model, processor, config.video_config
+        )
+        del model
+        torch.cuda.empty_cache()
+        logger.info("Fine-tuned model complete")
+
+    # Save outputs
+    save_comparison_outputs(results, config)
+
+    return results
+
+
+# =============================================================================
+# Output Saving
+# =============================================================================
+
+
+def save_comparison_outputs(
+    results: dict[str, list[dict]],
+    config: ComparisonConfig,
+) -> None:
+    """Save JSONL and TXT outputs for each model variant."""
+    output_dir = Path(config.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    video_name = Path(config.video_path).stem
+
+    for model_name, segments in results.items():
+        # JSONL (machine readable)
+        jsonl_path = output_dir / f"{video_name}_{model_name}.jsonl"
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            for seg in segments:
+                f.write(json.dumps(seg, ensure_ascii=False) + "\n")
+
+        # TXT (human readable)
+        txt_path = output_dir / f"{video_name}_{model_name}.txt"
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(f"Model: {model_name}\n")
+            f.write(f"Video: {config.video_path}\n")
+            f.write(f"Prompt: {config.video_config.prompt}\n")
+            f.write("=" * 80 + "\n\n")
+
+            for seg in segments:
+                f.write(f"--- {seg['start_sec']:.2f}s ---\n")
+                f.write(seg["response"] + "\n\n")
+
+        logger.info(f"Saved {model_name}: {jsonl_path}, {txt_path}")
+
+    logger.info(f"All outputs saved to {output_dir}")
+
+
+# =============================================================================
+# CLI Interface
+# =============================================================================
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Run VLM inference on video (compare base vs fine-tuned)"
+    )
+    parser.add_argument(
+        "--video",
+        type=Path,
+        required=True,
+        help="Path to video file",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Output directory for results",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="Fine-tuned checkpoint path (required unless --base-only)",
+    )
+    parser.add_argument(
+        "--base-only",
+        action="store_true",
+        help="Only run base model",
+    )
+    parser.add_argument(
+        "--finetuned-only",
+        action="store_true",
+        help="Only run fine-tuned model (requires --checkpoint)",
+    )
+    parser.add_argument(
+        "--segment-duration",
+        type=float,
+        default=2.0,
+        help="Segment duration in seconds (default: 2.0)",
+    )
+    parser.add_argument(
+        "--num-frames",
+        type=int,
+        default=4,
+        help="Frames per segment (default: 4)",
+    )
+    parser.add_argument(
+        "--frame-overlap",
+        type=int,
+        default=1,
+        help="Frame overlap between segments (default: 1)",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help="Max tokens to generate (default: 512)",
+    )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Custom prompt (uses default if not set)",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    """CLI entry point."""
+    args = parse_args()
+
+    # Validate args
+    if args.finetuned_only and not args.checkpoint:
+        raise ValueError("--finetuned-only requires --checkpoint")
+
+    # Build config
+    video_config = VideoInferenceConfig(
+        segment_duration=args.segment_duration,
+        num_frames=args.num_frames,
+        frame_overlap=args.frame_overlap,
+        max_new_tokens=args.max_new_tokens,
+        prompt=args.prompt or DEFAULT_PROMPT,
+    )
+
+    config = ComparisonConfig(
+        video_path=args.video,
+        output_dir=args.output_dir,
+        checkpoint_dir=args.checkpoint,
+        run_base=not args.finetuned_only,
+        run_finetuned=not args.base_only and args.checkpoint is not None,
+        video_config=video_config,
+    )
+
+    # Run comparison
+    results = compare_models(config)
+
+    # Summary
+    print("\n" + "=" * 60)
+    print("INFERENCE COMPLETE")
+    print("=" * 60)
+    for model_name, segments in results.items():
+        print(f"  {model_name}: {len(segments)} segments")
+    print(f"  Output: {args.output_dir}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
-    run_eye_test()
+    main()
