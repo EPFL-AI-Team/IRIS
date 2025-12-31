@@ -15,5 +15,5 @@ uv run python scripts/perception/train_videomae.py
 
 ```python
 from iris.perception.action_recognition import VideoMAEModel
-from iris.vlm.inference import load_model_and_processor
+from iris.vlm.models import load_model_and_processor
 ```

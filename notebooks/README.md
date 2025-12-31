@@ -8,7 +8,7 @@ Jupyter notebooks for exploration and experiments.
 **Import from package:**
 
 ```python
-from iris.vlm.inference import load_model_and_processor
+from iris.vlm.models import load_model_and_processor
 from iris.perception.action_recognition import YourModel
 ```
 
