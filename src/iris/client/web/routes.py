@@ -1012,3 +1012,161 @@ async def analysis_websocket(websocket: WebSocket) -> None:
             await websocket.close()
         except Exception:
             pass
+
+
+# ============================================================================
+# Session Management Endpoints
+# ============================================================================
+
+
+@api_router.get("/sessions")
+async def list_sessions() -> dict[str, Any]:
+    """List all analysis sessions."""
+    from iris.client.web.repositories import session_repo
+
+    sessions = session_repo.list_sessions(limit=50)
+    return {"sessions": sessions}
+
+
+@api_router.get("/sessions/{session_id}")
+async def get_session(session_id: str) -> dict[str, Any]:
+    """Get a specific session by ID."""
+    from iris.client.web.repositories import session_repo
+
+    session = session_repo.get(session_id)
+    if not session:
+        return {"error": "Session not found", "session_id": session_id}
+    return {"session": session}
+
+
+@api_router.get("/sessions/{session_id}/results")
+async def get_session_results(session_id: str) -> dict[str, Any]:
+    """Get all inference results for a session."""
+    from iris.client.web.repositories import results_repo
+
+    results = results_repo.get_by_session(session_id)
+    return {"session_id": session_id, "count": len(results), "results": results}
+
+
+@api_router.get("/sessions/{session_id}/logs")
+async def get_session_logs(session_id: str, limit: int = 1000) -> dict[str, Any]:
+    """Get logs for a session."""
+    from iris.client.web.repositories import logs_repo
+
+    logs = logs_repo.get_by_session(session_id, limit=limit)
+    return {"session_id": session_id, "count": len(logs), "logs": logs}
+
+
+@api_router.delete("/sessions/{session_id}/logs")
+async def clear_session_logs(session_id: str) -> dict[str, Any]:
+    """Clear all logs for a session."""
+    from iris.client.web.repositories import logs_repo
+
+    deleted = logs_repo.clear_session(session_id)
+    return {"status": "ok", "deleted": deleted}
+
+
+@api_router.delete("/sessions/{session_id}/results")
+async def clear_session_results(session_id: str) -> dict[str, Any]:
+    """Clear all results for a session."""
+    from iris.client.web.repositories import results_repo
+
+    deleted = results_repo.clear_session(session_id)
+    return {"status": "ok", "deleted": deleted}
+
+
+@api_router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict[str, Any]:
+    """Delete a session and all related data."""
+    from iris.client.web.repositories import session_repo
+
+    deleted = session_repo.delete(session_id)
+    return {"status": "ok" if deleted else "not_found", "session_id": session_id}
+
+
+# ============================================================================
+# Report Generation Endpoints
+# ============================================================================
+
+
+@api_router.post("/report/generate")
+async def generate_report(request: dict[str, Any]) -> Any:
+    """Generate an LLM-powered analysis report.
+
+    Request body:
+        session_id: Session to generate report for
+        provider: Optional LLM provider ("anthropic" or "openai")
+
+    Returns:
+        StreamingResponse with Markdown content
+    """
+    from fastapi.responses import StreamingResponse
+
+    from iris.client.web.report_generator import (
+        generate_fallback_report,
+        generate_report_stream,
+    )
+    from iris.client.web.repositories import results_repo, session_repo
+
+    session_id = request.get("session_id")
+    provider = request.get("provider", "anthropic")
+
+    if not session_id:
+        return {"error": "session_id is required"}
+
+    # Get session and results
+    session = session_repo.get(session_id)
+    if not session:
+        return {"error": "Session not found", "session_id": session_id}
+
+    results = results_repo.get_by_session(session_id)
+
+    # Load annotations if available
+    state = get_app_state()
+    annotations = state.analysis_annotations if state.analysis_annotations else None
+
+    # Check if LLM API key is available
+    import os
+
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+
+    if not has_anthropic and not has_openai:
+        # Return fallback report
+        report = generate_fallback_report(session, results, annotations)
+        return {"report": report, "provider": "fallback"}
+
+    # Stream LLM-generated report
+    async def stream_generator():
+        async for chunk in generate_report_stream(
+            session, results, annotations, provider
+        ):
+            yield chunk
+
+    return StreamingResponse(
+        stream_generator(),
+        media_type="text/markdown",
+        headers={"X-Report-Provider": provider},
+    )
+
+
+@api_router.get("/report/fallback/{session_id}")
+async def get_fallback_report(session_id: str) -> dict[str, Any]:
+    """Get a basic statistics report without LLM.
+
+    Useful when no API key is configured.
+    """
+    from iris.client.web.report_generator import generate_fallback_report
+    from iris.client.web.repositories import results_repo, session_repo
+
+    session = session_repo.get(session_id)
+    if not session:
+        return {"error": "Session not found", "session_id": session_id}
+
+    results = results_repo.get_by_session(session_id)
+
+    state = get_app_state()
+    annotations = state.analysis_annotations if state.analysis_annotations else None
+
+    report = generate_fallback_report(session, results, annotations)
+    return {"report": report, "provider": "fallback"}
