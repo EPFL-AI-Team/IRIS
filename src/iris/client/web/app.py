@@ -12,8 +12,12 @@ app = FastAPI(title="IRIS Streaming client")
 app.include_router(api_router)
 app.include_router(ws_router)
 
-# static_dir = Path(__file__).parent / "static"
-# app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+# Mount static files directory (for videos)
+static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)  # Ensure directory exists
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Mount frontend files (must be last to catch all other routes)
 frontend_dist = Path(__file__).parent / "frontend" / "dist"
 app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
 
