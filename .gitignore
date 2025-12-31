@@ -493,6 +493,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!src/iris/client/web/frontend/src/lib/
 lib64/
 parts/
 sdist/
