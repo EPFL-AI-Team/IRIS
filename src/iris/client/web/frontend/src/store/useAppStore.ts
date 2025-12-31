@@ -14,11 +14,14 @@ import type {
   AnalysisResult,
   AnalysisProgress,
   AnalysisMode,
+  SegmentConfig,
+  AnalysisLog,
 } from "../types";
 
 const MAX_LOG_ENTRIES = 100;
 const MAX_RESULTS = 50;
 const MAX_ANALYSIS_RESULTS = 200;
+const MAX_ANALYSIS_LOGS = 500;
 
 interface AppState {
   // Camera mode
@@ -128,8 +131,18 @@ interface AppState {
   currentPlaybackPosition: number; // milliseconds
   setCurrentPlaybackPosition: (ms: number) => void;
 
-  simulationFps: number;
-  setSimulationFps: (fps: number) => void;
+  // Segment configuration (replaces simulationFps)
+  segmentConfig: SegmentConfig;
+  setSegmentConfig: (config: SegmentConfig) => void;
+
+  // Analysis logs (model outputs + system logs)
+  analysisLogs: AnalysisLog[];
+  addAnalysisLog: (log: AnalysisLog) => void;
+  clearAnalysisLogs: () => void;
+
+  // Auto-generate report on completion
+  autoGenerateReport: boolean;
+  setAutoGenerateReport: (value: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -293,6 +306,27 @@ export const useAppStore = create<AppState>((set) => ({
   currentPlaybackPosition: 0,
   setCurrentPlaybackPosition: (ms) => set({ currentPlaybackPosition: ms }),
 
-  simulationFps: 5.0,
-  setSimulationFps: (fps) => set({ simulationFps: fps }),
+  // Segment configuration - defaults: T=1s, s=8 frames, overlap=4 → FPS=8
+  segmentConfig: {
+    segmentTime: 1.0,
+    framesPerSegment: 8,
+    overlapFrames: 4,
+  },
+  setSegmentConfig: (config) => set({ segmentConfig: config }),
+
+  // Analysis logs
+  analysisLogs: [],
+  addAnalysisLog: (log) =>
+    set((state) => {
+      const newLogs = [...state.analysisLogs, log];
+      if (newLogs.length > MAX_ANALYSIS_LOGS) {
+        newLogs.shift();
+      }
+      return { analysisLogs: newLogs };
+    }),
+  clearAnalysisLogs: () => set({ analysisLogs: [] }),
+
+  // Auto-generate report
+  autoGenerateReport: false,
+  setAutoGenerateReport: (value) => set({ autoGenerateReport: value }),
 }));

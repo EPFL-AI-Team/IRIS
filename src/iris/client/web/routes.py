@@ -710,7 +710,16 @@ def parse_openai_chat_jsonl(jsonl_path: Path) -> list[dict[str, Any]]:
 
 @api_router.post("/analysis/start")
 async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
-    """Start video analysis job."""
+    """Start video analysis job.
+
+    Request body:
+        video_filename: str - Name of video file in static/videos/
+        annotation_filename: str | None - Name of annotation JSONL file
+        segment_time: float - Duration of each segment in seconds (T)
+        frames_per_segment: int - Number of frames per segment (s)
+        overlap_frames: int - Number of frames to overlap between segments
+        simulation_fps: float (deprecated) - Falls back to this if segment params not provided
+    """
     state = get_app_state()
 
     video_filename = request.get("video_filename")
@@ -718,7 +727,26 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
         return {"status": "error", "message": "video_filename is required"}
 
     annotation_filename = request.get("annotation_filename")
-    simulation_fps = request.get("simulation_fps", 5.0)
+
+    # Extract segment configuration (new params) or fall back to simulation_fps
+    segment_time = request.get("segment_time")
+    frames_per_segment = request.get("frames_per_segment")
+    overlap_frames = request.get("overlap_frames", 4)
+
+    if segment_time is not None and frames_per_segment is not None:
+        # New segment-based configuration
+        segment_time = float(segment_time)
+        frames_per_segment = int(frames_per_segment)
+        overlap_frames = int(overlap_frames)
+        # Derive FPS from segment config: FPS = s / T
+        simulation_fps = frames_per_segment / segment_time if segment_time > 0 else 5.0
+    else:
+        # Fall back to old simulation_fps parameter
+        simulation_fps = request.get("simulation_fps", 5.0)
+        # Infer segment config from fps (assume T=1s)
+        segment_time = 1.0
+        frames_per_segment = int(simulation_fps)
+        overlap_frames = max(0, frames_per_segment // 2)
 
     # Validate video file exists
     video_path = Path(__file__).parent / "static" / "videos" / video_filename
@@ -753,6 +781,11 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     else:
         state.analysis_annotations = []
 
+    # Calculate total chunks for progress tracking
+    total_frames = state.analysis_video_capture.total_frames
+    frames_per_chunk = frames_per_segment - overlap_frames
+    total_chunks = max(1, (total_frames + frames_per_chunk - 1) // frames_per_chunk) if frames_per_chunk > 0 else 1
+
     # Create job metadata
     job_id = f"analysis_{uuid.uuid4().hex[:8]}"
     state.active_analysis_job = {
@@ -760,9 +793,15 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
         "video_file": video_filename,
         "annotation_file": annotation_filename,
         "start_time": time.time(),
-        "simulation_fps": simulation_fps,
+        # Segment configuration
+        "segment_time": segment_time,
+        "frames_per_segment": frames_per_segment,
+        "overlap_frames": overlap_frames,
+        "simulation_fps": simulation_fps,  # Derived FPS
+        # Video metadata
         "annotation_count": len(state.analysis_annotations),
-        "total_frames": state.analysis_video_capture.total_frames,
+        "total_frames": total_frames,
+        "total_chunks": total_chunks,
         "duration_sec": state.analysis_video_capture.get_duration_ms() / 1000.0,
     }
 
@@ -784,8 +823,16 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
         "job_id": job_id,
         "message": "Analysis ready to start",
         "annotation_count": len(state.analysis_annotations),
-        "total_frames": state.analysis_video_capture.total_frames,
+        "total_frames": total_frames,
+        "total_chunks": total_chunks,
         "duration_sec": state.analysis_video_capture.get_duration_ms() / 1000.0,
+        # Echo back segment config
+        "segment_config": {
+            "segment_time": segment_time,
+            "frames_per_segment": frames_per_segment,
+            "overlap_frames": overlap_frames,
+            "derived_fps": simulation_fps,
+        },
     }
 
 
@@ -841,6 +888,9 @@ async def analysis_websocket(websocket: WebSocket) -> None:
     total_frames = state.analysis_video_capture.total_frames
     simulation_fps = state.active_analysis_job["simulation_fps"]
     job_id = state.active_analysis_job["job_id"]
+    frames_per_segment = state.active_analysis_job.get("frames_per_segment", 8)
+    overlap_frames = state.active_analysis_job.get("overlap_frames", 4)
+    total_chunks = state.active_analysis_job.get("total_chunks", 1)
 
     # Get inference server URL
     inference_ws_url = state.config.server.ws_url
@@ -852,6 +902,7 @@ async def analysis_websocket(websocket: WebSocket) -> None:
     frame_count = 0
     results_sent = 0
     start_time = time.time()
+    frames_per_chunk = max(1, frames_per_segment - overlap_frames)
 
     async def send_frames(server_ws: websockets.WebSocketClientProtocol) -> None:
         """Send video frames to inference server at simulation FPS."""
@@ -889,6 +940,16 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 progress_percent = (frame_count / total_frames) * 100
                 current_position_ms = state.analysis_video_capture.get_position_ms()
 
+                # Calculate chunk progress and estimated time
+                current_chunk = frame_count // frames_per_chunk + 1
+                elapsed_time = time.time() - start_time
+                if frame_count > 0 and elapsed_time > 0:
+                    frames_per_second = frame_count / elapsed_time
+                    remaining_frames = total_frames - frame_count
+                    estimated_time_remaining = remaining_frames / frames_per_second if frames_per_second > 0 else 0
+                else:
+                    estimated_time_remaining = 0
+
                 await websocket.send_json({
                     "type": "progress",
                     "job_id": job_id,
@@ -896,6 +957,9 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     "total_frames": total_frames,
                     "progress_percent": progress_percent,
                     "position_ms": current_position_ms,
+                    "current_chunk": current_chunk,
+                    "total_chunks": total_chunks,
+                    "estimated_time_remaining": estimated_time_remaining,
                 })
 
                 frame_count += 1

@@ -1,23 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useAnalysisWebSocket } from "../hooks/useAnalysisWebSocket";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { ReportModal } from "./ReportModal";
-import { Play, Square, FileText } from "lucide-react";
+import { Play, Square, FileText, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 /**
+ * Format seconds into human-readable time string.
+ */
+function formatTime(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+/**
  * Component for controlling video analysis.
- * Includes simulation FPS input, start/stop buttons, and progress display.
+ * Includes start/stop buttons, progress display, and auto-report option.
  */
 export function AnalysisControls() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
 
   const analysisMode = useAppStore((state) => state.analysisMode);
-  const simulationFps = useAppStore((state) => state.simulationFps);
-  const setSimulationFps = useAppStore((state) => state.setSimulationFps);
+  const segmentConfig = useAppStore((state) => state.segmentConfig);
   const progress = useAppStore((state) => state.analysisProgress);
   const selectedVideo = useAppStore((state) => state.selectedVideoFile);
   const selectedAnnotation = useAppStore(
@@ -27,10 +39,22 @@ export function AnalysisControls() {
   const clearAnalysisResults = useAppStore(
     (state) => state.clearAnalysisResults
   );
+  const clearAnalysisLogs = useAppStore((state) => state.clearAnalysisLogs);
   const addLog = useAppStore((state) => state.addLog);
   const analysisJobId = useAppStore((state) => state.analysisJobId);
+  const autoGenerateReport = useAppStore((state) => state.autoGenerateReport);
+  const setAutoGenerateReport = useAppStore(
+    (state) => state.setAutoGenerateReport
+  );
 
   const { connect, disconnect } = useAnalysisWebSocket();
+
+  // Auto-open report modal when analysis completes and auto-generate is enabled
+  useEffect(() => {
+    if (analysisMode === "complete" && autoGenerateReport && analysisJobId) {
+      setReportModalOpen(true);
+    }
+  }, [analysisMode, autoGenerateReport, analysisJobId]);
 
   const handleStart = async () => {
     if (!selectedVideo) {
@@ -39,14 +63,16 @@ export function AnalysisControls() {
     }
 
     try {
-      // Call backend to start analysis
+      // Call backend to start analysis with segment config
       const response = await fetch("/api/analysis/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           video_filename: selectedVideo,
           annotation_filename: selectedAnnotation,
-          simulation_fps: simulationFps,
+          segment_time: segmentConfig.segmentTime,
+          frames_per_segment: segmentConfig.framesPerSegment,
+          overlap_frames: segmentConfig.overlapFrames,
         }),
       });
 
@@ -55,8 +81,9 @@ export function AnalysisControls() {
       if (response.ok && data.status === "ok") {
         setAnalysisJobId(data.job_id);
         clearAnalysisResults();
+        clearAnalysisLogs();
         addLog(
-          `Starting analysis: ${selectedVideo} (${data.total_frames} frames, ${data.annotation_count} annotations)`,
+          `Starting analysis: ${selectedVideo} (${data.total_frames} frames, ${data.total_chunks} chunks, ${data.annotation_count} annotations)`,
           "INFO"
         );
         toast.success("Analysis started");
@@ -100,22 +127,22 @@ export function AnalysisControls() {
     <div className="space-y-4">
       {/* Controls Row */}
       <div className="flex gap-4 items-center flex-wrap">
+        {/* Auto-generate report checkbox */}
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium whitespace-nowrap">
-            Simulation FPS:
-          </label>
-          <Input
-            type="number"
-            value={simulationFps}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setSimulationFps(Number(e.target.value))
+          <Checkbox
+            id="auto-report"
+            checked={autoGenerateReport}
+            onCheckedChange={(checked: boolean | "indeterminate") =>
+              setAutoGenerateReport(checked === true)
             }
-            className="w-20"
-            min={1}
-            max={30}
-            step={0.5}
             disabled={isRunning}
           />
+          <Label
+            htmlFor="auto-report"
+            className="text-sm cursor-pointer select-none"
+          >
+            Auto-generate report
+          </Label>
         </div>
 
         {!isRunning && (
@@ -159,15 +186,32 @@ export function AnalysisControls() {
         )}
       </div>
 
-      {/* Progress Bar */}
+      {/* Progress Display */}
       {progress && isRunning && (
-        <div className="space-y-1">
+        <div className="space-y-2">
           <Progress value={progress.progress_percent} />
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>
-              Frame {progress.current_frame} / {progress.total_frames}
-            </span>
-            <span>{progress.progress_percent.toFixed(1)}%</span>
+            <div className="flex gap-4">
+              <span>
+                Frame {progress.current_frame} / {progress.total_frames}
+              </span>
+              {progress.current_chunk !== undefined &&
+                progress.total_chunks !== undefined && (
+                  <span>
+                    Chunk {progress.current_chunk} / {progress.total_chunks}
+                  </span>
+                )}
+            </div>
+            <div className="flex items-center gap-2">
+              {progress.estimated_time_remaining !== undefined &&
+                progress.estimated_time_remaining > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />~
+                    {formatTime(progress.estimated_time_remaining)} remaining
+                  </span>
+                )}
+              <span>{progress.progress_percent.toFixed(1)}%</span>
+            </div>
           </div>
         </div>
       )}
