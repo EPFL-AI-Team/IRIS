@@ -234,6 +234,48 @@ async def generate_report_stream_openai(
         yield f"\n\n---\n\n**Error generating report:** {e}\n"
 
 
+async def generate_report_stream_gemini(
+    summary: SessionSummary,
+) -> AsyncGenerator[str, None]:
+    """Generate report using Google Gemini API with streaming.
+
+    Args:
+        summary: Session summary data.
+
+    Yields:
+        Markdown text chunks as they're generated.
+    """
+    try:
+        from google import genai
+    except ImportError:
+        yield "# Report Generation Error\n\n"
+        yield "The `google-genai` package is not installed. "
+        yield "Install it with: `pip install google-genai`\n"
+        return
+
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        yield "# Report Generation Error\n\n"
+        yield "GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set.\n"
+        return
+
+    prompt = build_report_prompt(summary)
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        async for chunk in await client.aio.models.generate_content_stream(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        ):
+            if chunk.text:
+                yield chunk.text
+
+    except Exception as e:
+        logger.error(f"Report generation error: {e}", exc_info=True)
+        yield f"\n\n---\n\n**Error generating report:** {e}\n"
+
+
 async def generate_report_stream(
     session: dict[str, Any],
     results: list[dict[str, Any]],
@@ -246,7 +288,7 @@ async def generate_report_stream(
         session: Session data from database.
         results: List of inference results.
         annotations: Optional ground truth annotations.
-        provider: LLM provider ("anthropic" or "openai").
+        provider: LLM provider ("anthropic", "openai", or "gemini").
 
     Yields:
         Markdown text chunks as they're generated.
@@ -255,6 +297,9 @@ async def generate_report_stream(
 
     if provider == "openai":
         async for chunk in generate_report_stream_openai(summary):
+            yield chunk
+    elif provider == "gemini":
+        async for chunk in generate_report_stream_gemini(summary):
             yield chunk
     else:
         # Default to Anthropic

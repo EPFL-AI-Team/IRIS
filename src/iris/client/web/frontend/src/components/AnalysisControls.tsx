@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useAnalysisWebSocket } from "../hooks/useAnalysisWebSocket";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square } from "lucide-react";
+import { ReportModal } from "./ReportModal";
+import { Play, Square, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 /**
@@ -11,6 +13,8 @@ import { toast } from "sonner";
  * Includes simulation FPS input, start/stop buttons, and progress display.
  */
 export function AnalysisControls() {
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+
   const analysisMode = useAppStore((state) => state.analysisMode);
   const simulationFps = useAppStore((state) => state.simulationFps);
   const setSimulationFps = useAppStore((state) => state.setSimulationFps);
@@ -24,6 +28,7 @@ export function AnalysisControls() {
     (state) => state.clearAnalysisResults
   );
   const addLog = useAppStore((state) => state.addLog);
+  const analysisJobId = useAppStore((state) => state.analysisJobId);
 
   const { connect, disconnect } = useAnalysisWebSocket();
 
@@ -135,6 +140,10 @@ export function AnalysisControls() {
             <Button onClick={handleStart} variant="outline" size="sm">
               Run Again
             </Button>
+            <Button onClick={() => setReportModalOpen(true)} size="sm">
+              <FileText className="w-4 h-4 mr-1" />
+              Generate Report
+            </Button>
           </div>
         )}
 
@@ -162,6 +171,13 @@ export function AnalysisControls() {
           </div>
         </div>
       )}
+
+      {/* Report Modal */}
+      <ReportModal
+        sessionId={analysisJobId || undefined}
+        open={reportModalOpen}
+        onOpenChange={setReportModalOpen}
+      />
     </div>
   );
 }

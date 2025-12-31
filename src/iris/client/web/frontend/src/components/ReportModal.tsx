@@ -1,0 +1,260 @@
+import { useState, useCallback, useRef, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FileText, Loader2, Download, Copy, Check } from "lucide-react";
+import { useAppStore } from "@/store/useAppStore";
+
+type LLMProvider = "anthropic" | "openai" | "gemini";
+
+interface ReportModalProps {
+  sessionId?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps) {
+  const [provider, setProvider] = useState<LLMProvider>("anthropic");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [reportContent, setReportContent] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const analysisJobId = useAppStore((s) => s.analysisJobId);
+  const effectiveSessionId = sessionId || analysisJobId;
+
+  // Auto-scroll to bottom during streaming
+  useEffect(() => {
+    if (isGenerating && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    }
+  }, [reportContent, isGenerating]);
+
+  // Cleanup on unmount or close
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const generateReport = useCallback(async () => {
+    if (!effectiveSessionId) {
+      setError("No session ID available. Run analysis first.");
+      return;
+    }
+
+    setIsGenerating(true);
+    setReportContent("");
+    setError(null);
+
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(
+        `/api/report/generate?session_id=${effectiveSessionId}&provider=${provider}`,
+        { signal: abortControllerRef.current.signal }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Streaming not supported");
+      }
+
+      const decoder = new TextDecoder();
+      let done = false;
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const text = decoder.decode(value, { stream: true });
+          setReportContent((prev) => prev + text);
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // User cancelled
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to generate report");
+    } finally {
+      setIsGenerating(false);
+      abortControllerRef.current = null;
+    }
+  }, [effectiveSessionId, provider]);
+
+  const generateFallbackReport = useCallback(async () => {
+    if (!effectiveSessionId) {
+      setError("No session ID available. Run analysis first.");
+      return;
+    }
+
+    setIsGenerating(true);
+    setReportContent("");
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/report/fallback/${effectiveSessionId}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setReportContent(data.report);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate report");
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [effectiveSessionId]);
+
+  const handleCancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsGenerating(false);
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    if (reportContent) {
+      await navigator.clipboard.writeText(reportContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [reportContent]);
+
+  const handleDownload = useCallback(() => {
+    if (reportContent) {
+      const blob = new Blob([reportContent], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `analysis-report-${effectiveSessionId || "unknown"}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, [reportContent, effectiveSessionId]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Analysis Report
+          </DialogTitle>
+          <DialogDescription>
+            Generate an AI-powered analysis report for your session.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Provider:</span>
+            <Select
+              value={provider}
+              onValueChange={(v) => setProvider(v as LLMProvider)}
+              disabled={isGenerating}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="anthropic">Anthropic</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+                <SelectItem value="gemini">Gemini</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex gap-2">
+            {isGenerating ? (
+              <Button variant="destructive" onClick={handleCancel}>
+                Cancel
+              </Button>
+            ) : (
+              <>
+                <Button onClick={generateReport}>
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    "Generate with AI"
+                  )}
+                </Button>
+                <Button variant="outline" onClick={generateFallbackReport}>
+                  Basic Stats
+                </Button>
+              </>
+            )}
+          </div>
+
+          {reportContent && !isGenerating && (
+            <div className="flex gap-2 ml-auto">
+              <Button variant="ghost" size="icon" onClick={handleCopy}>
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handleDownload}>
+                <Download className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
+            {error}
+          </div>
+        )}
+
+        <div
+          ref={contentRef}
+          className="flex-1 min-h-[300px] max-h-[60vh] overflow-auto bg-muted/50 rounded-md p-4 font-mono text-sm whitespace-pre-wrap"
+        >
+          {isGenerating && !reportContent && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating report...
+            </div>
+          )}
+          {reportContent || (
+            <span className="text-muted-foreground">
+              Click "Generate with AI" for an LLM-powered analysis or "Basic Stats" for a quick summary.
+            </span>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
