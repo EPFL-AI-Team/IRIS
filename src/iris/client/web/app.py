@@ -1,13 +1,34 @@
 """Module for webserver hosted on the client"""
 
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from iris.client.web.database import init_db
 from iris.client.web.routes import api_router, ws_router
 
-app = FastAPI(title="IRIS Streaming client")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan handler for startup/shutdown."""
+    # Startup
+    logger.info("Initializing SQLite database...")
+    init_db()
+    logger.info("Database initialized")
+
+    yield
+
+    # Shutdown
+    logger.info("Client web server shutting down")
+
+
+app = FastAPI(title="IRIS Streaming client", lifespan=lifespan)
 
 app.include_router(api_router)
 app.include_router(ws_router)
