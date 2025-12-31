@@ -1,15 +1,12 @@
-"""Tests for FrameBuffer class."""
+"""Tests for FrameBuffer class.
 
-import pytest
+Fixtures used from tests/server/conftest.py:
+- sample_image: A 100x100 red PIL Image
+"""
+
 from PIL import Image
 
 from iris.server.frame_buffer import FrameBuffer
-
-
-@pytest.fixture
-def sample_image() -> Image.Image:
-    """Create a simple test image."""
-    return Image.new("RGB", (100, 100), color="red")
 
 
 class TestFrameBufferAddFrame:
@@ -147,6 +144,21 @@ class TestFrameBufferSlideWindow:
         buffer.slide_window()
 
         assert len(buffer) == 1
+
+    def test_slide_window_zero_overlap(
+        self, sample_image: Image.Image
+    ) -> None:
+        """Test slide_window with zero overlap clears the buffer completely."""
+        buffer = FrameBuffer(buffer_size=4, overlap_frames=0)
+
+        for _ in range(4):
+            buffer.add_frame(sample_image)
+
+        assert len(buffer) == 4
+        buffer.slide_window()
+
+        # With zero overlap, buffer should be empty (not retain all frames)
+        assert len(buffer) == 0
 
     def test_slide_window_preserves_recent_frames(self) -> None:
         """Test that slide_window keeps the most recent frames."""

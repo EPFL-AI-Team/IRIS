@@ -1,38 +1,12 @@
-"""Tests for MetricsCollector class."""
+"""Tests for MetricsCollector class.
 
-import tempfile
-from pathlib import Path
-
-import pytest
+Fixtures used from tests/server/conftest.py:
+- temp_metrics_dir: Temporary directory for metrics storage
+- metrics_collector: MetricsCollector with persistence disabled
+- persisted_metrics: MetricsCollector with persistence enabled
+"""
 
 from iris.server.metrics import MetricsCollector, JobMetrics, SystemMetrics
-
-
-@pytest.fixture
-def temp_metrics_dir() -> Path:
-    """Create a temporary directory for metrics."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
-
-
-@pytest.fixture
-def metrics_collector(temp_metrics_dir: Path) -> MetricsCollector:
-    """Create a MetricsCollector with persistence disabled."""
-    return MetricsCollector(
-        persist=False,
-        log_dir=str(temp_metrics_dir),
-        collect_gpu_metrics=False,
-    )
-
-
-@pytest.fixture
-def persisted_metrics(temp_metrics_dir: Path) -> MetricsCollector:
-    """Create a MetricsCollector with persistence enabled."""
-    return MetricsCollector(
-        persist=True,
-        log_dir=str(temp_metrics_dir),
-        collect_gpu_metrics=False,
-    )
 
 
 class TestMetricsCollectorRecordJob:

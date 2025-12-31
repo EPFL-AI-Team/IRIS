@@ -54,7 +54,10 @@ class FrameBuffer:
 
         Should be called after get_batch() to prepare for the next batch.
         """
-        self._frames = self._frames[-self.overlap_frames:]
+        if self.overlap_frames == 0:
+            self._frames = []
+        else:
+            self._frames = self._frames[-self.overlap_frames:]
 
     def clear(self) -> None:
         """Clear all frames from the buffer."""
