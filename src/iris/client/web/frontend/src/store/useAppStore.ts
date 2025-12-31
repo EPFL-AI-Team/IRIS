@@ -8,10 +8,17 @@ import type {
   ResultItem,
   ServerConfig,
   SSHTunnelConfig,
+  VideoInfo,
+  AnnotationInfo,
+  GroundTruthAnnotation,
+  AnalysisResult,
+  AnalysisProgress,
+  AnalysisMode,
 } from "../types";
 
 const MAX_LOG_ENTRIES = 100;
 const MAX_RESULTS = 50;
+const MAX_ANALYSIS_RESULTS = 200;
 
 interface AppState {
   // Camera mode
@@ -85,6 +92,44 @@ interface AppState {
   requestResultsReconnect: () => void;
   previewReconnectToken: number;
   requestPreviewReconnect: () => void;
+
+  // Analysis & Benchmark state
+  analysisMode: AnalysisMode;
+  setAnalysisMode: (mode: AnalysisMode) => void;
+
+  availableDatasets: {
+    videos: VideoInfo[];
+    annotations: AnnotationInfo[];
+  } | null;
+  setAvailableDatasets: (datasets: {
+    videos: VideoInfo[];
+    annotations: AnnotationInfo[];
+  } | null) => void;
+
+  selectedVideoFile: string | null;
+  setSelectedVideoFile: (filename: string | null) => void;
+
+  selectedAnnotationFile: string | null;
+  setSelectedAnnotationFile: (filename: string | null) => void;
+
+  analysisJobId: string | null;
+  setAnalysisJobId: (id: string | null) => void;
+
+  analysisProgress: AnalysisProgress | null;
+  setAnalysisProgress: (progress: AnalysisProgress | null) => void;
+
+  analysisResults: AnalysisResult[];
+  addAnalysisResult: (result: AnalysisResult) => void;
+  clearAnalysisResults: () => void;
+
+  groundTruthAnnotations: GroundTruthAnnotation[];
+  setGroundTruthAnnotations: (annotations: GroundTruthAnnotation[]) => void;
+
+  currentPlaybackPosition: number; // milliseconds
+  setCurrentPlaybackPosition: (ms: number) => void;
+
+  simulationFps: number;
+  setSimulationFps: (fps: number) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -209,4 +254,45 @@ export const useAppStore = create<AppState>((set) => ({
   previewReconnectToken: 0,
   requestPreviewReconnect: () =>
     set((state) => ({ previewReconnectToken: state.previewReconnectToken + 1 })),
+
+  // Analysis & Benchmark state
+  analysisMode: "idle",
+  setAnalysisMode: (mode) => set({ analysisMode: mode }),
+
+  availableDatasets: null,
+  setAvailableDatasets: (datasets) => set({ availableDatasets: datasets }),
+
+  selectedVideoFile: null,
+  setSelectedVideoFile: (filename) => set({ selectedVideoFile: filename }),
+
+  selectedAnnotationFile: null,
+  setSelectedAnnotationFile: (filename) =>
+    set({ selectedAnnotationFile: filename }),
+
+  analysisJobId: null,
+  setAnalysisJobId: (id) => set({ analysisJobId: id }),
+
+  analysisProgress: null,
+  setAnalysisProgress: (progress) => set({ analysisProgress: progress }),
+
+  analysisResults: [],
+  addAnalysisResult: (result) =>
+    set((state) => {
+      const newResults = [...state.analysisResults, result];
+      if (newResults.length > MAX_ANALYSIS_RESULTS) {
+        newResults.shift();
+      }
+      return { analysisResults: newResults };
+    }),
+  clearAnalysisResults: () => set({ analysisResults: [] }),
+
+  groundTruthAnnotations: [],
+  setGroundTruthAnnotations: (annotations) =>
+    set({ groundTruthAnnotations: annotations }),
+
+  currentPlaybackPosition: 0,
+  setCurrentPlaybackPosition: (ms) => set({ currentPlaybackPosition: ms }),
+
+  simulationFps: 5.0,
+  setSimulationFps: (fps) => set({ simulationFps: fps }),
 }));
