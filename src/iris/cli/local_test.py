@@ -5,7 +5,7 @@ from typing import NoReturn
 import cv2
 from PIL import Image
 
-from iris.vlm.inference.model_loader import load_model_and_processor
+from iris.vlm.models import load_model_and_processor
 from iris.vlm.inference.queue.jobs import Job, JobStatus, SingleFrameJob
 from iris.vlm.inference.queue.queue import InferenceQueue
 

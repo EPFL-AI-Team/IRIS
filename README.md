@@ -44,6 +44,24 @@ uv pip install unsloth
 Run `uv run iris-server` to start a server instance.
 
 
+## VLM Training & Evaluation
+
+For training and evaluation on RCP, see [docs/rcp-guide.md](docs/rcp-guide.md).
+
+**Quick CLI reference:**
+
+```bash
+# Training
+python -m iris.cli.finetune.train --config <path> --wandb-run-name <name>
+
+# Evaluation
+python -m iris.cli.finetune.evaluate --checkpoint_dir <path> --val_path <path>
+
+# Inference on video
+python -m iris.cli.finetune.inference --video <path> --output-dir <path> --checkpoint <path>
+```
+
+
 ## Job System
 
 IRIS uses a flexible job system for managing inference tasks. Jobs can be started via API and triggered in multiple ways.

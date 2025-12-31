@@ -1,0 +1,60 @@
+model:
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"
+  max_seq_length: 4096
+  dtype: "bfloat16"
+  attn_implementation: "flash_attention_2"
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
+
+data:
+  train_path: "/scratch/iris/finebio_processed/splits/train_without_vis_analysis/finebio_train.jsonl"
+  val_path: "/scratch/iris/finebio_processed/splits/train_without_vis_analysis/finebio_val.jsonl"
+  max_frames: 4
+  # 640x640 = 409,600. Setting slightly higher to avoid accidental downsampling.
+  max_pixels: 600000      # 700x700
+
+training:
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  # Effective Batch Size = 16 * 1 * num_gpus = 16.
+  eval_batch_size: 16
+  
+  # Optimization
+  optim: "adamw_torch"
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  
+  # Epoch-based training
+  num_train_epochs: 1
+
+  # A100 Specifics
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  label_smoothing_factor: 0.0
+  
+  # Checkpointing
+  output_dir: "/scratch/iris/checkpoints/qwen3b_finebio_run8_wo_vis"
+
+  # Evaluation
+  eval_strategy: "steps"
+  eval_steps: 100  # Evaluate every 100 steps
+  
+  # Saving
+  save_strategy: "steps"
+  save_steps: 100
+  # save_total_limit: 3     # Keep only the last 3 checkpoints
+  
+  # Best model selection
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"  # Use "eval_loss" or just "loss"
+  greater_is_better: false  # For loss, lower is better
+  
+  # Logging
+  logging_steps: 10

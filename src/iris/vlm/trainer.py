@@ -103,8 +103,13 @@ class VLMTrainer:
             if max_pixels:
                 logger.info(f"Resolution limit: {max_pixels} pixels")
 
-            logger.info(f"Loading model: {model_name}")
-            
+            # Get attn_implementation from config (default to "sdpa" for PyTorch 2.0+)
+            attn_implementation = self.cfg["model"].get("attn_implementation", "sdpa")
+
+            logger.info(
+                f"Loading model: {model_name} with attention: {attn_implementation}"
+            )
+
             dtype_str = self.cfg["model"].get("dtype", "float16")
             torch_dtype = torch.bfloat16 if dtype_str == "bfloat16" else torch.float16
             model = AutoModelForImageTextToText.from_pretrained(
@@ -112,6 +117,7 @@ class VLMTrainer:
                 # quantization_config=bnb_config,
                 torch_dtype=torch_dtype,
                 device_map="auto",
+                attn_implementation=attn_implementation,
             )
             processor = AutoProcessor.from_pretrained(
                 model_name, min_pixels=256 * 28 * 28, max_pixels=max_pixels
@@ -119,7 +125,7 @@ class VLMTrainer:
             logger.info(
                 f"Model loaded. Memory: {torch.cuda.memory_allocated() / 1e9:.2f}GB"
             )
-            
+
             # Enable model gradient checkpointing
             model.gradient_checkpointing_enable()
 
@@ -169,12 +175,18 @@ class VLMTrainer:
 
             val_dataset = None
             if data_cfg.get("val_path"):
-                val_dataset = cast(
+                full_val = cast(
                     Dataset,
                     load_dataset(
                         "json", data_files=data_cfg["val_path"], split="train"
                     ),
                 )
+                val_limit = 200
+                if len(full_val) > val_limit:
+                    val_dataset = full_val.shuffle(seed=42).select(range(val_limit))
+                    logger.info(f"Subsampled Val from {len(full_val)} to {val_limit} for training speed.")
+                else:
+                    val_dataset = full_val
 
             logger.info(f"Train samples: {len(train_dataset)}")
             if val_dataset:
@@ -195,37 +207,56 @@ class VLMTrainer:
                 max_pixels=max_pixels,
             )
 
-            # Training args
+            # Training args - Build dynamically to support both epochs and steps
             logger.info("Configuring training arguments")
-            use_fp16 = self.cfg["training"].get("fp16", False)
-            use_bf16 = self.cfg["training"].get("bf16", False)
 
-            training_args = TrainingArguments(
-                output_dir=train_cfg["output_dir"],
-                max_steps=train_cfg["max_steps"],
-                per_device_train_batch_size=train_cfg["batch_size"],
-                gradient_accumulation_steps=train_cfg["gradient_accumulation_steps"],
-                learning_rate=train_cfg["learning_rate"],
-                warmup_steps=train_cfg["warmup_steps"],
-                lr_scheduler_type="cosine",
-                optim=train_cfg.get("optim", "adamw_torch"),  # Regular AdamW for LoRA
-                weight_decay=train_cfg.get("weight_decay", 0.01),
-                fp16=use_fp16,  # Should be True for V100
-                bf16=use_bf16,  # Should be False for V100
-                gradient_checkpointing=False,
-                logging_dir=logging_dir,
-                logging_steps=train_cfg["logging_steps"],
-                save_steps=train_cfg["save_steps"],
-                save_strategy="steps",
-                save_total_limit=3,
-                eval_strategy="steps" if val_dataset else "no",
-                eval_steps=train_cfg.get("eval_steps", 10), # Default to 10 if missing
-                per_device_eval_batch_size=train_cfg.get("batch_size", 1),
-                remove_unused_columns=False,
-                dataloader_pin_memory=True,
-                seed=42,
-                report_to=["tensorboard", "wandb"],
-            )
+            # Base arguments that always exist
+            args_dict = {
+                "output_dir": train_cfg["output_dir"],
+                "per_device_train_batch_size": train_cfg["batch_size"],
+                "gradient_accumulation_steps": train_cfg["gradient_accumulation_steps"],
+                "learning_rate": train_cfg["learning_rate"],
+                "warmup_steps": train_cfg.get("warmup_steps", 0),
+                "warmup_ratio": train_cfg.get("warmup_ratio", 0.0),
+                "lr_scheduler_type": "cosine",
+                "optim": train_cfg.get("optim", "adamw_torch"),
+                "weight_decay": train_cfg.get("weight_decay", 0.01),
+                "fp16": train_cfg.get("fp16", False),
+                "bf16": train_cfg.get("bf16", False),
+                "gradient_checkpointing": train_cfg.get("gradient_checkpointing", True),
+                "label_smoothing_factor": train_cfg.get("label_smoothing_factor", 0.1),
+                "logging_dir": logging_dir,
+                "logging_steps": train_cfg.get("logging_steps", 10),
+                # Evaluation strategy
+                "eval_strategy": "steps" if val_dataset else "no",
+                "eval_steps": train_cfg.get("eval_steps", 100),
+                "per_device_eval_batch_size": train_cfg.get(
+                    "eval_batch_size", train_cfg.get("batch_size", 1)
+                ),
+                # Save strategy
+                "save_strategy": train_cfg.get("save_strategy", "steps"),
+                "save_steps": train_cfg.get("save_steps", 100),
+                "save_total_limit": train_cfg.get("save_total_limit", 3),
+                # Best model loading - NEW
+                "load_best_model_at_end": train_cfg.get("load_best_model_at_end", True),
+                "metric_for_best_model": train_cfg.get("metric_for_best_model", "loss"),
+                "greater_is_better": train_cfg.get("greater_is_better", False),
+                # Other settings
+                "remove_unused_columns": False,
+                "dataloader_pin_memory": True,
+                "seed": 42,
+                "report_to": ["wandb"],
+            }
+
+            # Logic: If 'num_train_epochs' is set, use it. Otherwise use 'max_steps'.
+            if "num_train_epochs" in train_cfg:
+                args_dict["num_train_epochs"] = train_cfg["num_train_epochs"]
+                logger.info(f"Training for {train_cfg['num_train_epochs']} epochs")
+            else:
+                args_dict["max_steps"] = train_cfg.get("max_steps", 100)
+                logger.info(f"Training for {args_dict['max_steps']} steps")
+
+            training_args = TrainingArguments(**args_dict)
 
             # Train
             logger.info("Initializing HuggingFace Trainer")

@@ -18,11 +18,11 @@ dependencies = [
     "websockets>=15.0.1",
     "fastapi>=0.121.1",
     "uvicorn>=0.38.0",
-    "opencv-python>=4.11.0.86 ; sys_platform == 'darwin'",         # Mac: full version with GUI
-    "opencv-python-headless>=4.11.0.86 ; sys_platform == 'linux'", # Pi/V100: headless
+    "opencv-python-headless>=4.11.0.86",
     "threaded-videocapture>=1.0.1",
     "ffmpeg-python>=0.2.0",
     "google-genai>=1.53.0",
+    "scikit-learn>=1.8.0",
 ]
 
 [dependency-groups]
@@ -45,6 +45,7 @@ server = [
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
     "torchcodec>=0.7.0 ; sys_platform == 'darwin'",
+    "flash-attn>=2.7.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "scikit-learn>=1.8.0",
     # Logging
     "tensorboard>=2.14.0",
@@ -58,6 +59,7 @@ iris-server = "iris.server.app:main"
 iris-test = "iris.cli.local_test:cli"
 iris = "iris.cli.local_test:cli"
 iris-benchmark = "iris.cli.benchmark:run"
+iris-vis = "iris.dataset.visualize_sampling:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -76,8 +78,27 @@ name = "pytorch-cu121"
 url = "https://download.pytorch.org/whl/cu121"
 explicit = true
 
+# Define Flash Attention pre-built wheels index
+# [[tool.uv.index]]
+# name = "flash-attn-wheels"
+# url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/"
+# explicit = true
+
 # Point PyTorch packages to CUDA 12.1 index on Linux
+# Point flash-attn to pre-built wheels to avoid building from source
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
 torchvision = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
 torchaudio = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
+# flash-attn = [
+#     { index = "flash-attn-wheels", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+# ]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = [
+    { requirement = "torch", match-runtime = true },
+    "ninja",
+    "packaging",
+    "setuptools",
+    "wheel",
+]

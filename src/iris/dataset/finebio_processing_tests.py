@@ -103,4 +103,4 @@ final_df = pd.concat(all_dfs_collected, ignore_index=True)
 output_file = PATHS["output"] / "output.csv"
 final_df.to_csv(output_file, index=False)
 
-main()
+# main()
