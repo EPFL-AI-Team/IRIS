@@ -5,6 +5,7 @@ description = "IRIS - Video understanding ML system"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "torch>=2.5.1",
     "jupyter>=1.1.1",
     "numpy>=2.3.3",
     "pandas>=2.3.3",
@@ -34,13 +35,14 @@ server = [
     "torch>=2.3.0,<2.6.0",
     "torchvision>=0.20.1,<0.21.0",
     "torchaudio>=2.5.1,<2.6.0",
-    "transformers>=4.49.0,<4.54.0", # Qwen2.5-VL support, avoid 4.54+ regression
-    "peft>=0.14.0",                 # VLM support with bitsandbytes
-    "trl<=0.26.1",                  # Native VLM support in SFTTrainer
-    "bitsandbytes>=0.46.0",         # 4-bit quantization
-    "accelerate>=0.21.0",           # Distributed training
-    "qwen-vl-utils>=0.0.8",         # Qwen utilities
-    "datasets>=2.19.0",             # Data loading
+    "transformers>=4.49.0,<4.54.0",                   # Qwen2.5-VL support, avoid 4.54+ regression
+    "peft>=0.14.0",                                   # VLM support with bitsandbytes
+    "trl<=0.26.1",                                    # Native VLM support in SFTTrainer
+    "bitsandbytes>=0.46.0 ; sys_platform == 'linux'", # 4-bit quantization
+    "accelerate>=0.21.0",                             # Distributed training
+    "qwen-vl-utils>=0.0.8",                           # Qwen utilities
+    "datasets>=2.19.0",                               # Data loading
+
     "num2words>=0.5.14",
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
