@@ -13,10 +13,14 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:8006',
+      '/api': {
+        target: 'http://localhost:8006',
+        changeOrigin: true,
+      },
       '/ws': {
         target: 'ws://localhost:8006',
-        ws: true
+        ws: true,
+        changeOrigin: true,
       }
     }
   }
