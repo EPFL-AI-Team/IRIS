@@ -22,6 +22,11 @@ export default defineConfig({
         target: 'ws://localhost:8006',
         ws: true,
         changeOrigin: true,
+      },
+      '/ws/stream': {
+        target: 'ws://localhost:8005',
+        ws: true,
+        changeOrigin: true,
       }
     }
   },

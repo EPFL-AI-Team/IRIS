@@ -125,7 +125,7 @@ export function useBrowserStream() {
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(
-      `${protocol}//${window.location.host}/ws/browser-stream`
+      `${protocol}//${window.location.host}/ws/stream`
     );
     wsRef.current = ws;
 
