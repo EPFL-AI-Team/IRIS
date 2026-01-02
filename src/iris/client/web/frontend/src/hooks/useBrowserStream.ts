@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useAppStore } from "../store/useAppStore";
 import type { FrameData, WebSocketMessage, ResultItem, SessionAckMessage, SessionMetricsMessage } from "../types";
+import type { AnalysisLog } from "../types/analysis";
 
 const RECONNECT_DELAY = 2000;
 
@@ -19,6 +20,7 @@ export function useBrowserStream() {
     (state) => state.setBrowserStreamConnection
   );
   const addLog = useAppStore((state) => state.addLog);
+  const addAnalysisLog = useAppStore((state) => state.addAnalysisLog);
   const addResult = useAppStore((state) => state.addResult);
   const updateResult = useAppStore((state) => state.updateResult);
   const setSessionState = useAppStore((state) => state.setSessionState);
@@ -71,6 +73,18 @@ export function useBrowserStream() {
         }
 
         case "log": {
+          // Add to system logs
+          if (data.message) {
+             // Dispatch to AnalysisLog store for LogPanel
+             const logEntry: AnalysisLog = {
+                timestamp: data.timestamp || Date.now() / 1000,
+                message: data.message,
+                job_id: data.job_id,
+                type: data.message.includes("Error") ? "error" : "info"
+             };
+             addAnalysisLog(logEntry);
+          }
+
           if (data.message?.includes("Starting inference:")) {
             updateResult(data.job_id, {
               status: "processing",
@@ -96,7 +110,7 @@ export function useBrowserStream() {
           break;
       }
     },
-    [addLog, addResult, updateResult, setSessionState, setSessionMetrics]
+    [addLog, addAnalysisLog, addResult, updateResult, setSessionState, setSessionMetrics]
   );
 
   const connect = useCallback(() => {
