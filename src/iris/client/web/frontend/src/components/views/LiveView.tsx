@@ -14,6 +14,7 @@ import { LogViewer } from "../LogViewer";
 import { ControlButtons } from "../ControlButtons";
 import { CameraSelector } from "../CameraSelector";
 import { StatusBadge } from "../StatusBadge";
+import { SessionMetrics } from "../SessionMetrics";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 
@@ -84,6 +85,13 @@ export function LiveView() {
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Session Metrics - only shown when session is active */}
+      <Card>
+        <CardContent className="py-2">
+          <SessionMetrics />
         </CardContent>
       </Card>
 

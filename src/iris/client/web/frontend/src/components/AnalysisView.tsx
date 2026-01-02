@@ -5,6 +5,7 @@ import { AnalysisControls } from "./AnalysisControls";
 import { VideoPlayer } from "./VideoPlayer";
 import { LogPanel } from "./LogPanel";
 import { TimelineVisualization } from "./TimelineVisualization";
+import { SessionMetrics } from "./SessionMetrics";
 
 /**
  * AnalysisView component for the Analysis & Benchmark tab.
@@ -50,6 +51,13 @@ export function AnalysisView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Session Metrics */}
+      <Card>
+        <CardContent className="py-2">
+          <SessionMetrics />
+        </CardContent>
+      </Card>
 
       {/* Video Player and Log Panel Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

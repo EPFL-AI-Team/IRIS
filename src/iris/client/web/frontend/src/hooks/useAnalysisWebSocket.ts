@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
-import type { AnalysisResult, AnalysisLog } from "../types";
+import type { AnalysisResult, AnalysisLog, SessionAckMessage, SessionMetricsMessage } from "../types";
 
 /**
  * Generate unique ID for analysis logs.
@@ -23,6 +23,9 @@ export function useAnalysisWebSocket() {
   const addLog = useAppStore((state) => state.addLog);
   const addAnalysisLog = useAppStore((state) => state.addAnalysisLog);
   const setAnalysisJobId = useAppStore((state) => state.setAnalysisJobId);
+  const setSessionState = useAppStore((state) => state.setSessionState);
+  const setSessionMetrics = useAppStore((state) => state.setSessionMetrics);
+  const resetSessionState = useAppStore((state) => state.resetSessionState);
 
   const connect = useCallback(() => {
     // Clear any pending reconnection
@@ -54,6 +57,36 @@ export function useAnalysisWebSocket() {
         const data = JSON.parse(event.data);
 
         switch (data.type) {
+          case "session_ack": {
+            // Session established with inference server
+            const ack = data as SessionAckMessage;
+            setSessionState({
+              sessionId: ack.session_id,
+              configured: true,
+              mode: "analysis",
+              config: {
+                frames_per_segment: ack.config.frames_per_segment,
+                overlap_frames: ack.config.overlap_frames,
+              },
+            });
+            addLog(`Session established: ${ack.session_id}`, "INFO");
+            break;
+          }
+
+          case "session_metrics": {
+            // Live metrics update from inference server
+            const metrics = data as SessionMetricsMessage;
+            setSessionMetrics({
+              elapsedSeconds: metrics.elapsed_seconds,
+              segmentsProcessed: metrics.segments_processed,
+              segmentsTotal: metrics.segments_total,
+              queueDepth: metrics.queue_depth,
+              processingRate: metrics.processing_rate,
+              framesReceived: metrics.frames_received,
+            });
+            break;
+          }
+
           case "result": {
             // Inference result received
             addAnalysisResult(data as AnalysisResult);
@@ -219,7 +252,8 @@ export function useAnalysisWebSocket() {
 
     setAnalysisMode("idle");
     setAnalysisProgress(null);
-  }, [setAnalysisMode, setAnalysisProgress, addLog]);
+    resetSessionState();
+  }, [setAnalysisMode, setAnalysisProgress, addLog, resetSessionState]);
 
   // Cleanup on unmount
   useEffect(() => {

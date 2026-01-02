@@ -16,6 +16,8 @@ import type {
   AnalysisMode,
   SegmentConfig,
   AnalysisLog,
+  SessionState,
+  SessionMetrics,
 } from "../types";
 
 const MAX_LOG_ENTRIES = 100;
@@ -143,6 +145,14 @@ interface AppState {
   // Auto-generate report on completion
   autoGenerateReport: boolean;
   setAutoGenerateReport: (value: boolean) => void;
+
+  // Session state (shared between Live View and Analysis View)
+  sessionState: SessionState;
+  setSessionState: (state: Partial<SessionState>) => void;
+  resetSessionState: () => void;
+
+  sessionMetrics: SessionMetrics | null;
+  setSessionMetrics: (metrics: SessionMetrics | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -329,4 +339,30 @@ export const useAppStore = create<AppState>((set) => ({
   // Auto-generate report
   autoGenerateReport: false,
   setAutoGenerateReport: (value) => set({ autoGenerateReport: value }),
+
+  // Session state
+  sessionState: {
+    sessionId: null,
+    configured: false,
+    mode: null,
+    config: null,
+  },
+  setSessionState: (newState) =>
+    set((state) => ({
+      sessionState: { ...state.sessionState, ...newState },
+    })),
+  resetSessionState: () =>
+    set({
+      sessionState: {
+        sessionId: null,
+        configured: false,
+        mode: null,
+        config: null,
+      },
+      sessionMetrics: null,
+    }),
+
+  // Session metrics
+  sessionMetrics: null,
+  setSessionMetrics: (metrics) => set({ sessionMetrics: metrics }),
 }));

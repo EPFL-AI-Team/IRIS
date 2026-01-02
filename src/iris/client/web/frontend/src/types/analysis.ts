@@ -77,3 +77,67 @@ export interface AnalysisProgress {
 }
 
 export type AnalysisMode = "idle" | "running" | "paused" | "complete" | "error";
+
+/**
+ * Session configuration sent to inference server
+ */
+export interface SessionConfigMessage {
+  type: "session_config";
+  config: {
+    frames_per_segment: number;
+    overlap_frames: number;
+  };
+  mode: "live" | "analysis";
+  total_frames: number | null;
+}
+
+/**
+ * Session acknowledgment from inference server
+ */
+export interface SessionAckMessage {
+  type: "session_ack";
+  session_id: string;
+  config: {
+    frames_per_segment: number;
+    overlap_frames: number;
+  };
+}
+
+/**
+ * Live session metrics broadcast by inference server (every 500ms)
+ */
+export interface SessionMetricsMessage {
+  type: "session_metrics";
+  session_id: string;
+  elapsed_seconds: number;
+  segments_processed: number;
+  segments_total: number | null; // null for live mode
+  queue_depth: number;
+  processing_rate: number; // segments per second
+  frames_received: number;
+}
+
+/**
+ * Current session state for display
+ */
+export interface SessionState {
+  sessionId: string | null;
+  configured: boolean;
+  mode: "live" | "analysis" | null;
+  config: {
+    frames_per_segment: number;
+    overlap_frames: number;
+  } | null;
+}
+
+/**
+ * Session metrics for display
+ */
+export interface SessionMetrics {
+  elapsedSeconds: number;
+  segmentsProcessed: number;
+  segmentsTotal: number | null;
+  queueDepth: number;
+  processingRate: number;
+  framesReceived: number;
+}
