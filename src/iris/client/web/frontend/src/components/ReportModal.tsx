@@ -1,4 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Dialog,
   DialogContent,
@@ -240,7 +242,7 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
 
         <div
           ref={contentRef}
-          className="flex-1 min-h-[300px] max-h-[60vh] overflow-auto bg-muted/50 rounded-md p-4 font-mono text-sm whitespace-pre-wrap"
+          className="flex-1 min-h-[300px] max-h-[60vh] overflow-auto bg-muted/50 rounded-md p-4"
         >
           {isGenerating && !reportContent && (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -248,7 +250,14 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
               Generating report...
             </div>
           )}
-          {reportContent || (
+          {reportContent ? (
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <Markdown remarkPlugins={[remarkGfm]}>{reportContent}</Markdown>
+              {isGenerating && (
+                <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />
+              )}
+            </div>
+          ) : (
             <span className="text-muted-foreground">
               Click "Generate with AI" for an LLM-powered analysis or "Basic Stats" for a quick summary.
             </span>

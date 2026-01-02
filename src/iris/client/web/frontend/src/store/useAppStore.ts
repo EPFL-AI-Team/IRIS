@@ -7,7 +7,6 @@ import type {
   LogLevel,
   ResultItem,
   ServerConfig,
-  SSHTunnelConfig,
   VideoInfo,
   AnnotationInfo,
   GroundTruthAnnotation,
@@ -56,9 +55,6 @@ interface AppState {
   // Server configuration
   serverConfig: ServerConfig;
   setServerConfig: (config: ServerConfig) => void;
-
-  sshTunnelConfig: SSHTunnelConfig;
-  setSSHTunnelConfig: (config: SSHTunnelConfig) => void;
 
   // Client (browser) capture configuration (from backend config.yaml)
   clientVideoConfig: ClientVideoConfig;
@@ -191,11 +187,6 @@ export const useAppStore = create<AppState>((set) => ({
     endpoint: "/ws/stream",
   },
   setServerConfig: (config) => set({ serverConfig: config }),
-
-  sshTunnelConfig: {
-    remote_host: "",
-  },
-  setSSHTunnelConfig: (config) => set({ sshTunnelConfig: config }),
 
   clientVideoConfig: {
     width: 640,

@@ -24,7 +24,7 @@ describe('useBrowserStream', () => {
       }
     }
 
-    global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    vi.stubGlobal('WebSocket', MockWebSocket);
   });
 
   afterEach(() => {

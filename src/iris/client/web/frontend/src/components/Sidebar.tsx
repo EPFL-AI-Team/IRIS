@@ -6,22 +6,19 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "../store/useAppStore";
 import { StatusBadge } from "./StatusBadge";
+import { SegmentSettings } from "./SegmentSettings";
 
 /**
- * Sidebar component with server configuration and status display.
+ * Sidebar component with server configuration, segment settings, and status display.
  */
 export function Sidebar() {
   const serverConfig = useAppStore((state) => state.serverConfig);
-  const sshTunnelConfig = useAppStore((state) => state.sshTunnelConfig);
   const setServerConfig = useAppStore((state) => state.setServerConfig);
-  const setSSHTunnelConfig = useAppStore((state) => state.setSSHTunnelConfig);
+  const isStreaming = useAppStore((state) => state.isStreaming);
 
   const [host, setHost] = useState(serverConfig.host);
   const [port, setPort] = useState(serverConfig.port);
   const [endpoint, setEndpoint] = useState(serverConfig.endpoint);
-  const [tunnelHostname, setTunnelHostname] = useState(
-    sshTunnelConfig.remote_host
-  );
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -34,19 +31,11 @@ export function Sidebar() {
         body: JSON.stringify({ host, port, endpoint }),
       });
 
-      // Update tunnel hostname
-      const tunnelResponse = await fetch("/api/tunnel/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remote_host: tunnelHostname }),
-      });
-
-      if (configResponse.ok && tunnelResponse.ok) {
+      if (configResponse.ok) {
         setServerConfig({ host, port, endpoint });
-        setSSHTunnelConfig({ remote_host: tunnelHostname });
         toast.success("Configuration updated successfully");
       } else {
-        toast.error("Configuration update partially failed");
+        toast.error("Configuration update failed");
       }
     } catch (error) {
       toast.error("Configuration update failed");
@@ -104,26 +93,20 @@ export function Sidebar() {
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
-            <div className="space-y-1.5">
-              <label htmlFor="tunnel-hostname" className="text-sm font-medium">
-                IZAR Hostname (SSH Tunnel)
-              </label>
-              <input
-                type="text"
-                id="tunnel-hostname"
-                value={tunnelHostname}
-                onChange={(e) => setTunnelHostname(e.target.value)}
-                placeholder="i27 or icn042.iccluster"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave empty if not using IZAR
-              </p>
-            </div>
             <Button type="submit" className="w-full">
               Update Config
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Segment Configuration (T, s, k) */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Segment Configuration</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SegmentSettings disabled={isStreaming} />
         </CardContent>
       </Card>
 

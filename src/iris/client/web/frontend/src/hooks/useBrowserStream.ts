@@ -26,6 +26,7 @@ export function useBrowserStream() {
   const setSessionState = useAppStore((state) => state.setSessionState);
   const setSessionMetrics = useAppStore((state) => state.setSessionMetrics);
   const resetSessionState = useAppStore((state) => state.resetSessionState);
+  const sessionId = useAppStore((state) => state.sessionState.sessionId);
 
   const handleMessage = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,12 +78,13 @@ export function useBrowserStream() {
           if (data.message) {
              // Dispatch to AnalysisLog store for LogPanel
              const logEntry: AnalysisLog = {
-                timestamp: data.timestamp || Date.now() / 1000,
-                message: data.message,
-                job_id: data.job_id,
-                type: data.message.includes("Error") ? "error" : "info"
-             };
-             addAnalysisLog(logEntry);
+              id: `log-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              timestamp: (data.timestamp ? data.timestamp * 1000 : Date.now()),
+              video_time_ms: null,
+              message: data.job_id ? `[${data.job_id}] ${data.message}` : data.message,
+              type: data.message.includes("Error") ? "error" : "system"
+            };
+            addAnalysisLog(logEntry);
           }
 
           if (data.message?.includes("Starting inference:")) {
@@ -120,38 +122,25 @@ export function useBrowserStream() {
       wsRef.current = null;
     }
 
+    if (!sessionId) {
+      addLog("Cannot connect: No session ID", "ERROR");
+      return;
+    }
+
     setBrowserStreamConnection("connecting");
-    addLog("Connecting to browser stream WebSocket...", "INFO");
+    addLog(`Connecting to browser stream WebSocket (Session: ${sessionId})...`, "INFO");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(
-      `${protocol}//${window.location.host}/ws/browser-stream`
+      `${protocol}//${window.location.host}/ws/browser-stream?session_id=${sessionId}`
     );
     wsRef.current = ws;
 
     ws.onopen = () => {
       isConnectedRef.current = true;
       setBrowserStreamConnection("connected");
-
-      // Wait for connection to be fully established before sending
-      setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          // Get segment config from store and send FIRST before any frames
-          const { segmentConfig } = useAppStore.getState();
-          const configMessage = {
-            type: "segment_config",
-            frames_per_segment: segmentConfig.framesPerSegment,
-            overlap_frames: segmentConfig.overlapFrames,
-          };
-          ws.send(JSON.stringify(configMessage));
-          addLog(
-            `Sent segment config: frames=${segmentConfig.framesPerSegment}, overlap=${segmentConfig.overlapFrames}`,
-            "INFO"
-          );
-        }
-      }, 100);
-
       frameCountRef.current = 0;
+      addLog("Connected to stream", "INFO");
     };
 
     ws.onmessage = (event) => {
@@ -178,7 +167,7 @@ export function useBrowserStream() {
         connect();
       }, RECONNECT_DELAY);
     };
-  }, [handleMessage, setBrowserStreamConnection, addLog]);
+  }, [handleMessage, setBrowserStreamConnection, addLog, sessionId]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

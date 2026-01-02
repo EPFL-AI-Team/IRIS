@@ -9,6 +9,10 @@ import {
 } from "@/components/ui/tooltip";
 import { Info } from "lucide-react";
 
+interface SegmentSettingsProps {
+  disabled?: boolean;
+}
+
 /**
  * Component for configuring video analysis segment parameters.
  * T = segment time (seconds)
@@ -16,12 +20,13 @@ import { Info } from "lucide-react";
  * overlap = frames to overlap between segments
  * FPS = s / T (derived, read-only)
  */
-export function SegmentSettings() {
+export function SegmentSettings({ disabled = false }: SegmentSettingsProps) {
   const segmentConfig = useAppStore((state) => state.segmentConfig);
   const setSegmentConfig = useAppStore((state) => state.setSegmentConfig);
   const analysisMode = useAppStore((state) => state.analysisMode);
 
   const isRunning = analysisMode === "running";
+  const isDisabled = isRunning || disabled;
 
   // Derived FPS
   const derivedFps =
@@ -88,7 +93,7 @@ export function SegmentSettings() {
               min={0.1}
               max={10}
               step={0.1}
-              disabled={isRunning}
+              disabled={isDisabled}
             />
             <span className="text-sm text-muted-foreground">s</span>
           </div>
@@ -123,7 +128,7 @@ export function SegmentSettings() {
             min={1}
             max={32}
             step={1}
-            disabled={isRunning}
+            disabled={isDisabled}
           />
         </div>
 
@@ -154,7 +159,7 @@ export function SegmentSettings() {
             min={0}
             max={segmentConfig.framesPerSegment - 1}
             step={1}
-            disabled={isRunning}
+            disabled={isDisabled}
           />
         </div>
 

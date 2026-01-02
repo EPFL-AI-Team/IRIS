@@ -30,7 +30,6 @@ export function useResultsWebSocket() {
     (state) => state.setStreamingServerStatus
   );
   const setServerConfig = useAppStore((state) => state.setServerConfig);
-  const setSSHTunnelConfig = useAppStore((state) => state.setSSHTunnelConfig);
   const setClientVideoConfig = useAppStore((state) => state.setClientVideoConfig);
   const resultsReconnectToken = useAppStore((state) => state.resultsReconnectToken);
 
@@ -54,9 +53,6 @@ export function useResultsWebSocket() {
           }
           if (data.config?.video) {
             setClientVideoConfig(data.config.video);
-          }
-          if (data.config?.ssh_tunnel) {
-            setSSHTunnelConfig(data.config.ssh_tunnel);
           }
           break;
 

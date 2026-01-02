@@ -15,10 +15,6 @@ export interface ServerConfig {
   endpoint: string;
 }
 
-export interface SSHTunnelConfig {
-  remote_host: string;
-}
-
 export interface ClientVideoConfig {
   width: number;
   height: number;
@@ -91,7 +87,6 @@ export interface StatusUpdateMessage {
   config: {
     server: ServerConfig;
     video: ClientVideoConfig;
-    ssh_tunnel: SSHTunnelConfig;
   };
   timestamp: number;
 }
