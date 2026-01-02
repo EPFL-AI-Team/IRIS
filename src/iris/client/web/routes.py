@@ -375,6 +375,156 @@ async def clear_results_history() -> dict[str, str]:
     return {"status": "ok", "message": "Results history cleared"}
 
 
+@ws_router.websocket("/browser-stream")
+async def browser_stream_websocket(websocket: WebSocket) -> None:
+    """WebSocket endpoint for browser camera frame streaming.
+
+    Acts as a high-performance proxy between Browser and Inference Server.
+    Required because the Inference Server is often accessed via SSH tunnel
+    established by this backend.
+
+    Protocol:
+        1. Handshake: Browser sends segment_config -> Proxy converts to session_config -> Inference.
+        2. Streaming: Proxy blindly forwards raw messages (frames/results) without parsing.
+    """
+    state = get_app_state()
+    await websocket.accept()
+
+    # Get inference server URL from config
+    inference_ws_url = state.config.server.ws_url
+    logger.info("Browser stream connecting to inference server at %s", inference_ws_url)
+
+    # -------------------------------------------------------------------------
+    # Phase 1: Handshake (Config Negotiation)
+    # -------------------------------------------------------------------------
+    session_config = {}
+    try:
+        # 1. Wait for segment_config from frontend
+        initial_data = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        initial_msg = json.loads(initial_data)
+
+        if initial_msg.get("type") != "segment_config":
+            await websocket.send_json({
+                "type": "error",
+                "message": "Expected segment_config as first message",
+            })
+            await websocket.close()
+            return
+
+        # 2. Convert to session_config for inference server
+        session_config = {
+            "frames_per_segment": initial_msg.get(
+                "frames_per_segment", state.config.video.capture_fps
+            ),
+            "overlap_frames": initial_msg.get(
+                "overlap_frames", max(1, state.config.video.capture_fps // 2)
+            ),
+        }
+
+    except TimeoutError:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Timeout waiting for segment_config",
+        })
+        await websocket.close()
+        return
+
+    # -------------------------------------------------------------------------
+    # Phase 2: Connect & Stream (Optimized Pass-Through)
+    # -------------------------------------------------------------------------
+    try:
+        async with websockets.connect(
+            inference_ws_url,
+            ping_interval=20,
+            ping_timeout=60,
+            close_timeout=30.0,
+            max_queue=None,
+        ) as server_ws:
+            
+            # Send converted config to inference server
+            config_message = {
+                "type": "session_config",
+                "config": session_config,
+                "mode": "live",
+                "total_frames": None,
+            }
+            await server_ws.send(json.dumps(config_message))
+            logger.info("Proxy established for session configuration: %s", session_config)
+
+            # High-performance bidirectional forwarding
+            # We avoid json.loads/dumps for frame data to minimize CPU/latency
+
+            async def forward_to_inference():
+                """Browser -> Inference Server (Frames)"""
+                try:
+                    while True:
+                        # Receive raw message (text or bytes)
+                        message = await websocket.receive()
+                        
+                        if "text" in message:
+                            await server_ws.send(message["text"])
+                        elif "bytes" in message:
+                            await server_ws.send(message["bytes"])
+                        else:
+                            # Handle disconnect or other event types
+                            if message.get("type") == "websocket.disconnect":
+                                raise WebSocketDisconnect()
+                except WebSocketDisconnect:
+                    logger.info("Browser disconnected")
+                    raise
+                except Exception as e:
+                    logger.error("Error forwarding to inference: %s", e)
+                    raise
+
+            async def receive_from_inference():
+                """Inference Server -> Browser (Results/Logs)"""
+                try:
+                    while True:
+                        response = await server_ws.recv()
+                        
+                        # We do need to snoop ONE type of message: "result"
+                        # to store it in history. But we can do this optimistically.
+                        # Most messages are small, so parsing them is okay.
+                        # Frames (upstream) are heavy, Results (downstream) are light.
+                        
+                        try:
+                            data = json.loads(response)
+                            msg_type = data.get("type")
+
+                            # Store results/logs in history
+                            if msg_type == "result":
+                                state.results_history.append(data)
+                                if len(state.results_history) > state.max_results_history:
+                                    state.results_history.pop(0)
+                            
+                            # Forward raw response to browser
+                            await websocket.send_text(response)
+                            
+                        except json.JSONDecodeError:
+                            # If not JSON, just forward raw
+                            await websocket.send_text(response)
+
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("Inference server closed connection")
+                    raise
+                except Exception as e:
+                    logger.error("Error receiving from inference: %s", e)
+                    raise
+
+            # Run loops
+            await asyncio.gather(forward_to_inference(), receive_from_inference())
+
+    except (ConnectionRefusedError, OSError) as e:
+        logger.error("Failed to connect to inference server: %s", e)
+        await websocket.send_json({"type": "error", "message": "Inference server unavailable"})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error("Proxy error: %s", e)
+    finally:
+        logger.info("Proxy connection closed")
+
+
 # ============================================================================
 # Analysis & Benchmark Endpoints
 # ============================================================================
