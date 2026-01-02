@@ -10,15 +10,46 @@ import "./index.css";
 
 function App() {
   const addLog = useAppStore((state) => state.addLog);
+  const setServerConfig = useAppStore((state) => state.setServerConfig);
+  const setSegmentConfig = useAppStore((state) => state.setSegmentConfig);
 
   // Connect to results WebSocket (handles status updates and results)
   useResultsWebSocket();
 
-  // Log initialization on mount
+  // Load config defaults from backend on mount
   useEffect(() => {
+    const loadDefaults = async () => {
+      try {
+        const response = await fetch("/api/config/defaults");
+        if (response.ok) {
+          const defaults = await response.json();
+
+          // Set server config
+          if (defaults.server) {
+            setServerConfig(defaults.server);
+          }
+
+          // Set segment config (T, s, k)
+          if (defaults.segment) {
+            setSegmentConfig({
+              segmentTime: defaults.segment.segment_time,
+              framesPerSegment: defaults.segment.frames_per_segment,
+              overlapFrames: defaults.segment.overlap_frames,
+            });
+          }
+
+          addLog("Loaded configuration from server", "INFO");
+        }
+      } catch (error) {
+        console.error("Failed to load config defaults:", error);
+        // Continue with hardcoded defaults
+      }
+    };
+
+    loadDefaults();
     addLog("IRIS Client initializing...", "INFO");
     toast.info("IRIS Client initialized");
-  }, [addLog]);
+  }, [addLog, setServerConfig, setSegmentConfig]);
 
   return (
     <div className="h-screen w-full flex flex-col lg:flex-row bg-background text-foreground">

@@ -92,6 +92,21 @@ async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     return {"status": "ok", "config": state.config.server.model_dump()}
 
 
+@api_router.get("/config/defaults")
+async def get_config_defaults() -> dict[str, Any]:
+    """Get default configuration values from config.yaml.
+
+    Returns server config, video config, and segment config defaults.
+    Used by frontend to initialize settings on load.
+    """
+    state = get_app_state()
+    return {
+        "server": state.config.server.model_dump(),
+        "video": state.config.video.model_dump(),
+        "segment": state.config.segment.model_dump(),
+    }
+
+
 @api_router.post("/start")
 async def start_streaming(request: StartRequest | None = None) -> dict[str, Any]:
     """Start camera and streaming."""
