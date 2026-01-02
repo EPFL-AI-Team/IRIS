@@ -56,7 +56,7 @@ export function VideoPlayer() {
     <div className="space-y-2">
       <video
         ref={videoRef}
-        src={`/static/videos/${selectedVideo}`}
+        src={`/api/videos/${selectedVideo}`}
         controls
         className="w-full aspect-video bg-black rounded-lg"
       />
