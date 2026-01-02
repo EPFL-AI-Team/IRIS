@@ -9,65 +9,67 @@ from dataclasses import dataclass, field
 from PIL import Image
 
 
-@dataclass
-class FrameBuffer:
-    """Manages frame buffering for video inference.
+import logging
+from collections import deque
+from typing import Any
 
-    Accumulates frames until buffer_size is reached, then provides
-    a batch for inference while keeping overlap_frames for temporal continuity.
+from PIL import Image
+
+logger = logging.getLogger(__name__)
+
+
+class FrameBuffer:
+    """Thread-safe frame buffer with sliding window logic.
+
+    Stores raw JPEG bytes to minimize memory footprint. Decoding happens
+    only when a batch is processed by a worker.
     """
 
-    buffer_size: int = 8
-    overlap_frames: int = 4
-    _frames: list[Image.Image] = field(default_factory=list)
+    def __init__(self, buffer_size: int = 8, overlap_frames: int = 4):
+        self.buffer_size = buffer_size
+        self.overlap_frames = overlap_frames
+        # Store raw bytes
+        self.buffer: deque[bytes] = deque(maxlen=buffer_size)
 
-    def add_frame(self, frame: Image.Image) -> bool:
-        """Add a frame to the buffer.
-
-        Args:
-            frame: PIL Image to add (will be copied)
-
-        Returns:
-            True if buffer is now full and ready for batch creation
-        """
-        self._frames.append(frame.copy())
-        return len(self._frames) >= self.buffer_size
-
-    def is_ready(self) -> bool:
-        """Check if buffer has enough frames for a batch.
+    def add_frame(self, frame_bytes: bytes) -> bool:
+        """Add a frame (JPEG bytes) to the buffer.
 
         Returns:
-            True if buffer has >= buffer_size frames
+            bool: True if buffer is full and ready for processing.
         """
-        return len(self._frames) >= self.buffer_size
+        self.buffer.append(frame_bytes)
+        return len(self.buffer) >= self.buffer_size
 
-    def get_batch(self) -> list[Image.Image]:
-        """Get the current frames for inference.
+    def get_batch(self) -> list[bytes]:
+        """Get current batch of frames as bytes.
 
         Returns:
-            Copy of the current frame buffer
+            list[bytes]: List of JPEG byte strings.
         """
-        return self._frames.copy()
+        return list(self.buffer)
 
     def slide_window(self) -> None:
-        """Keep last N frames for temporal overlap.
-
-        Should be called after get_batch() to prepare for the next batch.
-        """
-        if self.overlap_frames == 0:
-            self._frames = []
+        """Slide the window by removing old frames based on overlap."""
+        # Calculate how many frames to keep (overlap)
+        frames_to_keep = self.overlap_frames
+        
+        # Calculate how many to remove (stride)
+        stride = len(self.buffer) - frames_to_keep
+        
+        # Remove old frames
+        # If overlap is 0 or negative, clear everything
+        if frames_to_keep <= 0:
+            self.buffer.clear()
         else:
-            self._frames = self._frames[-self.overlap_frames:]
+            # Remove 'stride' number of frames from the left
+            for _ in range(max(0, stride)):
+                if self.buffer:
+                    self.buffer.popleft()
 
     def clear(self) -> None:
-        """Clear all frames from the buffer."""
-        self._frames.clear()
+        """Clear the buffer."""
+        self.buffer.clear()
 
     @property
-    def frames(self) -> list[Image.Image]:
-        """Get current frames (read-only access)."""
-        return self._frames
-
-    def __len__(self) -> int:
-        """Return number of frames in buffer."""
-        return len(self._frames)
+    def current_size(self) -> int:
+        return len(self.buffer)

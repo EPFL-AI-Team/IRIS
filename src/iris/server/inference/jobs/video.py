@@ -15,6 +15,8 @@ detection and appropriate inference paths.
 import asyncio
 import logging
 import time
+import gc
+from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -40,7 +42,7 @@ class VideoJob(Job):
         model: Any | None,
         processor: Any | None,
         executor: ThreadPoolExecutor,
-        frames: list[Image.Image],
+        frames: list[bytes],  # Accepts raw bytes
         prompt: str = """<video>\nAnalyze this video segment of a biological experiment. Output a valid JSON object with the following keys:\n- action: The specific movement (e.g., streaking, inspecting).\n- tool: The active instrument.\n- target: The object being acted upon.\n- context: The protocol step.\n- hand: Active hand (left/right).\n- sample_id: Any handwritten text or labels visible on the object (or "none").\n- notes: Visual details like agar color or colony presence.""",
         buffer_size: int = 8,
         overlap_frames: int = 4,
@@ -65,7 +67,7 @@ class VideoJob(Job):
         self.max_new_tokens = max_new_tokens
 
         # Pre-buffered frames to process (passed in at construction)
-        self.frame_buffer: list[Image.Image] = frames.copy() if frames else []
+        self.frame_buffer: list[bytes] = frames.copy() if frames else []
 
         # Callbacks for server-side communication
         self.log_callback: Any = None  # Callable[[dict], None]
@@ -118,8 +120,8 @@ class VideoJob(Job):
         if not self.frame_buffer:
             return
 
-        frames_to_process = self.frame_buffer.copy()
-        frame_count = len(frames_to_process)
+        frames_bytes = self.frame_buffer
+        frame_count = len(frames_bytes)
 
         # Log the batch details
         self._send_log(
@@ -133,7 +135,7 @@ class VideoJob(Job):
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            self.executor, self._sync_inference, frames_to_process, self.prompt
+            self.executor, self._sync_inference, frames_bytes, self.prompt
         )
 
         # Calculate timing
@@ -142,6 +144,13 @@ class VideoJob(Job):
         # Update state
         self.result = result
         self.processing_time = inference_time
+
+        # Explicitly clear memory
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
         frames_per_second = frame_count / inference_time if inference_time > 0 else 0.0
         summary = (
@@ -170,10 +179,17 @@ class VideoJob(Job):
             }
             self.result_callback(result_data)
 
-    def _sync_inference(self, frames: list[Image.Image], prompt: str) -> str:
+    def _sync_inference(self, frames_bytes: list[bytes], prompt: str) -> str:
         """Blocking GPU inference (runs in ThreadPoolExecutor)."""
-        if not frames:
+        if not frames_bytes:
             return "No frames to process"
+        
+        # Decode bytes to PIL Images only now, inside the worker thread
+        try:
+            frames = [Image.open(BytesIO(b)).convert("RGB") for b in frames_bytes]
+        except Exception as e:
+            logger.error(f"Failed to decode frames: {e}")
+            return "Error decoding frames"
 
         # Simple dispatch based on model type
         if self._is_qwen_model():
