@@ -13,7 +13,8 @@ from typing import Any
 
 import cv2
 import websockets
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 
 from iris.client.capture.camera import CameraCapture
 from iris.client.capture.video_file import VideoFileCapture
@@ -378,6 +379,13 @@ async def clear_results_history() -> dict[str, str]:
 async def browser_stream_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for browser camera frame streaming.
 
+    Protocol:
+        1. Frontend sends segment_config as FIRST message
+        2. Client connects to inference server with that config
+        3. Inference server responds with session_ack
+        4. Frames are forwarded, results streamed back
+        5. session_metrics broadcast every 500ms
+
     Accepts frames from the browser camera and forwards them to the inference server.
     Results are sent back to the browser via this same connection.
     """
@@ -387,6 +395,44 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
     # Get inference server URL from config
     inference_ws_url = state.config.server.ws_url
     logger.info("Browser stream connecting to inference server at %s", inference_ws_url)
+
+    # Wait for segment_config from frontend FIRST before connecting to inference server
+    logger.info("Waiting for segment_config from frontend...")
+
+    try:
+        initial_data = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        initial_msg = json.loads(initial_data)
+
+        if initial_msg.get("type") != "segment_config":
+            await websocket.send_json({
+                "type": "error",
+                "message": "Expected segment_config as first message",
+            })
+            await websocket.close()
+            return
+
+        # Use frontend-provided config
+        session_config = {
+            "frames_per_segment": initial_msg.get(
+                "frames_per_segment", state.config.video.capture_fps
+            ),
+            "overlap_frames": initial_msg.get(
+                "overlap_frames", max(1, state.config.video.capture_fps // 2)
+            ),
+        }
+        logger.info(
+            "Received segment_config from frontend: frames_per_segment=%d, overlap=%d",
+            session_config["frames_per_segment"],
+            session_config["overlap_frames"],
+        )
+
+    except TimeoutError:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Timeout waiting for segment_config",
+        })
+        await websocket.close()
+        return
 
     # Track connection state
     frame_count = 0
@@ -429,15 +475,27 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
             while True:
                 response = await server_ws.recv()
                 message = json.loads(response)
+                msg_type = message.get("type")
+
+                # Forward session messages directly to browser
+                if msg_type in ("session_ack", "session_metrics"):
+                    await results_queue.put(message)
+                    if msg_type == "session_ack":
+                        logger.info(
+                            "Session established: id=%s config=%s",
+                            message.get("session_id"),
+                            message.get("config"),
+                        )
+                    continue
 
                 # Store result in history (same as StreamingClient)
-                if message.get("type") == "result":
+                if msg_type == "result":
                     state.results_history.append(message)
                     if len(state.results_history) > state.max_results_history:
                         state.results_history.pop(0)
 
                 # Check for batch submission in log messages
-                elif message.get("type") == "log":
+                elif msg_type == "log":
                     log_text = message.get("message", "")
                     log_job = message.get("job_id")
 
@@ -503,6 +561,20 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
             max_queue=None,
         ) as server_ws:
             logger.info("Connected to inference server for browser stream")
+
+            # Send session_config as first message to establish session
+            config_message = {
+                "type": "session_config",
+                "config": session_config,
+                "mode": "live",
+                "total_frames": None,  # Unknown for live streaming
+            }
+            await server_ws.send(json.dumps(config_message))
+            logger.info(
+                "Sent session_config to inference server: frames_per_segment=%d, overlap=%d",
+                session_config["frames_per_segment"],
+                session_config["overlap_frames"],
+            )
 
             # Run all three tasks concurrently
             forward_task = asyncio.create_task(forward_to_inference(server_ws))
@@ -620,6 +692,29 @@ async def get_datasets() -> dict[str, Any]:
             logger.warning(f"Failed to read annotation file {jsonl_path.name}: {e}")
 
     return {"videos": videos, "annotations": annotations}
+
+
+@api_router.get("/videos/{filename}")
+async def get_video(filename: str) -> FileResponse:
+    """Serve video files with proper headers for HTML5 video playback.
+
+    Provides Accept-Ranges header for seeking support in video players.
+    """
+    videos_dir = Path(__file__).parent / "static" / "videos"
+    video_path = videos_dir / filename
+
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # Ensure file is within videos directory (security)
+    if not video_path.resolve().is_relative_to(videos_dir.resolve()):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return FileResponse(
+        video_path,
+        media_type="video/mp4",
+        headers={"Accept-Ranges": "bytes"},
+    )
 
 
 def parse_openai_chat_jsonl(jsonl_path: Path) -> list[dict[str, Any]]:
@@ -862,6 +957,12 @@ async def stop_analysis() -> dict[str, str]:
 async def analysis_websocket(websocket: WebSocket) -> None:
     """WebSocket for analysis streaming.
 
+    Protocol:
+        1. Client sends session_config to inference server with segment params
+        2. Inference server responds with session_ack
+        3. Frames are sent, session_metrics broadcast every 500ms
+        4. Results are forwarded to frontend
+
     Streams progress updates and inference results to the frontend
     while processing a video file through the inference server.
     """
@@ -979,9 +1080,21 @@ async def analysis_websocket(websocket: WebSocket) -> None:
             while True:
                 response = await server_ws.recv()
                 message = json.loads(response)
+                msg_type = message.get("type")
+
+                # Forward session messages directly to frontend
+                if msg_type in ("session_ack", "session_metrics"):
+                    await websocket.send_json(message)
+                    if msg_type == "session_ack":
+                        logger.info(
+                            "Analysis session established: id=%s config=%s",
+                            message.get("session_id"),
+                            message.get("config"),
+                        )
+                    continue
 
                 # Augment result messages with frame/timestamp ranges
-                if message.get("type") == "result":
+                if msg_type == "result":
                     # Add metadata about frame range
                     frames_processed = message.get("frames_processed", 8)
                     current_frame = frame_count
@@ -1026,6 +1139,25 @@ async def analysis_websocket(websocket: WebSocket) -> None:
             max_queue=None,
         ) as server_ws:
             logger.info("Connected to inference server for analysis")
+
+            # Send session_config as first message to establish session
+            config_message = {
+                "type": "session_config",
+                "config": {
+                    "frames_per_segment": frames_per_segment,
+                    "overlap_frames": overlap_frames,
+                },
+                "mode": "analysis",
+                "total_frames": total_frames,
+            }
+            await server_ws.send(json.dumps(config_message))
+            logger.info(
+                "Sent session_config to inference server: "
+                "frames_per_segment=%d, overlap=%d, total_frames=%d",
+                frames_per_segment,
+                overlap_frames,
+                total_frames,
+            )
 
             # Run send and receive tasks concurrently
             send_task = asyncio.create_task(send_frames(server_ws))

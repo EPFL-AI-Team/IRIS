@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass, field
 from io import BytesIO
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -21,15 +22,73 @@ config = ServerConfig()
 router = APIRouter()
 
 
+@dataclass
+class SessionState:
+    """Tracks session state for a WebSocket connection.
+
+    Attributes:
+        session_id: Unique identifier for this session.
+        config: Session configuration (frames_per_segment, overlap_frames).
+        mode: Session mode ("live" or "analysis").
+        total_frames: Total frames expected (None for live mode).
+        start_time: Unix timestamp when session started.
+        frames_received: Counter of frames received.
+        segments_processed: Counter of segments/batches processed.
+    """
+
+    session_id: str
+    config: dict = field(default_factory=dict)
+    mode: str = "live"
+    total_frames: int | None = None
+    start_time: float = field(default_factory=time.time)
+    frames_received: int = 0
+    segments_processed: int = 0
+
+    def to_metrics(self, queue_depth: int) -> dict:
+        """Generate metrics snapshot for broadcast."""
+        elapsed = time.time() - self.start_time
+        rate = self.segments_processed / elapsed if elapsed > 0 else 0.0
+
+        # Calculate segments_total for analysis mode
+        segments_total = None
+        if self.mode == "analysis" and self.total_frames:
+            frames_per_segment = self.config.get("frames_per_segment", 8)
+            overlap_frames = self.config.get("overlap_frames", 4)
+            frames_per_chunk = frames_per_segment - overlap_frames
+            if frames_per_chunk > 0:
+                segments_total = max(
+                    1, (self.total_frames + frames_per_chunk - 1) // frames_per_chunk
+                )
+
+        return {
+            "type": "session_metrics",
+            "session_id": self.session_id,
+            "elapsed_seconds": round(elapsed, 1),
+            "segments_processed": self.segments_processed,
+            "segments_total": segments_total,
+            "queue_depth": queue_depth,
+            "processing_rate": round(rate, 2),
+            "frames_received": self.frames_received,
+        }
+
+
 @router.websocket("/ws/stream")
 async def inference_endpoint(websocket: WebSocket) -> None:
-    """Receive frames and return inference results."""
+    """Receive frames and return inference results.
+
+    Protocol:
+        1. Client sends `session_config` message first with config params
+        2. Server responds with `session_ack` containing session_id
+        3. Client sends frame messages
+        4. Server broadcasts `session_metrics` every 500ms
+        5. Server sends `result` messages as inference completes
+    """
     await websocket.accept()
     state = get_server_state()
     logger.info("Client connected")
 
     # Outgoing message queue for this connection (logs + results)
-    outgoing_queue = asyncio.Queue()
+    outgoing_queue: asyncio.Queue[dict] = asyncio.Queue()
     pending_tasks: list[asyncio.Task] = []
 
     def log_callback(msg: dict) -> None:
@@ -40,27 +99,36 @@ async def inference_endpoint(websocket: WebSocket) -> None:
     # Register log callback with JobManager
     state.job_manager.register_log_callback(log_callback)
 
-    # Connection-level config and state
-    connection_job_id = f"video_job_{uuid.uuid4().hex[:8]}"
-    video_cfg = config.jobs.get("video", {})
+    # Track WebSocket connection state (use dict for proper closure capture)
+    connection_state = {"active": True}
 
-    # Extract config values for batch job creation
-    buffer_size = video_cfg.get("buffer_size", 8)
-    overlap_frames = video_cfg.get("overlap_frames", 4)
+    # Session state - populated when session_config is received
+    session: SessionState | None = None
+
+    # Default config from server config.yaml
+    video_cfg = config.jobs.get("video", {})
+    default_buffer_size = video_cfg.get("buffer_size", 8)
+    default_overlap = video_cfg.get("overlap_frames", 4)
     default_fps = video_cfg.get("default_fps", 5)
     prompt = video_cfg.get("prompt", "Describe what you see in the video.")
     max_new_tokens = video_cfg.get("max_new_tokens", 128)
 
-    # Track WebSocket connection state (use dict for proper closure capture)
-    connection_state = {"active": True}
+    # These will be set from session config
+    buffer_size = default_buffer_size
+    overlap_frames = default_overlap
 
     # Result callback for batch jobs
     async def result_handler(result_data: dict) -> None:
         """Handle result from VideoJob and queue for sending."""
+        nonlocal session
         if not connection_state["active"]:
             return  # Skip if connection is closed
 
         try:
+            # Update session metrics
+            if session:
+                session.segments_processed += 1
+
             # Record metrics
             if state.metrics:
                 state.metrics.record_job(
@@ -87,15 +155,21 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
     # Producer loop which receives frames and buffers them locally
     async def receive_loop() -> None:
-        # Local frame buffer for this connection
-        frame_buffer = FrameBuffer(
-            buffer_size=buffer_size,
-            overlap_frames=overlap_frames,
-        )
+        nonlocal session, buffer_size, overlap_frames
+
+        # Generate session ID for this connection
+        session_id = f"sess_{uuid.uuid4().hex[:8]}"
+        connection_job_id = f"video_job_{session_id}"
+
+        # Local frame buffer - created after session config received
+        frame_buffer: FrameBuffer | None = None
         batch_counter = 0
         client_fps = default_fps
 
         try:
+            # Wait for session_config as first message
+            logger.info("Waiting for session_config from client...")
+
             while True:
                 # Check if server is shutting down - exit cleanly
                 if state.shutting_down:
@@ -137,7 +211,57 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     )
                     continue
 
+                # Handle session_config message
+                if data.get("type") == "session_config":
+                    cfg = data.get("config", {})
+                    buffer_size = cfg.get("frames_per_segment", default_buffer_size)
+                    overlap_frames = cfg.get("overlap_frames", default_overlap)
+
+                    # Create session state
+                    session = SessionState(
+                        session_id=session_id,
+                        config={
+                            "frames_per_segment": buffer_size,
+                            "overlap_frames": overlap_frames,
+                        },
+                        mode=data.get("mode", "live"),
+                        total_frames=data.get("total_frames"),
+                        start_time=time.time(),
+                    )
+
+                    # Create frame buffer with session config
+                    frame_buffer = FrameBuffer(
+                        buffer_size=buffer_size,
+                        overlap_frames=overlap_frames,
+                    )
+
+                    # Send session_ack
+                    ack_message = {
+                        "type": "session_ack",
+                        "session_id": session_id,
+                        "config": session.config,
+                    }
+                    await outgoing_queue.put(ack_message)
+
+                    logger.info(
+                        f"Session {session_id} configured: "
+                        f"frames_per_segment={buffer_size}, overlap={overlap_frames}, "
+                        f"mode={session.mode}"
+                    )
+                    continue
+
+                # Ensure session is configured before processing frames
+                if session is None or frame_buffer is None:
+                    logger.warning("Received frame before session_config, ignoring")
+                    continue
+
+                # Process frame message
+                if "frame_id" not in data:
+                    logger.warning(f"Unknown message type: {data.get('type', 'unknown')}")
+                    continue
+
                 frame_id = data["frame_id"]
+                session.frames_received += 1
                 capture_time = data.get("timestamp")
                 arrival_time = time.time()
 
@@ -219,12 +343,12 @@ async def inference_endpoint(websocket: WebSocket) -> None:
             )
 
             # Submit partial batch if there are remaining frames
-            if len(frame_buffer) > 0:
-                batch_job_id = f"{connection_job_id}_batch_{batch_counter}_partial"
+            if frame_buffer is not None and len(frame_buffer) > 0:
+                partial_job_id = f"{connection_job_id}_batch_{batch_counter}_partial"
                 logger.info(f"Submitting partial batch with {len(frame_buffer)} frames")
 
                 batch_job = VideoJob(
-                    job_id=batch_job_id,
+                    job_id=partial_job_id,
                     model=None,  # Will be injected by worker
                     processor=None,  # Will be injected by worker
                     executor=state.queue.executor,
@@ -241,13 +365,13 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 if state.shutting_down:
                     logger.info(
                         "Shutdown in progress; skipping partial batch submission %s",
-                        batch_job_id,
+                        partial_job_id,
                     )
                 else:
                     await state.queue.submit(batch_job)
 
                 queue_depth = state.queue.queue.qsize()
-                logger.info(f"Submitted {batch_job_id}, queue_depth={queue_depth}")
+                logger.info(f"Submitted {partial_job_id}, queue_depth={queue_depth}")
 
         except Exception as e:
             logger.error("Receive loop error: %s", e, exc_info=True)
@@ -285,14 +409,34 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         except Exception as e:
             logger.error("Send loop error: %s", e, exc_info=True)
 
-    # Run both functions concurrently
+    # Metrics broadcast loop - sends session metrics every 500ms
+    async def metrics_broadcast_loop() -> None:
+        """Broadcast session metrics to client every 500ms."""
+        try:
+            while connection_state["active"]:
+                await asyncio.sleep(0.5)
+                if session and connection_state["active"]:
+                    queue_depth = state.queue.queue.qsize() if state.queue else 0
+                    metrics = session.to_metrics(queue_depth)
+                    await outgoing_queue.put(metrics)
+        except asyncio.CancelledError:
+            pass  # Normal shutdown
+        except Exception as e:
+            logger.error("Metrics broadcast error: %s", e, exc_info=True)
+
+    # Run all loops concurrently
     # This runs until one of them finishes (usually the receive loop on disconnect)
     try:
-        await asyncio.gather(receive_loop(), send_loop())
+        await asyncio.gather(
+            receive_loop(),
+            send_loop(),
+            metrics_broadcast_loop(),
+        )
     except asyncio.CancelledError:
-        logger.debug(f"WebSocket tasks cancelled for {connection_job_id}")
+        logger.debug("WebSocket tasks cancelled")
     finally:
-        logger.info(f"WebSocket disconnecting for {connection_job_id}")
+        session_id = session.session_id if session else "unknown"
+        logger.info(f"WebSocket disconnecting for session {session_id}")
 
         # Mark connection as inactive to stop result handler tasks
         connection_state["active"] = False
@@ -307,7 +451,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
             await asyncio.gather(*pending_tasks, return_exceptions=True)
 
         # No job cleanup needed - batch jobs complete naturally
-        logger.info(f"WebSocket cleanup complete for {connection_job_id}")
+        logger.info(f"WebSocket cleanup complete for session {session_id}")
 
 
 @router.websocket("/ws/logs")

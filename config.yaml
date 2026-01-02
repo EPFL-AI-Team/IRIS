@@ -2,15 +2,16 @@
 # Override via environment variables: IRIS_SERVER__PORT=8002
 
 server:
-  # model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+  host: 0.0.0.0
+  port: 8005
+  model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
   # model_id: "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"
-  model_id: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
-  vlm_hardware: "v100"
+  # model_id: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
+  # vlm_hardware: "v100"
   # vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.)
   # model_dtype: "float16"   # Optional: Override dtype (float16, float32, bfloat16, auto)
   max_queue_size: 10
   num_workers: 1
-  port: 8001
   graceful_shutdown_timeout: 30.0
   enable_log_streaming: true
   log_streaming_min_level: "INFO"

@@ -25,6 +25,8 @@ class StreamingClient:
         camera: CameraCapture,
         jpeg_quality: int = 80,
         result_callback: Callable[[dict], None] | None = None,
+        buffer_size: int = 8,
+        overlap_frames: int = 4,
     ):
         self.ws_url = ws_url
         self.camera = camera
@@ -35,6 +37,11 @@ class StreamingClient:
         self.last_frame_time: float | None = None
         self.result_callback = result_callback
         self.connection_state = "disconnected"  # Track connection state
+
+        # Session configuration
+        self.buffer_size = buffer_size
+        self.overlap_frames = overlap_frames
+        self.session_id: str | None = None
 
         self.capture_fps: float = float(camera.fps)
 
@@ -99,8 +106,46 @@ class StreamingClient:
                 break
 
     async def _stream_loop(self, ws: WebSocketClientProtocol) -> None:
-        """Main streaming loop once connected."""
-        # Run send and receive loops concurrently
+        """Main streaming loop once connected.
+
+        Protocol:
+        1. Send session_config as first message
+        2. Wait for session_ack response
+        3. Start send/receive loops for frame streaming
+        """
+        # Send session_config FIRST before starting frame loop
+        config_message = {
+            "type": "session_config",
+            "config": {
+                "frames_per_segment": self.buffer_size,
+                "overlap_frames": self.overlap_frames,
+            },
+            "mode": "live",
+            "total_frames": None,
+        }
+        await ws.send(json.dumps(config_message))
+        logger.info(
+            "Sent session_config: buffer=%d, overlap=%d",
+            self.buffer_size,
+            self.overlap_frames,
+        )
+
+        # Wait for session_ack
+        try:
+            ack_response = await asyncio.wait_for(ws.recv(), timeout=10.0)
+            ack_data = json.loads(ack_response)
+            if ack_data.get("type") == "session_ack":
+                self.session_id = ack_data.get("session_id")
+                logger.info("Session established: %s", self.session_id)
+                if self.result_callback:
+                    self.result_callback(ack_data)
+            else:
+                logger.warning("Expected session_ack, got: %s", ack_data.get("type"))
+        except TimeoutError:
+            logger.error("Timeout waiting for session_ack")
+            return
+
+        # Now run send and receive loops concurrently
         send_task = asyncio.create_task(self._send_loop(ws))
         recv_task = asyncio.create_task(self._recv_loop(ws))
 

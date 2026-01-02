@@ -231,50 +231,48 @@ class VideoJob(Job):
 
             outputs = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
             generated_ids = outputs[0][len(inputs.input_ids[0]) :]
-            result = self.processor.decode(generated_ids, skip_special_tokens=True)
+            result = self.processor.batch_decode(
+                [generated_ids], skip_special_tokens=True
+            )[0]
 
         return result
 
     def _inference_smolvlm(self, frames: list[Image.Image], prompt: str) -> str:
-        """SmolVLM2 inference using VideoMetadata (avoids temp file and dtype issues)."""
-        from transformers.video_utils import VideoMetadata
+        """SmolVLM2 inference using image markers approach.
 
+        SmolVLM expects video as a path/URL, not a list of PIL Images.
+        Instead, we treat each frame as a separate image using image markers.
+        """
         logger.info(f"WORKER: Running SmolVLM inference on {len(frames)} frames")
 
         if not frames:
             return "No frames to process"
 
-        # Create metadata for our pre-sampled frames
-        video_metadata = VideoMetadata(
-            total_num_frames=len(frames),
-            fps=self.client_fps,
-            duration=len(frames) / self.client_fps,
-        )
+        # Build content with one image marker per frame
+        content: list[dict] = [{"type": "image"} for _ in frames]
+        content.append({"type": "text", "text": prompt})
 
-        # Pass PIL Images directly (not a video path)
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "video", "video": frames},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
+        messages = [{"role": "user", "content": content}]
 
         with torch.no_grad():
-            inputs = self.processor.apply_chat_template(
+            # Apply chat template to get prompt text (not tokenized)
+            prompt_text = self.processor.apply_chat_template(
                 messages,
-                video_metadata=[video_metadata],
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
+                add_generation_prompt=True
+            )
+
+            # Process with images passed separately
+            inputs = self.processor(
+                text=prompt_text,
+                images=frames,
                 return_tensors="pt",
             ).to(device=self.model.device, dtype=self.model.dtype)
 
             # Generate
             outputs = self.model.generate(
-                **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=False
             )
 
             # Decode
