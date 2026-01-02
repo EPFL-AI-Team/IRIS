@@ -5,7 +5,6 @@ import base64
 import json
 import logging
 import re
-import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -15,6 +14,7 @@ import cv2
 import websockets
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from iris.client.capture.camera import CameraCapture
 from iris.client.capture.video_file import VideoFileCapture
@@ -25,6 +25,42 @@ from iris.client.web.dependencies import get_app_state
 logger = logging.getLogger(__name__)
 api_router = APIRouter(prefix="/api")  # HTTP endpoints
 ws_router = APIRouter(prefix="/ws")  # WebSocket endpoints
+
+
+class StartRequest(BaseModel):
+    frames_per_segment: int = 8
+    overlap_frames: int = 4
+
+
+class SessionConfig(BaseModel):
+    frames_per_segment: int = 8
+    overlap_frames: int = 4
+    camera_mode: str = "client"  # 'client' or 'server'
+
+
+# Global store for active sessions (Simple in-memory for demo)
+# Map session_id -> {"config": dict, "created_at": float}
+session_store: dict[str, dict] = {}
+
+
+@api_router.post("/session/init")
+async def initialize_session(config: SessionConfig) -> dict[str, Any]:
+    """Initialize a session with configuration before streaming starts."""
+    session_id = str(uuid.uuid4())
+
+    # Store config
+    session_store[session_id] = {
+        "config": config.model_dump(),
+        "created_at": time.time(),
+    }
+
+    # If using SERVER camera, we can start the process here immediately (optional, or kept in /start)
+    # For now, we'll keep /start for server camera logic to minimize disruption,
+    # but strictly speaking, this is where we establish the intent.
+
+    logger.info(f"Initialized session {session_id} with config {config}")
+
+    return {"session_id": session_id, "status": "ready"}
 
 
 @api_router.get("/status")
@@ -56,38 +92,13 @@ async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     return {"status": "ok", "config": state.config.server.model_dump()}
 
 
-@api_router.post("/tunnel/config")
-async def update_tunnel_config(request: dict[str, str]) -> dict[str, Any]:
-    """Update SSH tunnel remote hostname."""
-    state = get_app_state()
-
-    if "remote_host" in request:
-        state.config.ssh_tunnel.remote_host = request["remote_host"]
-
-    return {"status": "ok", "remote_host": state.config.ssh_tunnel.remote_host}
-
-
 @api_router.post("/start")
-async def start_streaming() -> dict[str, Any]:
+async def start_streaming(request: StartRequest | None = None) -> dict[str, Any]:
     """Start camera and streaming."""
     state = get_app_state()
-
-    # Start SSH tunnel if enabled
-    if state.config.ssh_tunnel.enabled and state.config.ssh_tunnel.remote_host:
-        ssh_key = Path(state.config.ssh_tunnel.ssh_key_path).expanduser()
-
-        cmd = [
-            "ssh",
-            "-N",
-            "-L",
-            f"8001:{state.config.ssh_tunnel.remote_host}:8001",
-            "-i",
-            str(ssh_key),
-            f"{state.config.ssh_tunnel.ssh_user}@{state.config.ssh_tunnel.ssh_host}",
-        ]
-
-        state.tunnel_process = subprocess.Popen(cmd)
-        logger.info("Started SSH tunnel to %s", state.config.ssh_tunnel.remote_host)
+    # Use defaults if no body provided
+    if request is None:
+        request = StartRequest()
 
     # Start camera
     if state.camera is None:
@@ -104,15 +115,20 @@ async def start_streaming() -> dict[str, Any]:
     def store_result(result: dict[str, Any]) -> None:
         """Callback to store inference results."""
         state.results_history.append(result)
-        # Keep only the most recent results
         if len(state.results_history) > state.max_results_history:
             state.results_history.pop(0)
 
     state.streaming_client = StreamingClient(
-        state.config.server.ws_url, state.camera, result_callback=store_result
+        state.config.server.ws_url,
+        state.camera,
+        result_callback=store_result,
+        session_config={
+            "frames_per_segment": request.frames_per_segment,
+            "overlap_frames": request.overlap_frames,
+        },
     )
+
     task = asyncio.create_task(state.streaming_client.stream())
-    # Store task reference to prevent it from being garbage collected
     state.streaming_task = task
 
     return {"status": "ok", "message": "Streaming started"}
@@ -131,11 +147,9 @@ async def stop_streaming() -> dict[str, str]:
         state.camera.stop()
         state.camera = None
 
-    # Stop SSH tunnel
-    if state.tunnel_process:
-        state.tunnel_process.terminate()
-        state.tunnel_process = None
-        logger.info("Stopped SSH tunnel")
+    # Clear session state
+    state.current_session = None
+    state.session_id = None
 
     return {"status": "ok", "message": "Stopped"}
 
@@ -318,9 +332,6 @@ async def results_websocket(websocket: WebSocket) -> None:
                                 "jpeg_quality": state.config.video.jpeg_quality,
                                 "camera_index": state.config.video.camera_index,
                             },
-                            "ssh_tunnel": {
-                                "remote_host": state.config.ssh_tunnel.remote_host,
-                            },
                         },
                         "timestamp": now,
                     }
@@ -376,61 +387,44 @@ async def clear_results_history() -> dict[str, str]:
 
 
 @ws_router.websocket("/browser-stream")
-async def browser_stream_websocket(websocket: WebSocket) -> None:
+async def browser_stream_websocket(websocket: WebSocket, session_id: str) -> None:
     """WebSocket endpoint for browser camera frame streaming.
 
     Acts as a high-performance proxy between Browser and Inference Server.
-    Required because the Inference Server is often accessed via SSH tunnel
-    established by this backend.
+    REQUIRES 'session_id' query parameter.
 
     Protocol:
-        1. Handshake: Browser sends segment_config -> Proxy converts to session_config -> Inference.
+        1. Initialization: Config loaded from session_store (set via /session/init).
         2. Streaming: Proxy blindly forwards raw messages (frames/results) without parsing.
     """
     state = get_app_state()
     await websocket.accept()
 
-    # Get inference server URL from config
-    inference_ws_url = state.config.server.ws_url
-    logger.info("Browser stream connecting to inference server at %s", inference_ws_url)
-
-    # -------------------------------------------------------------------------
-    # Phase 1: Handshake (Config Negotiation)
-    # -------------------------------------------------------------------------
-    session_config = {}
-    try:
-        # 1. Wait for segment_config from frontend
-        initial_data = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
-        initial_msg = json.loads(initial_data)
-
-        if initial_msg.get("type") != "segment_config":
-            await websocket.send_json({
-                "type": "error",
-                "message": "Expected segment_config as first message",
-            })
-            await websocket.close()
-            return
-
-        # 2. Convert to session_config for inference server
-        session_config = {
-            "frames_per_segment": initial_msg.get(
-                "frames_per_segment", state.config.video.capture_fps
-            ),
-            "overlap_frames": initial_msg.get(
-                "overlap_frames", max(1, state.config.video.capture_fps // 2)
-            ),
-        }
-
-    except TimeoutError:
-        await websocket.send_json({
-            "type": "error",
-            "message": "Timeout waiting for segment_config",
-        })
-        await websocket.close()
+    # Validate Session
+    if session_id not in session_store:
+        logger.warning(f"Browser stream rejected: invalid session_id {session_id}")
+        await websocket.close(code=4001, reason="Session not initialized")
         return
 
+    session_data = session_store[session_id]
+    stored_config = session_data["config"]
+
+    # Get inference server URL from config
+    inference_ws_url = state.config.server.ws_url
+    logger.info(
+        "Browser stream connecting to inference server at %s for session %s",
+        inference_ws_url,
+        session_id,
+    )
+
+    # Convert to session_config for inference server
+    session_config = {
+        "frames_per_segment": stored_config.get("frames_per_segment", 8),
+        "overlap_frames": stored_config.get("overlap_frames", 4),
+    }
+
     # -------------------------------------------------------------------------
-    # Phase 2: Connect & Stream (Optimized Pass-Through)
+    # Connect & Stream (Optimized Pass-Through)
     # -------------------------------------------------------------------------
     try:
         async with websockets.connect(
@@ -440,16 +434,20 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
             close_timeout=30.0,
             max_queue=None,
         ) as server_ws:
-            
             # Send converted config to inference server
             config_message = {
                 "type": "session_config",
                 "config": session_config,
                 "mode": "live",
                 "total_frames": None,
+                "session_id": session_id,
             }
             await server_ws.send(json.dumps(config_message))
-            logger.info("Proxy established for session configuration: %s", session_config)
+            logger.info(
+                "Proxy established for session %s with config: %s",
+                session_id,
+                session_config,
+            )
 
             # High-performance bidirectional forwarding
             # We avoid json.loads/dumps for frame data to minimize CPU/latency
@@ -460,7 +458,7 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
                     while True:
                         # Receive raw message (text or bytes)
                         message = await websocket.receive()
-                        
+
                         if "text" in message:
                             await server_ws.send(message["text"])
                         elif "bytes" in message:
@@ -481,12 +479,12 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
                 try:
                     while True:
                         response = await server_ws.recv()
-                        
+
                         # We do need to snoop ONE type of message: "result"
                         # to store it in history. But we can do this optimistically.
                         # Most messages are small, so parsing them is okay.
                         # Frames (upstream) are heavy, Results (downstream) are light.
-                        
+
                         try:
                             data = json.loads(response)
                             msg_type = data.get("type")
@@ -494,12 +492,15 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
                             # Store results/logs in history
                             if msg_type == "result":
                                 state.results_history.append(data)
-                                if len(state.results_history) > state.max_results_history:
+                                if (
+                                    len(state.results_history)
+                                    > state.max_results_history
+                                ):
                                     state.results_history.pop(0)
-                            
+
                             # Forward raw response to browser
                             await websocket.send_text(response)
-                            
+
                         except json.JSONDecodeError:
                             # If not JSON, just forward raw
                             await websocket.send_text(response)
@@ -516,7 +517,10 @@ async def browser_stream_websocket(websocket: WebSocket) -> None:
 
     except (ConnectionRefusedError, OSError) as e:
         logger.error("Failed to connect to inference server: %s", e)
-        await websocket.send_json({"type": "error", "message": "Inference server unavailable"})
+        await websocket.send_json({
+            "type": "error",
+            "message": "Inference server unavailable",
+        })
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -603,7 +607,7 @@ async def get_video(filename: str) -> FileResponse:
 
 
 def parse_openai_chat_jsonl(jsonl_path: Path) -> list[dict[str, Any]]:
-    """Parse OpenAI Chat format JSONL to extract ground truth annotations.
+    r"""Parse OpenAI Chat format JSONL to extract ground truth annotations.
 
     JSONL format:
     {
@@ -749,7 +753,9 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
 
     # Load and parse annotations if provided (OpenAI Chat format)
     if annotation_filename:
-        annotation_path = Path(__file__).parent / "static" / "videos" / annotation_filename
+        annotation_path = (
+            Path(__file__).parent / "static" / "videos" / annotation_filename
+        )
         if annotation_path.exists():
             state.analysis_annotations = parse_openai_chat_jsonl(annotation_path)
             logger.info(
@@ -764,7 +770,11 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     # Calculate total chunks for progress tracking
     total_frames = state.analysis_video_capture.total_frames
     frames_per_chunk = frames_per_segment - overlap_frames
-    total_chunks = max(1, (total_frames + frames_per_chunk - 1) // frames_per_chunk) if frames_per_chunk > 0 else 1
+    total_chunks = (
+        max(1, (total_frames + frames_per_chunk - 1) // frames_per_chunk)
+        if frames_per_chunk > 0
+        else 1
+    )
 
     # Create job metadata
     job_id = f"analysis_{uuid.uuid4().hex[:8]}"
@@ -932,7 +942,11 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 if frame_count > 0 and elapsed_time > 0:
                     frames_per_second = frame_count / elapsed_time
                     remaining_frames = total_frames - frame_count
-                    estimated_time_remaining = remaining_frames / frames_per_second if frames_per_second > 0 else 0
+                    estimated_time_remaining = (
+                        remaining_frames / frames_per_second
+                        if frames_per_second > 0
+                        else 0
+                    )
                 else:
                     estimated_time_remaining = 0
 
@@ -987,7 +1001,9 @@ async def analysis_websocket(websocket: WebSocket) -> None:
 
                     message["frame_range"] = [start_frame, current_frame - 1]
                     message["timestamp_range_ms"] = [
-                        int(start_frame / state.analysis_video_capture.native_fps * 1000)
+                        int(
+                            start_frame / state.analysis_video_capture.native_fps * 1000
+                        )
                         if state.analysis_video_capture.native_fps > 0
                         else 0,
                         int(

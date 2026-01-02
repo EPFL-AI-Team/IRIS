@@ -10,19 +10,25 @@ server:
   # vlm_hardware: "v100"
   # vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.)
   # model_dtype: "float16"   # Optional: Override dtype (float16, float32, bfloat16, auto)
+  
+  # Backpressure Control:
+  # - Set to 1 for Mac/Consumer GPU (Strict dropping to prevent OOM/Lag)
+  # - Set to 4-8 for A100/H100 (Allow buffering for higher throughput)
+  live_queue_threshold: 1
+  
   max_queue_size: 10
   num_workers: 1
   graceful_shutdown_timeout: 30.0
   enable_log_streaming: true
   log_streaming_min_level: "INFO"
   enable_metrics: true
-jobs:
-  video:
-    buffer_size: 8
-    overlap_frames: 4
-    default_fps: 10
-    max_new_tokens: 128
-    prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
+  jobs:
+    video:
+      buffer_size: 4
+      overlap_frames: 2
+      default_fps: 5
+      max_new_tokens: 128
+      prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
 
 client:
   video:
@@ -33,16 +39,16 @@ client:
     camera_index: 0
   server:
     host: "localhost"
-    port: 8001
+    port: 8005
     use_ssl: false
   web:
     host: "0.0.0.0"
     port: 8006
     use_ssl: true
     cert_dir: "~/iris-certs"  # Directory containing key.pem and cert.pem
-  ssh_tunnel:
-    enabled: false  # Toggle on for IZAR HPC
-    ssh_host: "izar.hpc.epfl.ch"
-    ssh_user: "mhamelin"
-    ssh_key_path: "~/.ssh/id_rsa"
-    remote_host: ""  # Set via UI or config (IZAR compute node hostname)
+
+  # Segment configuration defaults (T, s, k)
+  segment:
+    segment_time: 1.0        # T: Duration of each segment in seconds
+    frames_per_segment: 8    # s: Number of frames per segment
+    overlap_frames: 4        # k: Number of overlap frames
