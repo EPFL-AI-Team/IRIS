@@ -14,11 +14,9 @@ import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from io import BytesIO
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from PIL import Image
 
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
@@ -395,6 +393,21 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     )
                     break
 
+                # ---------------------------------------------------------
+                # TCP BACKPRESSURE: Pause reading if queue is too full
+                # ---------------------------------------------------------
+                # If we stop reading from the socket, the TCP window closes,
+                # forcing the client (browser) to slow down sending.
+                queue_depth = state.queue.queue.qsize() if state.queue else 0
+                if (
+                    session
+                    and session.mode == "live"
+                    and queue_depth > (config.live_queue_threshold + 1)
+                ):
+                    await asyncio.sleep(0.1)
+                    continue
+                # ---------------------------------------------------------
+
                 # Support both text and binary JSON payloads from clients
                 try:
                     # Use timeout to periodically check shutdown flag
@@ -503,13 +516,34 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 if "fps" in data:
                     client_fps = float(data["fps"])
 
-                # Decode frame
-                frame_b64 = data["frame"]
-                image_data = base64.b64decode(frame_b64)
-                image = Image.open(BytesIO(image_data))
+                # Decode frame to raw bytes ONLY - do not decode to PIL yet
+                frame_b64 = data.get("frame")
+                if not frame_b64:
+                    continue
 
-                # Add frame to local buffer
-                frame_buffer.add_frame(image)
+                try:
+                    frame_bytes = base64.b64decode(frame_b64)
+
+                    # ---------------------------------------------------------
+                    # BACKPRESSURE: Drop frames if queue is too full
+                    # ---------------------------------------------------------
+                    current_queue_depth = state.queue.queue.qsize()
+                    if (
+                        session
+                        and session.mode == "live"
+                        and current_queue_depth >= config.live_queue_threshold
+                    ):
+                        logger.debug(
+                            f"Dropping frame {frame_id}, queue depth {current_queue_depth}"
+                        )
+                        continue
+                    # ---------------------------------------------------------
+
+                    # Add raw bytes to buffer (NOT PIL Image - saves memory)
+                    frame_buffer.add_frame(frame_bytes)
+                except Exception as e:
+                    logger.error(f"Error decoding frame: {e}")
+                    continue
 
                 # When buffer reaches threshold, create and submit batch job
                 if frame_buffer.is_ready():
@@ -716,7 +750,7 @@ def main() -> None:
     import uvicorn
 
     try:
-        uvicorn.run(app, host=config.host, port=config.port)
+        uvicorn.run(app, host=config.host, port=config.port, log_level="debug")
     except KeyboardInterrupt:
         # Handle Ctrl+C during uvicorn startup
         logger.info("Server interrupted during startup. Exiting...")

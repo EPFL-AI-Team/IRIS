@@ -21,7 +21,7 @@ from iris.server.inference.executor import InferenceExecutor
 from iris.server.jobs.manager import JobManager
 from iris.server.lifecycle import LifecycleHandler
 from iris.server.logging_handler import WebSocketLogHandler
-from iris.server.routes import jobs, system, websocket
+from iris.server.routes import jobs, system
 
 # Suppress known warnings
 warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
@@ -124,10 +124,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 # Create FastAPI application
 app = FastAPI(title="IRIS Inference Server", lifespan=lifespan)
 
-# Include routers
+# Include routers (WebSocket routes are in app.py, the main entry point)
 app.include_router(jobs.router, tags=["jobs"])
 app.include_router(system.router, tags=["system"])
-app.include_router(websocket.router, tags=["websocket"])
 
 
 def main() -> None:

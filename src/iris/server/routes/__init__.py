@@ -1,5 +1,5 @@
 """IRIS Server route modules."""
 
-from iris.server.routes import jobs, system, websocket
+from iris.server.routes import jobs, system
 
-__all__ = ["jobs", "system", "websocket"]
+__all__ = ["jobs", "system"]
