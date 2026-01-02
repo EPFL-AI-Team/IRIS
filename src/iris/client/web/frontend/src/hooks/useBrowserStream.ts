@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useAppStore } from "../store/useAppStore";
-import type { FrameData, WebSocketMessage, ResultItem } from "../types";
+import type { FrameData, WebSocketMessage, ResultItem, SessionAckMessage, SessionMetricsMessage } from "../types";
 
 const RECONNECT_DELAY = 2000;
 
@@ -21,10 +21,44 @@ export function useBrowserStream() {
   const addLog = useAppStore((state) => state.addLog);
   const addResult = useAppStore((state) => state.addResult);
   const updateResult = useAppStore((state) => state.updateResult);
+  const setSessionState = useAppStore((state) => state.setSessionState);
+  const setSessionMetrics = useAppStore((state) => state.setSessionMetrics);
+  const resetSessionState = useAppStore((state) => state.resetSessionState);
 
   const handleMessage = useCallback(
-    (data: WebSocketMessage) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (data: WebSocketMessage | SessionAckMessage | SessionMetricsMessage | any) => {
       switch (data.type) {
+        case "session_ack": {
+          // Session established with inference server
+          const ack = data as SessionAckMessage;
+          setSessionState({
+            sessionId: ack.session_id,
+            configured: true,
+            mode: "live",
+            config: {
+              frames_per_segment: ack.config.frames_per_segment,
+              overlap_frames: ack.config.overlap_frames,
+            },
+          });
+          addLog(`Session established: ${ack.session_id}`, "INFO");
+          break;
+        }
+
+        case "session_metrics": {
+          // Live metrics update from inference server
+          const metrics = data as SessionMetricsMessage;
+          setSessionMetrics({
+            elapsedSeconds: metrics.elapsed_seconds,
+            segmentsProcessed: metrics.segments_processed,
+            segmentsTotal: metrics.segments_total,
+            queueDepth: metrics.queue_depth,
+            processingRate: metrics.processing_rate,
+            framesReceived: metrics.frames_received,
+          });
+          break;
+        }
+
         case "batch_submitted": {
           const pendingResult: ResultItem = {
             id: `result-${data.job_id}`,
@@ -62,7 +96,7 @@ export function useBrowserStream() {
           break;
       }
     },
-    [addLog, addResult, updateResult]
+    [addLog, addResult, updateResult, setSessionState, setSessionMetrics]
   );
 
   const connect = useCallback(() => {
@@ -84,7 +118,25 @@ export function useBrowserStream() {
     ws.onopen = () => {
       isConnectedRef.current = true;
       setBrowserStreamConnection("connected");
-      addLog("Browser stream WebSocket connected", "INFO");
+
+      // Wait for connection to be fully established before sending
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          // Get segment config from store and send FIRST before any frames
+          const { segmentConfig } = useAppStore.getState();
+          const configMessage = {
+            type: "segment_config",
+            frames_per_segment: segmentConfig.framesPerSegment,
+            overlap_frames: segmentConfig.overlapFrames,
+          };
+          ws.send(JSON.stringify(configMessage));
+          addLog(
+            `Sent segment config: frames=${segmentConfig.framesPerSegment}, overlap=${segmentConfig.overlapFrames}`,
+            "INFO"
+          );
+        }
+      }, 100);
+
       frameCountRef.current = 0;
     };
 
@@ -127,7 +179,8 @@ export function useBrowserStream() {
 
     isConnectedRef.current = false;
     setBrowserStreamConnection("disconnected");
-  }, [setBrowserStreamConnection]);
+    resetSessionState();
+  }, [setBrowserStreamConnection, resetSessionState]);
 
   /**
    * Send a frame to the backend for inference.

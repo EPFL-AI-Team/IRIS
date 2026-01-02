@@ -158,14 +158,17 @@ export function useResultsWebSocket() {
       addLog("Results WebSocket error", "ERROR");
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setResultsConnection("disconnected");
-      addLog("Results WebSocket closed, reconnecting...", "WARNING");
+      addLog(`Results WebSocket closed: code=${event.code}`, "WARNING");
 
-      // Auto-reconnect
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connectRef.current?.();
-      }, RECONNECT_DELAY);
+      // Only auto-reconnect on abnormal closure (not clean close)
+      if (event.code !== 1000 && event.code !== 1001) {
+        addLog("Unexpected close, reconnecting...", "WARNING");
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connectRef.current?.();
+        }, RECONNECT_DELAY);
+      }
     };
   }, [handleMessage, setResultsConnection, addLog]);
 
