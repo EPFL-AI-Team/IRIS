@@ -151,14 +151,26 @@ function ResultCard({
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
-                Latency
+            {result.inference_time !== undefined && (
+              <div className="text-right">
+                <div className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
+                  Inference
+                </div>
+                <div className="text-xs font-mono text-emerald-600 font-semibold">
+                  {result.inference_time.toFixed(2)}s
+                </div>
               </div>
-              <div className="text-xs font-mono text-emerald-600 font-semibold">
-                {(result.inference_time || 0).toFixed(2)}s
+            )}
+            {result.latency !== undefined && (
+              <div className="text-right">
+                <div className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
+                  Latency
+                </div>
+                <div className="text-xs font-mono text-blue-600 font-semibold">
+                  {(result.latency / 1000).toFixed(2)}s
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
