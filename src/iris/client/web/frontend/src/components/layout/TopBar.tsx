@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,8 @@ import { ReportModal } from "@/components/ReportModal";
 export function TopBar() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [showServerConfig, setShowServerConfig] = useState(false);
+  const [clientElapsedSeconds, setClientElapsedSeconds] = useState(0);
+  const streamingStartTimeRef = useRef<number | null>(null);
 
   // Store state
   const activeTab = useAppStore((state) => state.activeTab);
@@ -50,6 +52,33 @@ export function TopBar() {
   // WebSocket connection for sending commands
   const { startInference, stopInference, clearQueue, resetSession } =
     useClientWebSocket();
+
+  // Client-side elapsed timer
+  useEffect(() => {
+    if (!isStreaming) {
+      return;
+    }
+
+    // Set start time when streaming begins (only once)
+    if (!streamingStartTimeRef.current) {
+      streamingStartTimeRef.current = Date.now();
+    }
+
+    // Update elapsed time every second
+    const interval = setInterval(() => {
+      if (streamingStartTimeRef.current) {
+        const elapsed = Math.floor((Date.now() - streamingStartTimeRef.current) / 1000);
+        setClientElapsedSeconds(elapsed);
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      // Reset on cleanup when streaming stops
+      streamingStartTimeRef.current = null;
+      setClientElapsedSeconds(0);
+    };
+  }, [isStreaming]);
 
   // Server config form state
   const [host, setHost] = useState(serverConfig.host);
