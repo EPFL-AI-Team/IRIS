@@ -1316,6 +1316,25 @@ async def get_fallback_report(session_id: str) -> dict[str, Any]:
     return {"report": report, "provider": "fallback"}
 
 
+@api_router.get("/report/{session_id}")
+async def get_stored_report(session_id: str) -> dict[str, Any]:
+    """Get the latest stored report for a session.
+
+    Args:
+        session_id: Session identifier.
+
+    Returns:
+        Report data or error message.
+    """
+    from iris.client.web.repositories import reports_repo
+
+    report = reports_repo.get_latest_by_session(session_id)
+    if not report:
+        return {"error": "No report found", "session_id": session_id}
+
+    return {"session_id": session_id, "report": report}
+
+
 # ============================================================================
 # Simplified Communication Endpoints (New Architecture)
 # ============================================================================
