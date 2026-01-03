@@ -11,6 +11,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import type { AnalysisLog } from "@/types";
+import { formatResultAsNaturalLanguage } from "@/utils/formatResult";
 
 /**
  * Format timestamp as relative video time.
@@ -83,9 +84,23 @@ function LogEntry({ log, isActive, onSeek }: LogEntryProps) {
           </div>
           <div className="text-sm wrap-break-word">
             {log.type === "inference" && log.inference_result ? (
-              <pre className="text-xs font-mono whitespace-pre-wrap overflow-hidden">
-                {JSON.stringify(log.inference_result, null, 2)}
-              </pre>
+              <div className="space-y-1">
+                {/* Primary display: Natural language */}
+                <div className="text-sm font-medium text-foreground leading-relaxed">
+                  {formatResultAsNaturalLanguage(log.inference_result as Record<string, unknown>)}
+                </div>
+
+                {/* Secondary: Collapsed JSON details */}
+                <details className="text-xs group">
+                  <summary className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors list-none inline-flex items-center gap-1 py-0.5">
+                    <span className="inline-block transition-transform group-open:rotate-90 text-[10px]">▶</span>
+                    <span className="text-[10px]">JSON</span>
+                  </summary>
+                  <pre className="text-[10px] font-mono whitespace-pre-wrap overflow-hidden mt-1 p-2 bg-muted/30 rounded border border-border/50">
+                    {JSON.stringify(log.inference_result, null, 2)}
+                  </pre>
+                </details>
+              </div>
             ) : (
               <span>{log.message}</span>
             )}

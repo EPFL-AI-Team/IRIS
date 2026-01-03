@@ -1046,6 +1046,11 @@ async def analysis_websocket(websocket: WebSocket) -> None:
 
                 # Augment result messages with frame/timestamp ranges
                 if msg_type == "result":
+                    # Defensive check: ensure video_capture still exists
+                    if not state.analysis_video_capture:
+                        logger.info("Analysis video capture was stopped, ending result reception")
+                        break
+
                     # Add metadata about frame range
                     frames_processed = message.get("frames_processed", 8)
                     current_frame = frame_count

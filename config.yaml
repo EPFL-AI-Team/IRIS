@@ -23,13 +23,14 @@ server:
   #   - Applies to all modes (live and batch)
   #
   # Configuration Guidelines:
-  #   Single user (typical):     Set both to same value (1-2)
+  #   Live mode (typical):       Set both to same value (1-2)
+  #   Analysis mode:             Set max_queue_size higher (50-100) to prevent dropping
   #   Multi-user/high throughput: Set max_queue_size higher for buffering
   #
   # Constraint: live_queue_threshold <= max_queue_size
   # ============================================================================
   live_queue_threshold: 1
-  max_queue_size: 10
+  max_queue_size: 50
   
   num_workers: 1
   graceful_shutdown_timeout: 30.0
