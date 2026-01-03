@@ -183,7 +183,7 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
               onValueChange={(v) => setProvider(v as LLMProvider)}
               disabled={isGenerating}
             >
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-37.5">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -1,4 +1,4 @@
-import { useAppStore } from "../store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {

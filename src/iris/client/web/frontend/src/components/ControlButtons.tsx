@@ -2,8 +2,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Play, Square, FileText } from "lucide-react";
-import { useAppStore } from "../store/useAppStore";
-import { ReportModal } from "./ReportModal";
+import { useAppStore } from "@/store/useAppStore";
+import { ReportModal } from "@/components/ReportModal";
 
 export function ControlButtons() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
