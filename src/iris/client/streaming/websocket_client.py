@@ -27,6 +27,7 @@ class StreamingClient:
         result_callback: Callable[[dict], None] | None = None,
         buffer_size: int = 8,
         overlap_frames: int = 4,
+        session_config: dict | None = None,
     ):
         self.ws_url = ws_url
         self.camera = camera
@@ -39,9 +40,19 @@ class StreamingClient:
         self.connection_state = "disconnected"  # Track connection state
 
         # Session configuration
-        self.buffer_size = buffer_size
-        self.overlap_frames = overlap_frames
-        self.session_id: str | None = None
+        # Use provided config or fall back to legacy args
+        if session_config:
+            self.session_config = session_config
+            # Sync legacy attributes for consistency
+            self.buffer_size = session_config.get("frames_per_segment", buffer_size)
+            self.overlap_frames = session_config.get("overlap_frames", overlap_frames)
+        else:
+            self.buffer_size = buffer_size
+            self.overlap_frames = overlap_frames
+            self.session_config = {
+                "frames_per_segment": buffer_size,
+                "overlap_frames": overlap_frames,
+            }
 
         self.capture_fps: float = float(camera.fps)
 
@@ -116,19 +127,12 @@ class StreamingClient:
         # Send session_config FIRST before starting frame loop
         config_message = {
             "type": "session_config",
-            "config": {
-                "frames_per_segment": self.buffer_size,
-                "overlap_frames": self.overlap_frames,
-            },
+            "config": self.session_config,
             "mode": "live",
             "total_frames": None,
         }
         await ws.send(json.dumps(config_message))
-        logger.info(
-            "Sent session_config: buffer=%d, overlap=%d",
-            self.buffer_size,
-            self.overlap_frames,
-        )
+        logger.info("Sent session_config: %s", self.session_config)
 
         # Wait for session_ack
         try:
@@ -223,8 +227,11 @@ class StreamingClient:
                 response = await ws.recv()
                 message = json.loads(response)
 
-                # Only store result-type messages (not log messages)
-                if message.get("type") == "result":
+                # Forward relevant messages to the frontend
+                msg_type = message.get("type")
+                logger.debug(f"Received from inference server: type={msg_type}")
+
+                if msg_type == "result":
                     frames = message.get("frames_processed", 0)
                     inference_time = message.get("inference_time", 0.0)
                     fps = frames / inference_time if inference_time > 0 else 0.0
@@ -237,22 +244,32 @@ class StreamingClient:
                         fps,
                     )
                     if self.result_callback:
+                        logger.debug(f"Forwarding result to callback: job_id={message.get('job_id')}")
                         self.result_callback(message)
-                elif message.get("type") == "log":
+
+                elif msg_type == "session_metrics":
+                    # Forward session metrics to frontend for real-time display
+                    logger.debug(f"Session metrics: segments={message.get('segments_processed')}, queue={message.get('queue_depth')}")
+                    if self.result_callback:
+                        logger.debug("Forwarding metrics to callback")
+                        self.result_callback(message)
+
+                elif msg_type == "log":
                     log_text = message.get("message")
                     log_job = message.get("job_id")
+                    log_level = message.get("level", "INFO")
                     level = logging.INFO
                     if log_text:
                         logger.log(level, "Job log: [%s] %s", log_job, log_text)
 
-                        # Check for batch submission to notify UI
-                        # Log format: "Submitted {batch_job_id}, queue_depth={queue_depth}"
+                        # Check for batch submission to notify UI with pending card
                         if self.result_callback and "Submitted video_job_" in log_text:
                             match = re.search(
                                 r"Submitted (video_job_\w+_batch_\d+)", log_text
                             )
                             if match:
                                 job_id = match.group(1)
+                                logger.debug(f"Forwarding batch_submitted to callback: job_id={job_id}")
                                 self.result_callback({
                                     "type": "batch_submitted",
                                     "job_id": job_id,
@@ -260,14 +277,28 @@ class StreamingClient:
                                     "status": "processing",
                                 })
 
-                        # Forward "Starting inference" logs to UI for progress tracking
-                        if self.result_callback and "Starting inference:" in log_text:
+                        # Forward all logs to frontend (not just special ones)
+                        if self.result_callback:
+                            logger.debug(f"Forwarding log to callback: level={log_level}")
                             self.result_callback({
                                 "type": "log",
                                 "message": log_text,
                                 "job_id": log_job,
+                                "level": log_level,
                                 "timestamp": time.time(),
                             })
+
+                elif msg_type == "session_ack":
+                    # Session ack already handled at startup, but forward if received again
+                    logger.info(f"Session acknowledged: session_id={message.get('session_id')}")
+                    if self.result_callback:
+                        logger.debug("Forwarding session_ack to callback")
+                        self.result_callback(message)
+
+                else:
+                    # Unknown message type - log it
+                    logger.warning(f"Unknown message type from inference server: {msg_type}")
+
             except asyncio.CancelledError:
                 raise
             except websockets.exceptions.ConnectionClosed as e:

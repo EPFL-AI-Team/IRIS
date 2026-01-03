@@ -1282,3 +1282,301 @@ async def get_fallback_report(session_id: str) -> dict[str, Any]:
 
     report = generate_fallback_report(session, results, annotations)
     return {"report": report, "provider": "fallback"}
+
+
+# ============================================================================
+# Simplified Communication Endpoints (New Architecture)
+# ============================================================================
+
+
+@api_router.post("/session/reset")
+async def reset_session() -> dict[str, Any]:
+    """Reset session - generate new session_id and clear history."""
+    state = get_app_state()
+    new_session_id = state.reset_session()
+    logger.info(f"Session reset: new session_id={new_session_id}")
+    return {"status": "ok", "session_id": new_session_id}
+
+
+@api_router.post("/queue/clear")
+async def clear_queue() -> dict[str, Any]:
+    """Clear inference queue by calling the inference server endpoint."""
+    import aiohttp
+
+    state = get_app_state()
+
+    # Build the inference server URL for queue clear
+    server_url = f"http://{state.config.server.host}:{state.config.server.port}/api/queue/clear"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(server_url, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    logger.info(f"Cleared inference queue: {data}")
+                    return {"status": "ok", "cleared": data.get("cleared", 0)}
+                else:
+                    return {"status": "error", "message": f"Server returned {response.status}"}
+    except Exception as e:
+        logger.error(f"Failed to clear inference queue: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@ws_router.websocket("/client")
+async def client_websocket(websocket: WebSocket) -> None:
+    """Unified WebSocket for all frontend communication.
+
+    This is the single WebSocket endpoint for the new simplified architecture.
+    Handles:
+    - Preview frames (always streaming from USB camera)
+    - Start/stop inference commands
+    - Session info and reset
+    - Results forwarding from inference server
+    - Metrics updates
+
+    Simple pattern (from FastAPI docs):
+    1. Accept connection
+    2. Send initial session info
+    3. Start preview streaming task
+    4. Loop: receive messages, handle them
+    5. Catch WebSocketDisconnect for cleanup
+    """
+    from iris.client.web.messages import (
+        SessionInfoMessage,
+        PreviewFrameMessage,
+        ServerStatusMessage,
+        ErrorMessage,
+    )
+
+    state = get_app_state()
+    await websocket.accept()
+    logger.info(f"Client WebSocket connected, session_id={state.session_id}")
+
+    # Send session info immediately on connect
+    session_info = SessionInfoMessage(
+        session_id=state.session_id,
+        config=state.session_config,
+    ).model_dump()
+    logger.info(f"Sending to frontend: type=session_info")
+    await websocket.send_json(session_info)
+
+    # Track active tasks
+    preview_task: asyncio.Task | None = None
+    health_check_task: asyncio.Task | None = None
+
+    async def stream_preview_frames() -> None:
+        """Stream USB camera frames to frontend continuously."""
+        try:
+            # Initialize camera if needed
+            if state.camera is None:
+                state.camera = CameraCapture(
+                    camera_index=state.config.video.camera_index,
+                    width=state.config.video.width,
+                    height=state.config.video.height,
+                    fps=state.config.video.capture_fps,
+                )
+                if not state.camera.start():
+                    logger.error("Failed to start camera for preview")
+                    error_msg = ErrorMessage(message="Failed to start camera").model_dump()
+                    logger.info(f"Sending error to frontend: {error_msg}")
+                    await websocket.send_json(error_msg)
+                    state.camera = None
+                    return
+
+            preview_fps = min(10, state.config.video.capture_fps)  # Cap at 10 FPS
+            frame_counter = 0
+            while True:
+                if state.camera:
+                    frame_jpeg = state.camera.get_frame_jpeg(quality=70)
+                    if frame_jpeg:
+                        frame_counter += 1
+                        await websocket.send_json(
+                            PreviewFrameMessage(
+                                frame=base64.b64encode(frame_jpeg).decode(),
+                                timestamp=time.time(),
+                            ).model_dump()
+                        )
+                        # Log every 30 frames to avoid spam (3 seconds at 10 FPS)
+                        if frame_counter % 30 == 0:
+                            logger.debug(f"Sent preview frame #{frame_counter} to frontend")
+                await asyncio.sleep(1.0 / preview_fps)
+        except asyncio.CancelledError:
+            logger.debug("Preview streaming cancelled")
+        except Exception as e:
+            logger.error(f"Preview streaming error: {e}")
+
+    async def check_inference_server() -> None:
+        """Periodically check if inference server is alive."""
+        import aiohttp
+
+        server_url = f"http://{state.config.server.host}:{state.config.server.port}/health"
+        check_interval = 5.0  # seconds
+
+        while True:
+            queue_depth = None
+            try:
+                async with aiohttp.ClientSession() as http_session:
+                    async with http_session.get(
+                        server_url, timeout=aiohttp.ClientTimeout(total=2)
+                    ) as response:
+                        state.inference_server_alive = response.status == 200
+                        if response.status == 200:
+                            data = await response.json()
+                            queue_depth = data.get("queue_depth", 0)
+            except Exception:
+                state.inference_server_alive = False
+
+            # Send status to frontend
+            try:
+                status_msg = ServerStatusMessage(
+                    alive=state.inference_server_alive,
+                    queue_depth=queue_depth,
+                ).model_dump()
+                logger.debug(f"Sending server status to frontend: alive={state.inference_server_alive}, queue_depth={queue_depth}")
+                await websocket.send_json(status_msg)
+            except Exception:
+                break  # WebSocket closed
+
+            await asyncio.sleep(check_interval)
+
+    # Start background tasks
+    preview_task = asyncio.create_task(stream_preview_frames())
+    health_check_task = asyncio.create_task(check_inference_server())
+
+    try:
+        while True:
+            # Simple receive - no timeout, no complex retry logic
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+            logger.info(f"Received from frontend: type={msg_type}")
+
+            if msg_type == "start":
+                # Start inference streaming
+                config = data.get("config", {})
+                state.session_config = config
+                state.is_streaming = True
+                logger.info(f"Starting inference with config: {config}")
+
+                # Start streaming to inference server
+                try:
+                    if state.camera is None:
+                        state.camera = CameraCapture(
+                            camera_index=state.config.video.camera_index,
+                            width=state.config.video.width,
+                            height=state.config.video.height,
+                            fps=state.config.video.capture_fps,
+                        )
+                        if not state.camera.start():
+                            error_msg = ErrorMessage(message="Failed to start camera").model_dump()
+                            logger.error("Failed to start camera for inference")
+                            logger.info(f"Sending error to frontend: {error_msg}")
+                            await websocket.send_json(error_msg)
+                            state.is_streaming = False
+                            continue
+
+                    def store_result(result: dict[str, Any]) -> None:
+                        msg_type = result.get('type')
+                        logger.info(f"StreamingClient received from inference server: type={msg_type}, job_id={result.get('job_id')}")
+                        state.results_history.append(result)
+                        if len(state.results_history) > state.max_results_history:
+                            state.results_history.pop(0)
+                        # Forward result to frontend via WebSocket
+                        logger.info(f"Forwarding to frontend: type={msg_type}, job_id={result.get('job_id')}")
+                        asyncio.create_task(websocket.send_json(result))
+
+                    state.streaming_client = StreamingClient(
+                        state.config.server.ws_url,
+                        state.camera,
+                        result_callback=store_result,
+                        session_config={
+                            "frames_per_segment": config.get("frames_per_segment", 2),
+                            "overlap_frames": config.get("overlap_frames", 0),
+                            "session_id": state.session_id,
+                        },
+                    )
+                    state.streaming_task = asyncio.create_task(
+                        state.streaming_client.stream()
+                    )
+                    logger.info("Inference streaming started")
+                except Exception as e:
+                    logger.error(f"Failed to start inference: {e}")
+                    error_msg = ErrorMessage(message=f"Failed to start: {e}").model_dump()
+                    logger.info(f"Sending error to frontend: {error_msg}")
+                    await websocket.send_json(error_msg)
+                    state.is_streaming = False
+
+            elif msg_type == "stop":
+                # Stop inference streaming
+                logger.info("Stopping inference streaming")
+                state.is_streaming = False
+                if state.streaming_client:
+                    state.streaming_client.stop()
+                    state.streaming_client = None
+                logger.info("Inference streaming stopped")
+
+            elif msg_type == "clear_queue":
+                # Clear inference queue
+                logger.info("Clearing inference queue")
+                result = await clear_queue()
+                response = {"type": "queue_cleared", **result}
+                logger.info(f"Sending to frontend: type=queue_cleared, result={result}")
+                await websocket.send_json(response)
+
+            elif msg_type == "reset_session":
+                # Reset session
+                logger.info("Resetting session")
+                new_session_id = state.reset_session()
+                session_msg = SessionInfoMessage(
+                    session_id=new_session_id,
+                    config=state.session_config,
+                ).model_dump()
+                logger.info(f"Sending to frontend: type=session_info, new_session_id={new_session_id}")
+                await websocket.send_json(session_msg)
+                logger.info(f"Session reset to: {new_session_id}")
+
+            elif msg_type == "start_analysis":
+                # Handle analysis start
+                logger.info(f"Start analysis requested: {data}")
+                error_msg = ErrorMessage(
+                    message="Analysis via WebSocket not yet implemented"
+                ).model_dump()
+                logger.info(f"Sending error to frontend: {error_msg}")
+                await websocket.send_json(error_msg)
+
+    except WebSocketDisconnect:
+        logger.info("Client WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Client WebSocket error: {e}")
+    finally:
+        logger.info("Starting WebSocket cleanup...")
+        # Cleanup
+        if preview_task:
+            preview_task.cancel()
+            try:
+                await preview_task
+            except asyncio.CancelledError:
+                pass
+            logger.debug("Preview task cancelled")
+
+        if health_check_task:
+            health_check_task.cancel()
+            try:
+                await health_check_task
+            except asyncio.CancelledError:
+                pass
+            logger.debug("Health check task cancelled")
+
+        # Stop inference if running
+        if state.streaming_client:
+            state.streaming_client.stop()
+            state.streaming_client = None
+            logger.info("StreamingClient stopped")
+        state.is_streaming = False
+
+        # Stop camera if no longer needed
+        if state.camera and not state.is_streaming:
+            state.camera.stop()
+            state.camera = None
+            logger.info("Camera stopped")
+
+        logger.info("Client WebSocket cleanup complete")

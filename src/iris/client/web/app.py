@@ -66,7 +66,7 @@ def main() -> None:
             host=web_config.host,
             port=web_config.port,
             reload=True,
-            log_level="warning",
+            log_level="info",
             ssl_keyfile=str(web_config.ssl_keyfile),
             ssl_certfile=str(web_config.ssl_certfile),
         )
@@ -80,7 +80,7 @@ def main() -> None:
             host=web_config.host,
             port=web_config.port,
             reload=True,
-            log_level="warning",
+            log_level="info",
         )
         print(f"Started HTTP server on {web_config.host}:{web_config.port}")
 
