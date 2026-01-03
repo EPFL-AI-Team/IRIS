@@ -16,7 +16,9 @@ export interface ResultItem {
   status: "pending" | "processing" | "completed";
   result?: string;
   frames_processed?: number;
-  inference_time?: number;
+  inference_time?: number; // Time spent in inference (from server)
+  latency?: number; // Round-trip time from submission to result (ms)
+  submittedAt?: Date; // When the batch was submitted
   pendingDetails?: string;
 }
 
