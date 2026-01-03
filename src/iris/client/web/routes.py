@@ -1403,6 +1403,21 @@ async def client_websocket(websocket: WebSocket) -> None:
     await websocket.accept()
     logger.info(f"Client WebSocket connected, session_id={state.session_id}")
 
+    # Create or restore session in database
+    from iris.client.web.repositories import session_repo
+
+    db_session = session_repo.get(state.session_id)
+    if not db_session:
+        # Create new session in database
+        session_repo.create(
+            session_id=state.session_id,
+            config=state.session_config,
+        )
+        logger.info(f"Created new session in DB: {state.session_id}")
+    else:
+        # Session exists - restored from database
+        logger.info(f"Restored existing session from DB: {state.session_id}")
+
     # Send session info immediately on connect
     session_info = SessionInfoMessage(
         session_id=state.session_id,
@@ -1508,6 +1523,13 @@ async def client_websocket(websocket: WebSocket) -> None:
                 state.is_streaming = True
                 logger.info(f"Starting inference with config: {config}")
 
+                # Update session status in database
+                session_repo.update_status(
+                    session_id=state.session_id,
+                    status="running",
+                    started_at=time.time(),
+                )
+
                 # Start streaming to inference server
                 try:
                     if state.camera is None:
@@ -1528,9 +1550,30 @@ async def client_websocket(websocket: WebSocket) -> None:
                     def store_result(result: dict[str, Any]) -> None:
                         msg_type = result.get('type')
                         logger.info(f"StreamingClient received from inference server: type={msg_type}, job_id={result.get('job_id')}")
+
+                        # Store in memory
                         state.results_history.append(result)
                         if len(state.results_history) > state.max_results_history:
                             state.results_history.pop(0)
+
+                        # Persist result to database
+                        if msg_type == "result" and state.session_id:
+                            try:
+                                from iris.client.web.repositories import results_repo
+                                results_repo.store(
+                                    session_id=state.session_id,
+                                    job_id=result.get("job_id", "unknown"),
+                                    video_time_ms=int(result.get("timestamp", 0) * 1000),  # Convert to ms
+                                    inference_start_ms=result.get("timestamp", 0) * 1000,
+                                    inference_end_ms=(result.get("timestamp", 0) + result.get("inference_time", 0)) * 1000,
+                                    frame_start=0,  # Would need frame info from result
+                                    frame_end=result.get("frames_processed", 0),
+                                    result={"raw": result.get("result", "")},
+                                )
+                                logger.debug(f"Persisted result to DB: {result.get('job_id')}")
+                            except Exception as e:
+                                logger.error(f"Failed to persist result to DB: {e}")
+
                         # Forward result to frontend via WebSocket
                         logger.info(f"Forwarding to frontend: type={msg_type}, job_id={result.get('job_id')}")
                         asyncio.create_task(websocket.send_json(result))
@@ -1563,6 +1606,12 @@ async def client_websocket(websocket: WebSocket) -> None:
                 if state.streaming_client:
                     state.streaming_client.stop()
                     state.streaming_client = None
+
+                # Update session status in database
+                session_repo.update_status(
+                    session_id=state.session_id,
+                    status="paused",
+                )
                 logger.info("Inference streaming stopped")
 
             elif msg_type == "clear_queue":
