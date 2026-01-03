@@ -124,6 +124,28 @@ Focus on creating a readable timeline of events from the inference outputs. Use 
 """
 
 
+def get_gemini_api_key() -> str | None:
+    """Get Gemini API key from stored value or environment variables.
+
+    Checks in order:
+    1. Stored API key (set via UI)
+    2. GOOGLE_API_KEY environment variable
+    3. GEMINI_API_KEY environment variable
+
+    Returns:
+        API key string or None if not found
+    """
+    # Import here to avoid circular dependency
+    try:
+        from iris.client.web.routes import gemini_api_key_store
+        if gemini_api_key_store:
+            return gemini_api_key_store
+    except ImportError:
+        pass
+
+    return os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+
+
 async def generate_report_stream_gemini(
     summary: SessionSummary,
 ) -> AsyncGenerator[str, None]:
@@ -143,10 +165,10 @@ async def generate_report_stream_gemini(
         yield "Install it with: `pip install google-genai`\n"
         return
 
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key:
         yield "# Report Generation Error\n\n"
-        yield "GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set.\n"
+        yield "Gemini API key is not configured. Set it via the TopBar settings or environment variables (GOOGLE_API_KEY or GEMINI_API_KEY).\n"
         return
 
     prompt = build_report_prompt(summary)

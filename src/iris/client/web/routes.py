@@ -42,6 +42,9 @@ class SessionConfig(BaseModel):
 # Map session_id -> {"config": dict, "created_at": float}
 session_store: dict[str, dict] = {}
 
+# Global store for Gemini API key (in-memory, optional alternative to env vars)
+gemini_api_key_store: str | None = None
+
 
 @api_router.post("/session/init")
 async def initialize_session(config: SessionConfig) -> dict[str, Any]:
@@ -90,6 +93,35 @@ async def update_config(new_config: ServerConfig) -> dict[str, Any]:
     state = get_app_state()
     state.config.server = new_config
     return {"status": "ok", "config": state.config.server.model_dump()}
+
+
+@api_router.get("/config/gemini-key")
+async def get_gemini_key() -> dict[str, Any]:
+    """Get whether Gemini API key is configured (without exposing the actual key)."""
+    global gemini_api_key_store
+    import os
+
+    has_env_key = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+    has_stored_key = bool(gemini_api_key_store)
+
+    return {
+        "configured": has_env_key or has_stored_key,
+        "source": "environment" if has_env_key else ("stored" if has_stored_key else "none")
+    }
+
+
+@api_router.post("/config/gemini-key")
+async def set_gemini_key(request: dict[str, Any]) -> dict[str, Any]:
+    """Set Gemini API key for this session."""
+    global gemini_api_key_store
+
+    api_key = request.get("api_key", "").strip()
+    if not api_key:
+        gemini_api_key_store = None
+        return {"status": "ok", "message": "API key cleared"}
+
+    gemini_api_key_store = api_key
+    return {"status": "ok", "message": "API key stored"}
 
 
 @api_router.get("/config/defaults")

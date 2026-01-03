@@ -83,6 +83,16 @@ export function TopBar() {
   // Server config form state
   const [host, setHost] = useState(serverConfig.host);
   const [port, setPort] = useState(serverConfig.port);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [geminiKeyConfigured, setGeminiKeyConfigured] = useState(false);
+
+  // Check if Gemini API key is configured on mount
+  useEffect(() => {
+    fetch("/api/config/gemini-key")
+      .then(res => res.json())
+      .then(data => setGeminiKeyConfigured(data.configured))
+      .catch(() => setGeminiKeyConfigured(false));
+  }, []);
 
   const handleStart = () => {
     addLog("Starting inference...", "INFO");
@@ -127,6 +137,26 @@ export function TopBar() {
       }
     } catch {
       toast.error("Failed to update config");
+    }
+  };
+
+  const handleGeminiKeySubmit = async () => {
+    try {
+      const response = await fetch("/api/config/gemini-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: geminiApiKey }),
+      });
+
+      if (response.ok) {
+        setGeminiKeyConfigured(!!geminiApiKey);
+        setGeminiApiKey(""); // Clear input after saving
+        toast.success("Gemini API key updated");
+      } else {
+        toast.error("Failed to update API key");
+      }
+    } catch {
+      toast.error("Failed to update API key");
     }
   };
 
@@ -233,27 +263,52 @@ export function TopBar() {
 
       {/* Server Config Panel (collapsible) */}
       {showServerConfig && (
-        <div className="px-4 py-2 bg-muted/50 border-t flex items-center gap-4">
-          <span className="text-sm text-muted-foreground">
-            Inference Server:
-          </span>
-          <input
-            type="text"
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            placeholder="Host"
-            className="h-8 w-32 rounded-md border border-input bg-background px-2 text-sm"
-          />
-          <input
-            type="number"
-            value={port}
-            onChange={(e) => setPort(parseInt(e.target.value) || 8005)}
-            placeholder="Port"
-            className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
-          />
-          <Button size="sm" onClick={handleServerConfigSubmit}>
-            Update
-          </Button>
+        <div className="px-4 py-2 bg-muted/50 border-t space-y-2">
+          {/* Inference Server Config */}
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">
+              Inference Server:
+            </span>
+            <input
+              type="text"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="Host"
+              className="h-8 w-32 rounded-md border border-input bg-background px-2 text-sm"
+            />
+            <input
+              type="number"
+              value={port}
+              onChange={(e) => setPort(parseInt(e.target.value) || 8005)}
+              placeholder="Port"
+              className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+            />
+            <Button size="sm" onClick={handleServerConfigSubmit}>
+              Update
+            </Button>
+          </div>
+
+          {/* Gemini API Key Config */}
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">
+              Gemini API Key:
+            </span>
+            <input
+              type="password"
+              value={geminiApiKey}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
+              placeholder={geminiKeyConfigured ? "••••••••" : "Enter API key"}
+              className="h-8 w-64 rounded-md border border-input bg-background px-2 text-sm"
+            />
+            <Button size="sm" onClick={handleGeminiKeySubmit}>
+              {geminiKeyConfigured ? "Update" : "Set"}
+            </Button>
+            {geminiKeyConfigured && (
+              <Badge variant="default" className="text-xs">
+                Configured
+              </Badge>
+            )}
+          </div>
         </div>
       )}
 
