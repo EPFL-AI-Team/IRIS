@@ -11,17 +11,17 @@ class ServerConfig(BaseModel):
     # Model selection (direct from config.yaml)
     model_id: str = Field(
         default=_yaml_config.get("server", {}).get("model_id", "qwen2.5-7b"),
-        description="HuggingFace model ID or path to local model checkpoint"
+        description="HuggingFace model ID or path to local model checkpoint",
     )
     # Optional hardware optimization
     vlm_hardware: str | None = Field(
         default=_yaml_config.get("server", {}).get("vlm_hardware"),
-        description="Hardware profile: v100, mac, or null for auto-detect"
+        description="Hardware profile: v100, mac, or null for auto-detect",
     )
     # Optional dtype override (takes precedence over hardware profile)
     model_dtype: str | None = Field(
         default=_yaml_config.get("server", {}).get("model_dtype"),
-        description="Override model dtype (float16, float32, bfloat16, auto). Falls back to hardware profile if not set."
+        description="Override model dtype (float16, float32, bfloat16, auto). Falls back to hardware profile if not set.",
     )
 
     live_queue_threshold: int = Field(
@@ -36,47 +36,47 @@ class ServerConfig(BaseModel):
     max_queue_size: int = Field(
         default=_yaml_config.get("server", {}).get("max_queue_size", 10),
         ge=1,
-        description="Hard limit on queue capacity. Prevents memory exhaustion."
+        description="Hard limit on queue capacity. Prevents memory exhaustion.",
     )
     num_workers: int = Field(
         default=_yaml_config.get("server", {}).get("num_workers", 1),
         ge=1,
-        description="Number of parallel inference workers"
+        description="Number of parallel inference workers",
     )
     host: str = Field(
         default=_yaml_config.get("server", {}).get("host", "0.0.0.0"),
-        description="Server bind address"
+        description="Server bind address",
     )
     port: int = Field(
         default=_yaml_config.get("server", {}).get("port", 8001),
         ge=1,
         le=65535,
-        description="Server port number"
+        description="Server port number",
     )
     graceful_shutdown_timeout: float = Field(
         default=_yaml_config.get("server", {}).get("graceful_shutdown_timeout", 30.0),
         ge=0,
-        description="Seconds to wait for in-flight jobs before force shutdown"
+        description="Seconds to wait for in-flight jobs before force shutdown",
     )
     enable_log_streaming: bool = Field(
         default=_yaml_config.get("server", {}).get("enable_log_streaming", True),
-        description="Stream server logs to clients via WebSocket"
+        description="Stream server logs to clients via WebSocket",
     )
     log_streaming_min_level: str = Field(
         default=_yaml_config.get("server", {}).get("log_streaming_min_level", "INFO"),
-        description="Minimum log level to stream (DEBUG, INFO, WARNING, ERROR)"
+        description="Minimum log level to stream (DEBUG, INFO, WARNING, ERROR)",
     )
     enable_metrics: bool = Field(
         default=_yaml_config.get("server", {}).get("enable_metrics", True),
-        description="Collect and persist metrics"
+        description="Collect and persist metrics",
     )
     jobs: dict = Field(
-        default_factory=lambda: _yaml_config.get("server",{}).get("jobs", {}),
-        description="Job configurations (video, etc.)"
+        default_factory=lambda: _yaml_config.get("server", {}).get("jobs", {}),
+        description="Job configurations (video, etc.)",
     )
 
-    @model_validator(mode='after')
-    def validate_queue_parameters(self) -> 'ServerConfig':
+    @model_validator(mode="after")
+    def validate_queue_parameters(self) -> "ServerConfig":
         """Validate queue parameter relationships."""
         if self.live_queue_threshold > self.max_queue_size:
             raise ValueError(
@@ -87,17 +87,8 @@ class ServerConfig(BaseModel):
         return self
 
     @classmethod
-    def from_cli_args(cls, args: Any, yaml_config: dict[str, Any]) -> 'ServerConfig':
-        """Create ServerConfig from CLI arguments, using YAML config as base.
-
-        Args:
-            args: Parsed argparse Namespace
-            yaml_config: Loaded YAML configuration dictionary
-
-        Returns:
-            ServerConfig instance with CLI overrides applied
-        """
-        # Start with server section from YAML
+    def from_cli_args(cls, args: Any, yaml_config: dict[str, Any]) -> "ServerConfig":
+        """Create ServerConfig from CLI arguments, using YAML config as base."""
         config_dict = yaml_config.get("server", {}).copy()
 
         # Override with CLI arguments (only if provided)
@@ -117,6 +108,8 @@ class ServerConfig(BaseModel):
             config_dict["max_queue_size"] = args.max_queue_size
         if args.live_queue_threshold is not None:
             config_dict["live_queue_threshold"] = args.live_queue_threshold
+        # If you want to allow jobs override via CLI, add here:
+        # if args.jobs is not None:
+        #     config_dict["jobs"] = args.jobs
 
-        # Include jobs section from YAML (not overridable via CLI)
-        return cls(**config_dict, jobs=yaml_config.get("server", {}).get("jobs", {}))
+        return cls(**config_dict)
