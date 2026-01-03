@@ -12,6 +12,7 @@ import {
   Settings,
   Wifi,
   WifiOff,
+  Loader2,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { useClientWebSocket } from "@/hooks/useClientWebSocket";
@@ -45,6 +46,7 @@ export function TopBar() {
   const fps = useAppStore((state) => state.fps);
   const serverConfig = useAppStore((state) => state.serverConfig);
   const setServerConfig = useAppStore((state) => state.setServerConfig);
+  const reportStatus = useAppStore((state) => state.reportStatus);
 
   // WebSocket connection for sending commands
   const { startInference, stopInference, clearQueue, resetSession } =
@@ -149,6 +151,26 @@ export function TopBar() {
           <Badge variant={serverAlive ? "default" : "secondary"}>
             Server: {serverAlive ? "Online" : "Offline"}
           </Badge>
+
+          {/* Report Status Badge */}
+          {reportStatus !== "idle" && (
+            <Badge
+              variant={
+                reportStatus === "ready"
+                  ? "default"
+                  : reportStatus === "generating"
+                    ? "secondary"
+                    : "destructive"
+              }
+              className="gap-1"
+            >
+              {reportStatus === "generating" && (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              )}
+              {reportStatus === "ready" && <FileText className="w-3 h-3" />}
+              Report: {reportStatus.charAt(0).toUpperCase() + reportStatus.slice(1)}
+            </Badge>
+          )}
 
           {/* FPS (when streaming) */}
           {isStreaming && (
