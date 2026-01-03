@@ -54,6 +54,17 @@ def init_db() -> None:
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
 
+            -- Generated reports table
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'gemini',
+                content TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                generation_duration_sec REAL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+
             -- Indexes for efficient querying
             CREATE INDEX IF NOT EXISTS idx_results_session
                 ON inference_results(session_id);
@@ -63,6 +74,8 @@ def init_db() -> None:
                 ON logs(session_id);
             CREATE INDEX IF NOT EXISTS idx_logs_timestamp
                 ON logs(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_reports_session
+                ON reports(session_id);
         """)
 
 
