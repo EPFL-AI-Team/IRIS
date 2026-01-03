@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
@@ -21,6 +21,10 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:8006',
         ws: true,
+        changeOrigin: true,
+      },
+      '/static': {
+        target: 'http://localhost:8006',
         changeOrigin: true,
       }
     }
