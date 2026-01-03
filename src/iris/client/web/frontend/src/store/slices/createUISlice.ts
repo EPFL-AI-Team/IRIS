@@ -48,6 +48,16 @@ export interface UISlice {
 
   sessionMetrics: SessionMetrics | null;
   setSessionMetrics: (metrics: SessionMetrics | null) => void;
+
+  // Report generation status
+  reportStatus: "idle" | "generating" | "ready" | "error";
+  setReportStatus: (status: "idle" | "generating" | "ready" | "error") => void;
+
+  reportContent: string | null;
+  setReportContent: (content: string | null) => void;
+
+  reportError: string | null;
+  setReportError: (error: string | null) => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -144,4 +154,14 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   // Session metrics
   sessionMetrics: null,
   setSessionMetrics: (metrics) => set({ sessionMetrics: metrics }),
+
+  // Report generation status
+  reportStatus: "idle",
+  setReportStatus: (status) => set({ reportStatus: status }),
+
+  reportContent: null,
+  setReportContent: (content) => set({ reportContent: content }),
+
+  reportError: null,
+  setReportError: (error) => set({ reportError: error }),
 });
