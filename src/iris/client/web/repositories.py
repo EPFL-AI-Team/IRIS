@@ -351,7 +351,97 @@ class LogsRepository:
             return cursor.rowcount
 
 
+class ReportsRepository:
+    """CRUD operations for generated reports."""
+
+    def store(
+        self,
+        session_id: str,
+        provider: str,
+        content: str,
+        generation_duration_sec: float | None = None,
+    ) -> int:
+        """Store a generated report.
+
+        Args:
+            session_id: Parent session ID.
+            provider: LLM provider used (e.g., 'gemini').
+            content: Full markdown report content.
+            generation_duration_sec: Time taken to generate.
+
+        Returns:
+            ID of inserted row.
+        """
+        now = time.time()
+        with get_db() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO reports (session_id, provider, content, created_at, generation_duration_sec)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, provider, content, now, generation_duration_sec),
+            )
+            return cursor.lastrowid
+
+    def get_latest_by_session(self, session_id: str) -> dict[str, Any] | None:
+        """Get the most recent report for a session.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            Report dict or None if not found.
+        """
+        with get_db() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM reports
+                WHERE session_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+            return row_to_dict(row)
+
+    def get_all_by_session(self, session_id: str) -> list[dict[str, Any]]:
+        """Get all reports for a session.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            List of report dicts ordered by created_at desc.
+        """
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM reports
+                WHERE session_id = ?
+                ORDER BY created_at DESC
+                """,
+                (session_id,),
+            ).fetchall()
+            return rows_to_list(rows)
+
+    def delete_by_session(self, session_id: str) -> int:
+        """Delete all reports for a session.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            Number of deleted rows.
+        """
+        with get_db() as conn:
+            cursor = conn.execute(
+                "DELETE FROM reports WHERE session_id = ?", (session_id,)
+            )
+            return cursor.rowcount
+
+
 # Singleton instances
 session_repo = SessionRepository()
 results_repo = ResultsRepository()
 logs_repo = LogsRepository()
+reports_repo = ReportsRepository()
