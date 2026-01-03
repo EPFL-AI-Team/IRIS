@@ -71,7 +71,7 @@ class ServerConfig(BaseModel):
         description="Collect and persist metrics"
     )
     jobs: dict = Field(
-        default_factory=lambda: _yaml_config.get("jobs", {}),
+        default_factory=lambda: _yaml_config.get("server",{}).get("jobs", {}),
         description="Job configurations (video, etc.)"
     )
 
@@ -119,4 +119,4 @@ class ServerConfig(BaseModel):
             config_dict["live_queue_threshold"] = args.live_queue_threshold
 
         # Include jobs section from YAML (not overridable via CLI)
-        return cls(**config_dict, jobs=yaml_config.get("jobs", {}))
+        return cls(**config_dict, jobs=yaml_config.get("server", {}).get("jobs", {}))
