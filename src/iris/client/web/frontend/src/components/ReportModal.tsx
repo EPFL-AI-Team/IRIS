@@ -18,7 +18,11 @@ interface ReportModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps) {
+export function ReportModal({
+  sessionId,
+  open,
+  onOpenChange,
+}: ReportModalProps) {
   const [copied, setCopied] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -118,7 +122,8 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
         setReportStatus("idle");
         return;
       }
-      const errorMsg = err instanceof Error ? err.message : "Failed to generate report";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to generate report";
       setReportError(errorMsg);
       setReportStatus("error");
     } finally {
@@ -138,7 +143,9 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
     setReportError(null);
 
     try {
-      const response = await fetch(`/api/report/fallback/${effectiveSessionId}`);
+      const response = await fetch(
+        `/api/report/fallback/${effectiveSessionId}`
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -149,7 +156,8 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
       setReportContent(data.report);
       setReportStatus("ready");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to generate report";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to generate report";
       setReportError(errorMsg);
       setReportStatus("error");
     }
@@ -246,7 +254,7 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
 
         <div
           ref={contentRef}
-          className="flex-1 min-h-[300px] max-h-[60vh] overflow-auto bg-muted/50 rounded-md p-4"
+          className="flex-1 min-h-75 max-h-[60vh] overflow-auto bg-muted/50 rounded-md p-4"
         >
           {isGenerating && !reportContent && (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -263,7 +271,8 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
             </div>
           ) : (
             <span className="text-muted-foreground">
-              Click "Generate Report" for a Gemini-powered analysis or "Basic Stats" for a quick summary.
+              Click "Generate Report" for a Gemini-powered analysis or "Basic
+              Stats" for a quick summary.
             </span>
           )}
         </div>

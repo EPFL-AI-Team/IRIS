@@ -1224,9 +1224,22 @@ async def generate_report(request: dict[str, Any]) -> Any:
     from iris.client.web.repositories import reports_repo, results_repo, session_repo
 
     session_id = request.get("session_id")
+    force_regenerate = request.get("force_regenerate", False)
 
     if not session_id:
         return {"error": "session_id is required"}
+
+    # Check if report already exists (unless force_regenerate is True)
+    if not force_regenerate:
+        existing_report = reports_repo.get_latest_by_session(session_id)
+        if existing_report:
+            logger.info(f"Returning cached report for session {session_id}")
+            return {
+                "report": existing_report["content"],
+                "provider": existing_report.get("provider", "gemini"),
+                "cached": True,
+                "created_at": existing_report.get("created_at"),
+            }
 
     # Try to get session from database
     session = session_repo.get(session_id)
