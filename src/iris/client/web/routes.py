@@ -1343,8 +1343,21 @@ async def get_stored_report(session_id: str) -> dict[str, Any]:
 @api_router.post("/session/reset")
 async def reset_session() -> dict[str, Any]:
     """Reset session - generate new session_id and clear history."""
+    from iris.client.web.repositories import session_repo
+
     state = get_app_state()
     new_session_id = state.reset_session()
+
+    # Create new session in database immediately
+    try:
+        session_repo.create(
+            session_id=new_session_id,
+            config=state.session_config,
+        )
+        logger.info(f"Created new session in DB after API reset: {new_session_id}")
+    except Exception as e:
+        logger.error(f"Failed to create session in DB after API reset: {e}")
+
     logger.info(f"Session reset: new session_id={new_session_id}")
     return {"status": "ok", "session_id": new_session_id}
 
@@ -1651,6 +1664,18 @@ async def client_websocket(websocket: WebSocket) -> None:
                 # Reset session
                 logger.info("Resetting session")
                 new_session_id = state.reset_session()
+
+                # Create new session in database immediately
+                try:
+                    session_repo.create(
+                        session_id=new_session_id,
+                        config=state.session_config,
+                    )
+                    logger.info(f"Created new session in DB after reset: {new_session_id}")
+                    persist_log("INFO", f"Session reset: new session {new_session_id}")
+                except Exception as e:
+                    logger.error(f"Failed to create session in DB after reset: {e}")
+
                 session_msg = SessionInfoMessage(
                     session_id=new_session_id,
                     config=state.session_config,
