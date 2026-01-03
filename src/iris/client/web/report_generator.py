@@ -47,8 +47,9 @@ def build_report_context(
     duration_sec = (completed_at - started_at) if started_at else 0
 
     # Take sample of results for context (avoid huge prompts)
-    sample_results = results[:10] if len(results) > 10 else results
-
+    # sample_results = results[:5] if len(results) > 5 else results
+    sample_results = results
+    
     # Simplify results for prompt
     simplified_results = []
     for r in sample_results:
@@ -92,7 +93,7 @@ def build_report_prompt(summary: SessionSummary) -> str:
         "ground_truth_count": summary.ground_truth_count,
     }
 
-    return f"""You are a technical documentation writer creating a human-readable report documenting what happened during a surgical video analysis session.
+    return f"""You are a technical documentation writer creating a human-readable report documenting what happened during a laboratory first-person view video analysis session.
 
 ## Session Data
 
@@ -102,24 +103,24 @@ def build_report_prompt(summary: SessionSummary) -> str:
 
 ## Task
 
-Create a **flowing narrative documentation** (400-600 words) that describes the sequential flow of events detected in the video. The sample_results contain the inference outputs in chronological order - each entry shows what actions and tools were detected at specific timestamps.
+Create a **flowing narrative documentation** (300-400 words) that describes the sequential flow of events detected in the laboratory video. The sample_results contain the inference outputs in chronological order - each entry shows what actions and tools were detected at specific timestamps from a first-person perspective.
 
 ## Instructions
 
 Write in complete paragraphs (not bullet points) documenting the chronological flow. Structure:
 
-1. **Session Overview** (1-2 paragraphs): Session details, video file, duration, configuration
+1. **Session Overview** (1 paragraph): Session details, video file, duration, configuration
 
-2. **Procedure Timeline** (4-6 paragraphs): Chronologically describe what was detected:
+2. **Procedure Timeline** (2-3 paragraphs): Chronologically describe what was detected from the first-person laboratory view:
    - What actions and tools appear at the start
    - How the procedure progresses (transitions between actions/tools)
    - Key moments or changes in the detected activities
    - What was detected toward the end
    - Note: The model may have made errors, so use phrases like "the model detected," "appears to show," "suggests" when describing detections
 
-3. **Summary** (1-2 paragraphs): Overview of the complete procedure flow, any notable patterns
+3. **Summary** (1 paragraph): Overview of the complete procedure flow, any notable patterns
 
-Focus on creating a readable timeline of events from the inference outputs. Use professional medical/technical language where appropriate.
+Focus on creating a readable timeline of events from the inference outputs. Use professional laboratory/technical language where appropriate.
 """
 
 
