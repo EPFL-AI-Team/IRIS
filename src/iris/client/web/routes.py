@@ -1203,11 +1203,14 @@ async def delete_session(session_id: str) -> dict[str, Any]:
 
 @api_router.post("/report/generate")
 async def generate_report(request: dict[str, Any]) -> Any:
-    """Generate an LLM-powered analysis report.
+    """Generate Gemini-powered report with streaming.
+
+    Works for both live view and analysis view sessions.
+    For live sessions, uses in-memory results_history.
+    For analysis sessions, uses database results.
 
     Request body:
         session_id: Session to generate report for
-        provider: Optional LLM provider ("anthropic" or "openai")
 
     Returns:
         StreamingResponse with Markdown content
@@ -1218,47 +1221,76 @@ async def generate_report(request: dict[str, Any]) -> Any:
         generate_fallback_report,
         generate_report_stream,
     )
-    from iris.client.web.repositories import results_repo, session_repo
+    from iris.client.web.repositories import reports_repo, results_repo, session_repo
 
     session_id = request.get("session_id")
-    provider = request.get("provider", "anthropic")
 
     if not session_id:
         return {"error": "session_id is required"}
 
-    # Get session and results
+    # Try to get session from database
     session = session_repo.get(session_id)
-    if not session:
-        return {"error": "Session not found", "session_id": session_id}
-
-    results = results_repo.get_by_session(session_id)
-
-    # Load annotations if available
     state = get_app_state()
+
+    # If no session in DB, this might be a live session
+    # Use in-memory data from AppState
+    if not session:
+        # Create minimal session dict from in-memory state
+        session = {
+            "id": session_id,
+            "status": "running" if state.is_streaming else "idle",
+            "created_at": time.time(),
+            "config": state.session_config,
+            "video_file": None,  # Live sessions don't have video files
+            "annotation_file": None,
+        }
+        # Use in-memory results history for live sessions
+        results = state.results_history
+    else:
+        # Analysis session - get results from database
+        results = results_repo.get_by_session(session_id)
+
     annotations = state.analysis_annotations if state.analysis_annotations else None
 
-    # Check if LLM API key is available
+    # Check for Gemini API key
     import os
 
-    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_gemini = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
 
-    if not has_anthropic and not has_openai:
+    if not has_gemini:
         # Return fallback report
         report = generate_fallback_report(session, results, annotations)
         return {"report": report, "provider": "fallback"}
 
-    # Stream LLM-generated report
-    async def stream_generator():
-        async for chunk in generate_report_stream(
-            session, results, annotations, provider
-        ):
+    # Stream and store report
+    start_time = time.time()
+    accumulated = []
+
+    async def stream_and_store():
+        nonlocal accumulated
+        async for chunk in generate_report_stream(session, results, annotations):
+            accumulated.append(chunk)
             yield chunk
 
+        # Store complete report (only if session exists in DB)
+        if session_repo.get(session_id):
+            full_content = "".join(accumulated)
+            duration = time.time() - start_time
+            try:
+                reports_repo.store(
+                    session_id=session_id,
+                    provider="gemini",
+                    content=full_content,
+                    generation_duration_sec=duration,
+                )
+                logger.info(f"Stored report for {session_id} ({duration:.2f}s)")
+            except Exception as e:
+                logger.error(f"Failed to store report: {e}")
+
     return StreamingResponse(
-        stream_generator(),
+        stream_and_store(),
         media_type="text/markdown",
-        headers={"X-Report-Provider": provider},
+        headers={"X-Report-Provider": "gemini"},
     )
 
 
