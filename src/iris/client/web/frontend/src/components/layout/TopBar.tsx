@@ -30,7 +30,8 @@ import { ReportModal } from "@/components/ReportModal";
 export function TopBar() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [showServerConfig, setShowServerConfig] = useState(false);
-  const [clientElapsedSeconds, setClientElapsedSeconds] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_, setClientElapsedSeconds] = useState(0);
   const streamingStartTimeRef = useRef<number | null>(null);
 
   // Store state

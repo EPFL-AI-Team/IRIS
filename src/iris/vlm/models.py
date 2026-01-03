@@ -11,7 +11,7 @@ from transformers import (
     PreTrainedModel,
     ProcessorMixin,
     Qwen2_5_VLForConditionalGeneration,
-    # Qwen3VLForConditionalGeneration,
+    # Qwen3VLForConditionalGeneration, (needed to remove because the transformers version on RCP is older)
 )
 
 from iris.utils.logging import setup_logger
