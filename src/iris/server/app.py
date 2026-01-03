@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from iris.config import _yaml_config
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
 from iris.server.frame_buffer import FrameBuffer
@@ -81,6 +82,7 @@ class SessionState:
             "processing_rate": round(rate, 2),
             "frames_received": self.frames_received,
         }
+
 
 # Suppress known warnings
 warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
@@ -287,6 +289,106 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(title="IRIS Inference Server", lifespan=lifespan)
 
 
+@app.get("/api/config/defaults")
+async def get_config_defaults() -> dict:
+    """Return configuration defaults for frontend initialization.
+
+    Returns:
+        Dictionary with server, video, and segment configuration defaults.
+    """
+    return {
+        "server": {
+            "host": config.host,
+            "port": config.port,
+            "model_id": config.model_id,
+        },
+        "video": {
+            "width": _yaml_config.get("client", {}).get("video", {}).get("width", 640),
+            "height": _yaml_config.get("client", {})
+            .get("video", {})
+            .get("height", 480),
+            "capture_fps": _yaml_config.get("client", {})
+            .get("video", {})
+            .get("capture_fps", 10),
+            "jpeg_quality": _yaml_config.get("client", {})
+            .get("video", {})
+            .get("jpeg_quality", 80),
+            "camera_index": _yaml_config.get("client", {})
+            .get("video", {})
+            .get("camera_index", 0),
+        },
+        "segment": {
+            "segment_time": _yaml_config.get("client", {})
+            .get("segment", {})
+            .get("segment_time", 1.0),
+            "frames_per_segment": _yaml_config.get("client", {})
+            .get("segment", {})
+            .get("frames_per_segment", 8),
+            "overlap_frames": _yaml_config.get("client", {})
+            .get("segment", {})
+            .get("overlap_frames", 4),
+        },
+    }
+
+
+@app.post("/api/queue/clear")
+async def clear_queue() -> dict:
+    """Clear all pending inference jobs and free GPU memory.
+
+    This endpoint clears the inference queue and triggers garbage collection
+    to free any associated GPU memory. Use this when you want to stop
+    processing and start fresh without waiting for queued jobs to complete.
+
+    Returns:
+        Dictionary with cleared count and status.
+    """
+    import gc
+
+    state = get_server_state()
+
+    # Clear the job queue
+    cleared_count = 0
+    if state.queue and state.queue.queue:
+        while not state.queue.queue.empty():
+            try:
+                state.queue.queue.get_nowait()
+                cleared_count += 1
+            except asyncio.QueueEmpty:
+                break
+
+    # Force garbage collection to free memory
+    gc.collect()
+
+    # Clear GPU cache if torch/CUDA is available
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info("GPU cache cleared")
+    except ImportError:
+        pass  # torch not available
+
+    logger.info(f"Cleared {cleared_count} jobs from queue")
+    return {"cleared": cleared_count, "status": "ok"}
+
+
+@app.get("/health")
+async def health_check() -> dict:
+    """Health check endpoint for monitoring.
+
+    Returns:
+        Dictionary with status and queue depth.
+    """
+    state = get_server_state()
+    queue_depth = state.queue.queue.qsize() if state.queue and state.queue.queue else 0
+    return {
+        "status": "ok",
+        "queue_depth": queue_depth,
+        "model_loaded": state.model_loaded,
+    }
+
+
 @app.websocket("/ws/stream")
 async def inference_endpoint(websocket: WebSocket) -> None:
     """Receive frames and return inference results.
@@ -337,6 +439,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         """Handle result from VideoJob and queue for sending."""
         nonlocal session
         if not connection_state["active"]:
+            logger.debug(f"Skipping result {result_data.get('job_id')} - connection inactive")
             return  # Skip if connection is closed
 
         try:
@@ -358,6 +461,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 state.metrics.record_inference_result(result_data)
 
             # Queue for sending
+            logger.info(f"Queueing result for job {result_data.get('job_id')} to send to client")
             await outgoing_queue.put(result_data)
 
         except Exception as e:
@@ -487,7 +591,9 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
                 # Process frame message
                 if "frame_id" not in data:
-                    logger.warning(f"Unknown message type: {data.get('type', 'unknown')}")
+                    logger.warning(
+                        f"Unknown message type: {data.get('type', 'unknown')}"
+                    )
                     continue
 
                 frame_id = data["frame_id"]
@@ -641,6 +747,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     msg = await asyncio.wait_for(outgoing_queue.get(), timeout=0.5)
                     if not connection_state["active"]:
                         break
+                    msg_type = msg.get("type", "unknown")
+                    logger.info(f"Sending message type={msg_type} to client")
                     await websocket.send_json(msg)
                 except TimeoutError:
                     continue  # Re-check connection_state
@@ -667,14 +775,34 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
     # Metrics broadcast loop - sends session metrics every 500ms
     async def metrics_broadcast_loop() -> None:
-        """Broadcast session metrics to client every 500ms."""
+        """Broadcast session metrics to client every 500ms.
+
+        Only sends metrics when there's actual activity to avoid spamming
+        the connection with unchanged data.
+        """
+        last_segments_processed = 0
+        last_queue_depth = 0
+        last_frames_received = 0
+
         try:
             while connection_state["active"]:
                 await asyncio.sleep(0.5)
                 if session and connection_state["active"]:
                     queue_depth = state.queue.queue.qsize() if state.queue else 0
-                    metrics = session.to_metrics(queue_depth)
-                    await outgoing_queue.put(metrics)
+
+                    # Only send metrics if something has changed
+                    if (
+                        session.segments_processed != last_segments_processed
+                        or queue_depth != last_queue_depth
+                        or session.frames_received != last_frames_received
+                    ):
+                        metrics = session.to_metrics(queue_depth)
+                        await outgoing_queue.put(metrics)
+
+                        # Update last known values
+                        last_segments_processed = session.segments_processed
+                        last_queue_depth = queue_depth
+                        last_frames_received = session.frames_received
         except asyncio.CancelledError:
             pass  # Normal shutdown
         except Exception as e:
@@ -750,7 +878,7 @@ def main() -> None:
     import uvicorn
 
     try:
-        uvicorn.run(app, host=config.host, port=config.port, log_level="debug")
+        uvicorn.run(app, host=config.host, port=config.port, log_level="info")
     except KeyboardInterrupt:
         # Handle Ctrl+C during uvicorn startup
         logger.info("Server interrupted during startup. Exiting...")
