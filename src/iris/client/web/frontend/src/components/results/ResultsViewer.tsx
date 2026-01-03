@@ -5,6 +5,7 @@ import { Loader2, Camera, CheckCircle2, Terminal } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import type { ResultItem } from "../../types";
 import { cn } from "@/lib/utils";
+import { formatResultAsNaturalLanguage } from "@/utils/formatResult";
 
 /**
  * ResultsViewer component for displaying inference results.
@@ -70,22 +71,38 @@ function ResultCard({
     content = content.replace(/^```json|```$/g, "").trim();
 
     try {
-      // Try to render as nice Key-Value pairs if it's JSON
+      // Parse JSON and render as natural language
       const parsed = JSON.parse(content);
+      const naturalLanguage = formatResultAsNaturalLanguage(parsed);
+
       return (
-        <div className="grid grid-cols-1 gap-y-2 text-sm mt-3 bg-muted/40 p-3 rounded-md border border-border/50">
-          {Object.entries(parsed).map(([key, value]) => (
-            <div key={key} className="flex flex-col sm:flex-row sm:gap-4">
-              <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider min-w-25 py-0.5">
-                {key}
-              </span>
-              <span className="font-mono text-foreground break-all">
-                {typeof value === "object"
-                  ? JSON.stringify(value)
-                  : String(value)}
-              </span>
+        <div className="mt-3 space-y-2">
+          {/* Primary display: Natural language */}
+          <div className="text-base font-medium text-foreground leading-relaxed bg-gradient-to-r from-emerald-50/50 to-transparent dark:from-emerald-950/20 p-3 rounded-md border-l-2 border-l-emerald-500">
+            {naturalLanguage}
+          </div>
+
+          {/* Secondary: Collapsed JSON details (includes context field) */}
+          <details className="text-xs group">
+            <summary className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors list-none flex items-center gap-2 py-1">
+              <span className="inline-block transition-transform group-open:rotate-90">▶</span>
+              <span>Show JSON details</span>
+            </summary>
+            <div className="grid grid-cols-1 gap-y-2 text-sm mt-2 bg-muted/40 p-3 rounded-md border border-border/50">
+              {Object.entries(parsed).map(([key, value]) => (
+                <div key={key} className="flex flex-col sm:flex-row sm:gap-4">
+                  <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider min-w-25 py-0.5">
+                    {key}
+                  </span>
+                  <span className="font-mono text-foreground break-all">
+                    {typeof value === "object"
+                      ? JSON.stringify(value)
+                      : String(value)}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
+          </details>
         </div>
       );
     } catch {

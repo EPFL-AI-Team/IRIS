@@ -75,25 +75,23 @@ def build_report_context(
 
 
 def build_report_prompt(summary: SessionSummary) -> str:
-    """Build prompt for documentation-style narrative generation.
+    """Build prompt for concise bullet-point protocol generation.
 
     Args:
         summary: Session summary data.
 
     Returns:
-        Formatted prompt string optimized for chronological narrative.
+        Formatted prompt string optimized for protocol steps.
     """
     context = {
         "session_id": summary.session_id,
-        "status": summary.status,
         "duration_sec": round(summary.duration_sec, 2),
         "video_file": summary.video_file,
         "total_results": summary.total_results,
         "sample_results": summary.sample_results,  # All inference outputs in order
-        "ground_truth_count": summary.ground_truth_count,
     }
 
-    return f"""You are a technical documentation writer creating a human-readable report documenting what happened during a laboratory first-person view video analysis session.
+    return f"""You are a laboratory scientist writing a concise procedure protocol.
 
 ## Session Data
 
@@ -103,24 +101,22 @@ def build_report_prompt(summary: SessionSummary) -> str:
 
 ## Task
 
-Create a **flowing narrative documentation** (300-400 words) that describes the sequential flow of events detected in the laboratory video. The sample_results contain the inference outputs in chronological order - each entry shows what actions and tools were detected at specific timestamps from a first-person perspective.
+Generate a brief protocol summary (100-150 words) documenting the key steps observed in this laboratory procedure. Format as a numbered list of protocol steps.
 
-## Instructions
+## Output Format
 
-Write in complete paragraphs (not bullet points) documenting the chronological flow. Structure:
+1. **Session Overview** (1 sentence): Video file, duration, number of observations
 
-1. **Session Overview** (1 paragraph): Session details, video file, duration, configuration
+2. **Procedure Steps** (numbered list, 5-8 steps maximum):
+   - Each step should be 1-2 sentences
+   - Focus on chronological order of major actions
+   - Use passive voice (e.g., "The pipette was inserted into the tube")
+   - Mention tools and targets clearly
+   - Describe what was observed, not what the model "detected"
 
-2. **Procedure Timeline** (2-3 paragraphs): Chronologically describe what was detected from the first-person laboratory view:
-   - What actions and tools appear at the start
-   - How the procedure progresses (transitions between actions/tools)
-   - Key moments or changes in the detected activities
-   - What was detected toward the end
-   - Note: The model may have made errors, so use phrases like "the model detected," "appears to show," "suggests" when describing detections
+3. **Summary** (1 sentence): Overall characterization of the procedure
 
-3. **Summary** (1 paragraph): Overview of the complete procedure flow, any notable patterns
-
-Focus on creating a readable timeline of events from the inference outputs. Use professional laboratory/technical language where appropriate.
+Write in professional laboratory protocol style. Be concise and focus on observable actions.
 """
 
 

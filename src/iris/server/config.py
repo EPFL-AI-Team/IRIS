@@ -34,9 +34,9 @@ class ServerConfig(BaseModel):
     )
 
     max_queue_size: int = Field(
-        default=_yaml_config.get("server", {}).get("max_queue_size", 10),
+        default=_yaml_config.get("server", {}).get("max_queue_size", 50),
         ge=1,
-        description="Hard limit on queue capacity. Prevents memory exhaustion.",
+        description="Hard limit on queue capacity (live: 1-2, analysis: 50-100). Prevents memory exhaustion.",
     )
     num_workers: int = Field(
         default=_yaml_config.get("server", {}).get("num_workers", 1),

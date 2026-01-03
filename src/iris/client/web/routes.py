@@ -952,6 +952,11 @@ async def analysis_websocket(websocket: WebSocket) -> None:
         nonlocal frame_count
         try:
             while True:
+                # Defensive check: ensure video_capture still exists
+                if not state.analysis_video_capture:
+                    logger.info("Analysis video capture was stopped, ending frame transmission")
+                    break
+
                 frame_jpeg = state.analysis_video_capture.get_frame_jpeg(
                     quality=state.config.video.jpeg_quality
                 )
