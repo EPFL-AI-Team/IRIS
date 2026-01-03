@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import type {
+  ActiveTab,
   CameraMode,
   ConnectionStatus,
   ClientVideoConfig,
   LogEntry,
   LogLevel,
+  PreviewFrame,
   ResultItem,
   ServerConfig,
   VideoInfo,
@@ -25,7 +27,23 @@ const MAX_ANALYSIS_RESULTS = 200;
 const MAX_ANALYSIS_LOGS = 500;
 
 interface AppState {
-  // Camera mode
+  // Active tab (live or analysis)
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
+
+  // Unified WebSocket connection status (new architecture)
+  connectionStatus: ConnectionStatus;
+  setConnectionStatus: (status: ConnectionStatus) => void;
+
+  // Preview frame from backend USB camera
+  previewFrame: PreviewFrame | null;
+  setPreviewFrame: (frame: string, timestamp: number) => void;
+
+  // Inference server health status
+  serverAlive: boolean;
+  setServerAlive: (alive: boolean) => void;
+
+  // Camera mode (kept for backwards compatibility during transition)
   cameraMode: CameraMode;
   setCameraMode: (mode: CameraMode) => void;
 
@@ -152,8 +170,25 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  // Camera mode - default to client (browser camera)
-  cameraMode: "client",
+  // Active tab - default to live view
+  activeTab: "live",
+  setActiveTab: (tab) => set({ activeTab: tab }),
+
+  // Unified WebSocket connection status
+  connectionStatus: "disconnected",
+  setConnectionStatus: (status) => set({ connectionStatus: status }),
+
+  // Preview frame from backend USB camera
+  previewFrame: null,
+  setPreviewFrame: (frame, timestamp) =>
+    set({ previewFrame: { data: frame, timestamp } }),
+
+  // Inference server health status
+  serverAlive: false,
+  setServerAlive: (alive) => set({ serverAlive: alive }),
+
+  // Camera mode - default to server (USB camera on backend)
+  cameraMode: "server",
   setCameraMode: (mode) => set({ cameraMode: mode }),
 
   // Connection states
@@ -307,11 +342,11 @@ export const useAppStore = create<AppState>((set) => ({
   currentPlaybackPosition: 0,
   setCurrentPlaybackPosition: (ms) => set({ currentPlaybackPosition: ms }),
 
-  // Segment configuration - defaults: T=1s, s=8 frames, overlap=4 → FPS=8
+  // Segment configuration - defaults: T=1s, s=2 frames, overlap=0 → FPS=2 (matches config.yaml)
   segmentConfig: {
     segmentTime: 1.0,
-    framesPerSegment: 8,
-    overlapFrames: 4,
+    framesPerSegment: 2,
+    overlapFrames: 0,
   },
   setSegmentConfig: (config) => set({ segmentConfig: config }),
 

@@ -138,5 +138,51 @@ export interface Toast {
   duration?: number;
 }
 
+// Tab type for main navigation
+export type ActiveTab = "live" | "analysis";
+
+// Preview frame from WebSocket
+export interface PreviewFrame {
+  data: string; // base64 JPEG
+  timestamp: number;
+}
+
+// Simplified WebSocket message types (new architecture)
+export interface SessionInfoMessage {
+  type: "session_info";
+  session_id: string;
+  config: Record<string, unknown>;
+}
+
+export interface PreviewFrameMessage {
+  type: "preview_frame";
+  frame: string;
+  timestamp: number;
+}
+
+export interface MetricsMessage {
+  type: "metrics";
+  elapsed_seconds: number;
+  segments_processed: number;
+  segments_total?: number;
+  queue_depth: number;
+  processing_rate: number;
+}
+
+export interface ServerStatusMessage {
+  type: "server_status";
+  alive: boolean;
+  queue_depth?: number;
+}
+
+// Union of new WebSocket message types
+export type ClientWebSocketMessage =
+  | SessionInfoMessage
+  | PreviewFrameMessage
+  | ResultMessage
+  | MetricsMessage
+  | ServerStatusMessage
+  | ErrorMessage;
+
 // Analysis types
 export * from "./analysis";
