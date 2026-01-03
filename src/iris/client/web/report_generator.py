@@ -1,4 +1,4 @@
-"""LLM-powered report generation for analysis sessions."""
+"""LLM-powered report generation using Gemini 2.5 Flash."""
 
 import json
 import logging
@@ -141,99 +141,6 @@ Format the output as proper Markdown with headers, bullet points, and emphasis w
 """
 
 
-async def generate_report_stream_anthropic(
-    summary: SessionSummary,
-) -> AsyncGenerator[str, None]:
-    """Generate report using Anthropic Claude API with streaming.
-
-    Args:
-        summary: Session summary data.
-
-    Yields:
-        Markdown text chunks as they're generated.
-    """
-    try:
-        import anthropic
-    except ImportError:
-        yield "# Report Generation Error\n\n"
-        yield "The `anthropic` package is not installed. "
-        yield "Install it with: `pip install anthropic`\n"
-        return
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        yield "# Report Generation Error\n\n"
-        yield "ANTHROPIC_API_KEY environment variable is not set.\n"
-        return
-
-    prompt = build_report_prompt(summary)
-
-    try:
-        client = anthropic.AsyncAnthropic(api_key=api_key)
-
-        async with client.messages.stream(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
-        ) as stream:
-            async for text in stream.text_stream:
-                yield text
-
-    except anthropic.APIError as e:
-        yield f"\n\n---\n\n**API Error:** {e}\n"
-    except Exception as e:
-        logger.error(f"Report generation error: {e}", exc_info=True)
-        yield f"\n\n---\n\n**Error generating report:** {e}\n"
-
-
-async def generate_report_stream_openai(
-    summary: SessionSummary,
-) -> AsyncGenerator[str, None]:
-    """Generate report using OpenAI API with streaming.
-
-    Args:
-        summary: Session summary data.
-
-    Yields:
-        Markdown text chunks as they're generated.
-    """
-    try:
-        import openai
-    except ImportError:
-        yield "# Report Generation Error\n\n"
-        yield "The `openai` package is not installed. "
-        yield "Install it with: `pip install openai`\n"
-        return
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        yield "# Report Generation Error\n\n"
-        yield "OPENAI_API_KEY environment variable is not set.\n"
-        return
-
-    prompt = build_report_prompt(summary)
-
-    try:
-        client = openai.AsyncOpenAI(api_key=api_key)
-
-        stream = await client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
-        )
-
-        async for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-
-    except openai.APIError as e:
-        yield f"\n\n---\n\n**API Error:** {e}\n"
-    except Exception as e:
-        logger.error(f"Report generation error: {e}", exc_info=True)
-        yield f"\n\n---\n\n**Error generating report:** {e}\n"
-
-
 async def generate_report_stream_gemini(
     summary: SessionSummary,
 ) -> AsyncGenerator[str, None]:
@@ -280,31 +187,20 @@ async def generate_report_stream(
     session: dict[str, Any],
     results: list[dict[str, Any]],
     annotations: list[dict[str, Any]] | None = None,
-    provider: str = "anthropic",
 ) -> AsyncGenerator[str, None]:
-    """Generate a streaming report for an analysis session.
+    """Generate a streaming report using Gemini 2.5 Flash.
 
     Args:
         session: Session data from database.
         results: List of inference results.
         annotations: Optional ground truth annotations.
-        provider: LLM provider ("anthropic", "openai", or "gemini").
 
     Yields:
         Markdown text chunks as they're generated.
     """
     summary = build_report_context(session, results, annotations)
-
-    if provider == "openai":
-        async for chunk in generate_report_stream_openai(summary):
-            yield chunk
-    elif provider == "gemini":
-        async for chunk in generate_report_stream_gemini(summary):
-            yield chunk
-    else:
-        # Default to Anthropic
-        async for chunk in generate_report_stream_anthropic(summary):
-            yield chunk
+    async for chunk in generate_report_stream_gemini(summary):
+        yield chunk
 
 
 def generate_fallback_report(
