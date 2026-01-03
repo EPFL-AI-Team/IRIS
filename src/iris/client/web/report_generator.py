@@ -74,28 +74,25 @@ def build_report_context(
 
 
 def build_report_prompt(summary: SessionSummary) -> str:
-    """Build the prompt for LLM report generation.
+    """Build prompt for documentation-style narrative generation.
 
     Args:
         summary: Session summary data.
 
     Returns:
-        Formatted prompt string.
+        Formatted prompt string optimized for chronological narrative.
     """
     context = {
         "session_id": summary.session_id,
         "status": summary.status,
         "duration_sec": round(summary.duration_sec, 2),
         "video_file": summary.video_file,
-        "annotation_file": summary.annotation_file,
-        "config": summary.config,
         "total_results": summary.total_results,
-        "sample_results": summary.sample_results,
+        "sample_results": summary.sample_results,  # All inference outputs in order
         "ground_truth_count": summary.ground_truth_count,
-        "annotations_sample": summary.annotations_sample,
     }
 
-    return f"""Analyze this video inference session and generate a comprehensive Markdown report.
+    return f"""You are a technical documentation writer creating a human-readable report documenting what happened during a surgical video analysis session.
 
 ## Session Data
 
@@ -103,41 +100,26 @@ def build_report_prompt(summary: SessionSummary) -> str:
 {json.dumps(context, indent=2, default=str)}
 ```
 
+## Task
+
+Create a **flowing narrative documentation** (400-600 words) that describes the sequential flow of events detected in the video. The sample_results contain the inference outputs in chronological order - each entry shows what actions and tools were detected at specific timestamps.
+
 ## Instructions
 
-Generate a professional analysis report in Markdown format with the following sections:
+Write in complete paragraphs (not bullet points) documenting the chronological flow. Structure:
 
-1. **Executive Summary** (2-3 sentences)
-   - Overall session outcome
-   - Key findings at a glance
+1. **Session Overview** (1-2 paragraphs): Session details, video file, duration, configuration
 
-2. **Session Configuration**
-   - Video file analyzed
-   - FPS and frame settings
-   - Any notable configuration choices
+2. **Procedure Timeline** (4-6 paragraphs): Chronologically describe what was detected:
+   - What actions and tools appear at the start
+   - How the procedure progresses (transitions between actions/tools)
+   - Key moments or changes in the detected activities
+   - What was detected toward the end
+   - Note: The model may have made errors, so use phrases like "the model detected," "appears to show," "suggests" when describing detections
 
-3. **Inference Performance**
-   - Total inferences completed
-   - Average inference time
-   - Throughput analysis
+3. **Summary** (1-2 paragraphs): Overview of the complete procedure flow, any notable patterns
 
-4. **Results Analysis**
-   - Common actions/tools detected
-   - Patterns in the predictions
-   - Quality observations
-
-5. **Ground Truth Comparison** (if annotations available)
-   - Alignment with ground truth
-   - Notable discrepancies
-   - Accuracy assessment
-
-6. **Recommendations**
-   - Suggested improvements
-   - Configuration optimizations
-   - Next steps
-
-Use clear, concise language. Include specific numbers where available.
-Format the output as proper Markdown with headers, bullet points, and emphasis where appropriate.
+Focus on creating a readable timeline of events from the inference outputs. Use professional medical/technical language where appropriate.
 """
 
 
