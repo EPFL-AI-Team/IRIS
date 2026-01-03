@@ -1404,7 +1404,7 @@ async def client_websocket(websocket: WebSocket) -> None:
     logger.info(f"Client WebSocket connected, session_id={state.session_id}")
 
     # Create or restore session in database
-    from iris.client.web.repositories import session_repo
+    from iris.client.web.repositories import logs_repo, session_repo
 
     db_session = session_repo.get(state.session_id)
     if not db_session:
@@ -1417,6 +1417,22 @@ async def client_websocket(websocket: WebSocket) -> None:
     else:
         # Session exists - restored from database
         logger.info(f"Restored existing session from DB: {state.session_id}")
+
+    # Helper function to persist logs to database
+    def persist_log(level: str, message: str) -> None:
+        """Persist log to database if session exists."""
+        if state.session_id:
+            try:
+                logs_repo.append(
+                    session_id=state.session_id,
+                    level=level,
+                    message=message,
+                )
+            except Exception as e:
+                logger.error(f"Failed to persist log: {e}")
+
+    # Log session connection
+    persist_log("INFO", f"Session {state.session_id} connected")
 
     # Send session info immediately on connect
     session_info = SessionInfoMessage(
@@ -1530,6 +1546,9 @@ async def client_websocket(websocket: WebSocket) -> None:
                     started_at=time.time(),
                 )
 
+                # Log inference start
+                persist_log("INFO", f"Inference started with config: {config}")
+
                 # Start streaming to inference server
                 try:
                     if state.camera is None:
@@ -1542,6 +1561,7 @@ async def client_websocket(websocket: WebSocket) -> None:
                         if not state.camera.start():
                             error_msg = ErrorMessage(message="Failed to start camera").model_dump()
                             logger.error("Failed to start camera for inference")
+                            persist_log("ERROR", "Failed to start camera for inference")
                             logger.info(f"Sending error to frontend: {error_msg}")
                             await websocket.send_json(error_msg)
                             state.is_streaming = False
@@ -1594,6 +1614,7 @@ async def client_websocket(websocket: WebSocket) -> None:
                     logger.info("Inference streaming started")
                 except Exception as e:
                     logger.error(f"Failed to start inference: {e}")
+                    persist_log("ERROR", f"Failed to start inference: {e}")
                     error_msg = ErrorMessage(message=f"Failed to start: {e}").model_dump()
                     logger.info(f"Sending error to frontend: {error_msg}")
                     await websocket.send_json(error_msg)
@@ -1612,6 +1633,10 @@ async def client_websocket(websocket: WebSocket) -> None:
                     session_id=state.session_id,
                     status="paused",
                 )
+
+                # Log inference stop
+                persist_log("INFO", "Inference stopped")
+
                 logger.info("Inference streaming stopped")
 
             elif msg_type == "clear_queue":
