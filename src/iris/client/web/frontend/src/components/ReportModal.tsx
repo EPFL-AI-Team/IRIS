@@ -78,26 +78,41 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
         throw new Error(errorData.detail || `HTTP ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Streaming not supported");
-      }
+      // Check content type - handle both JSON and streaming responses
+      const contentType = response.headers.get("content-type") || "";
 
-      const decoder = new TextDecoder();
-      let done = false;
-      let accumulated = "";
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const text = decoder.decode(value, { stream: true });
-          accumulated += text;
-          setReportContent(accumulated);
+      if (contentType.includes("application/json")) {
+        // JSON response (fallback report)
+        const data = await response.json();
+        if (data.report) {
+          setReportContent(data.report);
+        } else if (data.error) {
+          throw new Error(data.error);
         }
-      }
+        setReportStatus("ready");
+      } else {
+        // Streaming response (Gemini)
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("Streaming not supported");
+        }
 
-      setReportStatus("ready");
+        const decoder = new TextDecoder();
+        let done = false;
+        let accumulated = "";
+
+        while (!done) {
+          const { value, done: readerDone } = await reader.read();
+          done = readerDone;
+          if (value) {
+            const text = decoder.decode(value, { stream: true });
+            accumulated += text;
+            setReportContent(accumulated);
+          }
+        }
+
+        setReportStatus("ready");
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         setReportStatus("idle");
