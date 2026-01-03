@@ -6,28 +6,11 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ReportModal } from "./ReportModal";
-import { Play, Square, FileText, Clock } from "lucide-react";
+import { Play, Square, FileText } from "lucide-react";
 import { toast } from "sonner";
 
-/**
- * Format seconds into human-readable time string.
- */
-function formatTime(seconds: number): string {
-  if (seconds < 60) {
-    return `${Math.round(seconds)}s`;
-  }
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-/**
- * Component for controlling video analysis.
- * Includes start/stop buttons, progress display, and auto-report option.
- */
 export function AnalysisControls() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
-
   const analysisMode = useAppStore((state) => state.analysisMode);
   const segmentConfig = useAppStore((state) => state.segmentConfig);
   const progress = useAppStore((state) => state.analysisProgress);
@@ -40,19 +23,21 @@ export function AnalysisControls() {
     (state) => state.clearAnalysisResults
   );
   const clearAnalysisLogs = useAppStore((state) => state.clearAnalysisLogs);
-  const addLog = useAppStore((state) => state.addLog);
   const analysisJobId = useAppStore((state) => state.analysisJobId);
   const autoGenerateReport = useAppStore((state) => state.autoGenerateReport);
   const setAutoGenerateReport = useAppStore(
     (state) => state.setAutoGenerateReport
   );
-
   const { connect, disconnect } = useAnalysisWebSocket();
 
-  // Auto-open report modal when analysis completes and auto-generate is enabled
   useEffect(() => {
     if (analysisMode === "complete" && autoGenerateReport && analysisJobId) {
-      setReportModalOpen(true);
+      // Wrap in setTimeout to defer the state update prevents the cascading render warning
+      const timer = setTimeout(() => {
+        setReportModalOpen(true);
+      }, 0);
+
+      return () => clearTimeout(timer);
     }
   }, [analysisMode, autoGenerateReport, analysisJobId]);
 
@@ -61,9 +46,7 @@ export function AnalysisControls() {
       toast.error("Please select a video file");
       return;
     }
-
     try {
-      // Call backend to start analysis with segment config
       const response = await fetch("/api/analysis/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,148 +58,105 @@ export function AnalysisControls() {
           overlap_frames: segmentConfig.overlapFrames,
         }),
       });
-
       const data = await response.json();
-
       if (response.ok && data.status === "ok") {
         setAnalysisJobId(data.job_id);
         clearAnalysisResults();
         clearAnalysisLogs();
-        addLog(
-          `Starting analysis: ${selectedVideo} (${data.total_frames} frames, ${data.total_chunks} chunks, ${data.annotation_count} annotations)`,
-          "INFO"
-        );
         toast.success("Analysis started");
-
-        // Connect WebSocket to start streaming
         connect();
       } else {
         toast.error(data.message || "Failed to start analysis");
-        addLog(`Failed to start analysis: ${data.message}`, "ERROR");
       }
     } catch (error) {
       console.error("Failed to start analysis:", error);
       toast.error("Failed to start analysis");
-      addLog("Failed to start analysis", "ERROR");
     }
   };
 
   const handleStop = async () => {
     try {
-      // Disconnect WebSocket first
       disconnect();
-
-      // Call backend to stop analysis
-      const response = await fetch("/api/analysis/stop", { method: "POST" });
-
-      if (response.ok) {
-        toast.info("Analysis stopped");
-        addLog("Analysis stopped by user", "INFO");
-      }
+      await fetch("/api/analysis/stop", { method: "POST" });
+      toast.info("Analysis stopped");
     } catch (error) {
       console.error("Failed to stop analysis:", error);
-      toast.error("Failed to stop analysis");
     }
   };
 
   const isRunning = analysisMode === "running";
   const isComplete = analysisMode === "complete";
-  const hasError = analysisMode === "error";
 
   return (
-    <div className="space-y-4">
-      {/* Controls Row */}
-      <div className="flex gap-4 items-center flex-wrap">
-        {/* Auto-generate report checkbox */}
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="auto-report"
-            checked={autoGenerateReport}
-            onCheckedChange={(checked: boolean | "indeterminate") =>
-              setAutoGenerateReport(checked === true)
-            }
-            disabled={isRunning}
-          />
-          <Label
-            htmlFor="auto-report"
-            className="text-sm cursor-pointer select-none"
+    <div className="flex flex-col gap-3 w-full">
+      {/* Row 1: Action Buttons */}
+      <div className="flex items-center gap-2">
+        {!isRunning ? (
+          <Button
+            onClick={handleStart}
+            disabled={!selectedVideo}
+            size="sm"
+            className="flex-1 h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
           >
-            Auto-generate report
-          </Label>
-        </div>
-
-        {!isRunning && (
-          <Button onClick={handleStart} disabled={!selectedVideo}>
-            <Play className="w-4 h-4 mr-1" />
-            Run Analysis
+            <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
+            {isComplete ? "Run Again" : "Start Analysis"}
           </Button>
-        )}
-
-        {isRunning && (
-          <Button onClick={handleStop} variant="destructive">
-            <Square className="w-4 h-4 mr-1" />
-            Stop Analysis
+        ) : (
+          <Button
+            onClick={handleStop}
+            variant="destructive"
+            size="sm"
+            className="flex-1 h-8 text-xs font-semibold"
+          >
+            <Square className="w-3.5 h-3.5 mr-1.5 fill-current" />
+            Stop
           </Button>
         )}
 
         {isComplete && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-green-600 dark:text-green-400">
-              Analysis complete
-            </span>
-            <Button onClick={handleStart} variant="outline" size="sm">
-              Run Again
-            </Button>
-            <Button onClick={() => setReportModalOpen(true)} size="sm">
-              <FileText className="w-4 h-4 mr-1" />
-              Generate Report
-            </Button>
-          </div>
+          <Button
+            onClick={() => setReportModalOpen(true)}
+            variant="outline"
+            size="sm"
+            className="h-8 w-8 p-0"
+            title="Generate Report"
+          >
+            <FileText className="w-4 h-4" />
+          </Button>
         )}
+      </div>
 
-        {hasError && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-red-600 dark:text-red-400">
-              Analysis failed
-            </span>
-            <Button onClick={handleStart} variant="outline" size="sm">
-              Retry
-            </Button>
+      {/* Row 2: Options & Progress */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="auto-report"
+            checked={autoGenerateReport}
+            onCheckedChange={(c) => setAutoGenerateReport(c === true)}
+            disabled={isRunning}
+            className="h-3.5 w-3.5"
+          />
+          <Label
+            htmlFor="auto-report"
+            className="text-xs cursor-pointer text-muted-foreground"
+          >
+            Auto-generate report on finish
+          </Label>
+        </div>
+
+        {progress && isRunning && (
+          <div className="space-y-1.5 pt-1">
+            <div className="flex justify-between text-[10px] leading-none text-muted-foreground font-mono">
+              <span>{progress.progress_percent.toFixed(0)}%</span>
+              <span>
+                {Math.round(progress.estimated_time_remaining || 0)}s left
+              </span>
+            </div>
+            <Progress value={progress.progress_percent} className="h-1.5" />
           </div>
         )}
       </div>
 
-      {/* Progress Display */}
-      {progress && isRunning && (
-        <div className="space-y-2">
-          <Progress value={progress.progress_percent} />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <div className="flex gap-4">
-              <span>
-                Frame {progress.current_frame} / {progress.total_frames}
-              </span>
-              {progress.current_chunk !== undefined &&
-                progress.total_chunks !== undefined && (
-                  <span>
-                    Chunk {progress.current_chunk} / {progress.total_chunks}
-                  </span>
-                )}
-            </div>
-            <div className="flex items-center gap-2">
-              {progress.estimated_time_remaining !== undefined &&
-                progress.estimated_time_remaining > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />~
-                    {formatTime(progress.estimated_time_remaining)} remaining
-                  </span>
-                )}
-              <span>{progress.progress_percent.toFixed(1)}%</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Report Modal */}
       <ReportModal
         sessionId={analysisJobId || undefined}
         open={reportModalOpen}

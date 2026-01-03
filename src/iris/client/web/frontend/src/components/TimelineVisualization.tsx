@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { useAppStore } from "../store/useAppStore";
 
 interface TimelineCard {
@@ -52,11 +52,6 @@ function computeOverlapDepths(
   return depths;
 }
 
-/**
- * Timeline visualization component with card-based segments.
- * Shows ground truth and inference results with overlap stacking.
- * Color coding: blue (ground truth), green (match), red (mismatch), gray (no GT).
- */
 export function TimelineVisualization() {
   const groundTruth = useAppStore((state) => state.groundTruthAnnotations);
   const results = useAppStore((state) => state.analysisResults);
@@ -74,47 +69,51 @@ export function TimelineVisualization() {
     return video ? video.duration_sec * 1000 : 60000; // Default 60s
   }, [datasets, selectedVideo]);
 
-  // Convert timestamp (ms) to X coordinate (percentage)
-  const timestampToX = (ms: number) => {
-    return (ms / videoDuration) * 100;
-  };
+  // FIX: Wrap helpers in useCallback to stabilize them for useMemo
+  const timestampToX = useCallback(
+    (ms: number) => {
+      return (ms / videoDuration) * 100;
+    },
+    [videoDuration]
+  );
 
-  // Convert timestamp (ms) to width (percentage)
-  const durationToWidth = (durationMs: number) => {
-    return Math.max((durationMs / videoDuration) * 100, 0.5); // Min 0.5% width
-  };
+  const durationToWidth = useCallback(
+    (durationMs: number) => {
+      return Math.max((durationMs / videoDuration) * 100, 0.5); // Min 0.5% width
+    },
+    [videoDuration]
+  );
 
-  // Determine segment color based on match with ground truth
-  const getSegmentColor = (
-    result: (typeof results)[0]
-  ): { color: string; status: "match" | "mismatch" | "no_gt" } => {
-    const [startMs, endMs] = result.timestamp_range_ms;
-    const centerMs = (startMs + endMs) / 2;
+  const getSegmentColor = useCallback(
+    (
+      result: (typeof results)[0]
+    ): { color: string; status: "match" | "mismatch" | "no_gt" } => {
+      const [startMs, endMs] = result.timestamp_range_ms;
+      const centerMs = (startMs + endMs) / 2;
 
-    // Find overlapping ground truth
-    const gt = groundTruth.find(
-      (ann) => ann.start_ms <= centerMs && centerMs <= ann.end_ms
-    );
+      const gt = groundTruth.find(
+        (ann) => ann.start_ms <= centerMs && centerMs <= ann.end_ms
+      );
 
-    if (!gt) return { color: "bg-gray-500", status: "no_gt" };
+      if (!gt) return { color: "bg-gray-500", status: "no_gt" };
 
-    // Parse inference result
-    try {
-      const inference = JSON.parse(result.result);
+      try {
+        const inference = JSON.parse(result.result);
+        // Simple equality check - customize as needed
+        const matches =
+          inference.action === gt.action &&
+          inference.tool === gt.tool &&
+          inference.target === gt.target;
 
-      // Compare fields
-      const matches =
-        inference.action === gt.action &&
-        inference.tool === gt.tool &&
-        inference.target === gt.target;
-
-      return matches
-        ? { color: "bg-green-500", status: "match" }
-        : { color: "bg-red-500", status: "mismatch" };
-    } catch {
-      return { color: "bg-gray-500", status: "no_gt" };
-    }
-  };
+        return matches
+          ? { color: "bg-green-500", status: "match" }
+          : { color: "bg-red-500", status: "mismatch" };
+      } catch {
+        return { color: "bg-gray-500", status: "no_gt" };
+      }
+    },
+    [groundTruth]
+  );
 
   // Build inference cards with overlap detection
   const inferenceCards = useMemo((): TimelineCard[] => {
@@ -143,14 +142,15 @@ export function TimelineVisualization() {
           tool: String(parsedResult.tool || "?"),
           target: String(parsedResult.target || "?"),
           context: String(parsedResult.context || "?"),
-          time: `${(startMs / 1000).toFixed(1)}s - ${(endMs / 1000).toFixed(1)}s`,
+          time: `${(startMs / 1000).toFixed(1)}s - ${(endMs / 1000).toFixed(
+            1
+          )}s`,
           frames: `${result.frame_range[0]}-${result.frame_range[1]}`,
           inference_time: `${(result.inference_time * 1000).toFixed(0)}ms`,
         },
       };
     });
 
-    // Compute overlap depths
     const depths = computeOverlapDepths(
       baseCards.map((c) => ({ startMs: c.startMs, endMs: c.endMs }))
     );
@@ -161,7 +161,7 @@ export function TimelineVisualization() {
       overlapDepth: depths[i],
       type: "inference" as const,
     }));
-  }, [results, groundTruth, videoDuration]);
+  }, [results, getSegmentColor, timestampToX, durationToWidth]); // Added dependencies
 
   // Build ground truth cards
   const groundTruthCards = useMemo((): TimelineCard[] => {
@@ -184,26 +184,18 @@ export function TimelineVisualization() {
         time: `${ann.start_sec.toFixed(1)}s - ${ann.end_sec.toFixed(1)}s`,
       },
     }));
-  }, [groundTruth, videoDuration]);
+  }, [groundTruth, timestampToX, durationToWidth]); // Added dependencies
 
-  // Max overlap depth for height calculation
   const maxOverlapDepth = useMemo(() => {
     return Math.max(0, ...inferenceCards.map((c) => c.overlapDepth));
   }, [inferenceCards]);
 
-  // Handle click on segment
-  const handleSegmentClick = (
-    event: React.MouseEvent,
-    startMs: number
-  ) => {
+  const handleSegmentClick = (event: React.MouseEvent, startMs: number) => {
     event.stopPropagation();
     setCurrentPlaybackPosition(startMs);
   };
 
-  // Handle click on timeline background to seek
-  const handleTimelineClick = (
-    event: React.MouseEvent<HTMLDivElement>
-  ) => {
+  const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
     const rect = container.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
@@ -222,143 +214,127 @@ export function TimelineVisualization() {
     );
   }
 
-  // Calculate row heights based on overlap
-  const gtRowHeight = 48;
-  const infRowHeight = 48 + maxOverlapDepth * 24;
+  // --- COMPACT MODE SETTINGS ---
+  const gtRowHeight = 28;
+  const infRowHeight = 32 + maxOverlapDepth * 12;
 
   return (
-    <div className="space-y-3">
-      {/* Header with segment info */}
-      <div className="flex justify-between items-center text-xs text-muted-foreground">
+    <div className="space-y-1 mx-5 my-2">
+      {/* Header */}
+      <div className="flex justify-between items-center text-[10px] text-muted-foreground px-1">
         <span>
-          Segment: {segmentConfig.segmentTime}s / {segmentConfig.framesPerSegment} frames / {segmentConfig.overlapFrames} overlap
+          Seg: {segmentConfig.segmentTime}s / {segmentConfig.framesPerSegment}f
         </span>
-        <span>
-          Duration: {(videoDuration / 1000).toFixed(1)}s
-        </span>
+        <span>{(videoDuration / 1000).toFixed(1)}s</span>
       </div>
 
       {/* Ground Truth Row */}
-      <div className="space-y-1">
-        <div className="text-xs font-medium text-muted-foreground">
+      <div className="space-y-0.5">
+        <div className="text-[10px] font-medium text-muted-foreground px-1">
           Ground Truth ({groundTruthCards.length})
         </div>
         <div
-          className="relative bg-muted/30 rounded-lg cursor-pointer"
+          className="relative bg-muted/30 rounded-md cursor-pointer overflow-hidden"
           style={{ height: gtRowHeight }}
           onClick={handleTimelineClick}
         >
           {groundTruthCards.map((card) => (
             <div
               key={card.id}
-              className={`absolute top-1 ${card.color} rounded-md cursor-pointer
-                         hover:ring-2 hover:ring-primary transition-all group`}
+              className={`absolute top-0.5 ${card.color} rounded-sm cursor-pointer
+                         hover:ring-1 hover:ring-white transition-all z-10`}
               style={{
                 left: `${card.xPercent}%`,
                 width: `${card.widthPercent}%`,
-                height: gtRowHeight - 8,
-                minWidth: 4,
+                height: gtRowHeight - 4,
+                minWidth: 2,
               }}
               onClick={(e) => handleSegmentClick(e, card.startMs)}
-              title={`${card.label}\n${card.sublabel}\n${card.details.time}`}
+              title={`${card.label}\n${card.sublabel}`}
             >
-              {/* Card content - only show if wide enough */}
               {card.widthPercent > 3 && (
-                <div className="px-1.5 py-1 overflow-hidden h-full flex flex-col justify-center">
-                  <div className="text-[10px] font-medium text-white truncate">
+                <div className="px-1 h-full flex flex-col justify-center overflow-hidden">
+                  <div className="text-[9px] font-bold text-white truncate leading-none">
                     {card.label}
                   </div>
-                  {card.widthPercent > 8 && (
-                    <div className="text-[9px] text-white/80 truncate">
-                      {card.sublabel}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           ))}
-
           {/* Playhead */}
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-10"
+            className="absolute top-0 bottom-0 w-px bg-foreground pointer-events-none z-20"
             style={{ left: `${timestampToX(currentPosition)}%` }}
           />
         </div>
       </div>
 
       {/* Inference Results Row */}
-      <div className="space-y-1">
-        <div className="text-xs font-medium text-muted-foreground">
-          Inference Results ({inferenceCards.length})
+      <div className="space-y-0.5">
+        <div className="text-[10px] font-medium text-muted-foreground px-1">
+          Inference ({inferenceCards.length})
         </div>
         <div
-          className="relative bg-muted/30 rounded-lg cursor-pointer"
+          className="relative bg-muted/30 rounded-md cursor-pointer overflow-hidden"
           style={{ height: infRowHeight }}
           onClick={handleTimelineClick}
         >
           {inferenceCards.map((card) => {
-            // Adjust opacity based on overlap depth
-            const opacity = card.overlapDepth === 0 ? 1 : 0.7;
-            const yOffset = 4 + card.overlapDepth * 24;
+            const yOffset = 2 + card.overlapDepth * 12;
+            // const isTop = card.overlapDepth === maxOverlapDepth;
 
             return (
               <div
                 key={card.id}
-                className={`absolute ${card.color} rounded-md cursor-pointer
-                           hover:ring-2 hover:ring-primary transition-all shadow-sm`}
+                className={`absolute ${card.color} rounded-sm cursor-pointer
+                           hover:ring-1 hover:ring-white transition-all shadow-sm z-10`}
                 style={{
                   left: `${card.xPercent}%`,
                   width: `${card.widthPercent}%`,
                   top: yOffset,
-                  height: 40,
-                  minWidth: 4,
-                  opacity,
+                  height: 24,
+                  minWidth: 2,
+                  opacity: 0.9,
+                  zIndex: card.overlapDepth,
                 }}
                 onClick={(e) => handleSegmentClick(e, card.startMs)}
-                title={`${card.label}\n${card.sublabel}\n${card.details.time}\n${card.details.frames} frames\n${card.details.inference_time}`}
+                title={`${card.label} (${card.details.frames})`}
               >
-                {/* Card content - only show if wide enough */}
                 {card.widthPercent > 3 && (
-                  <div className="px-1.5 py-1 overflow-hidden h-full flex flex-col justify-center">
-                    <div className="text-[10px] font-medium text-white truncate">
+                  <div className="px-1 h-full flex flex-col justify-center overflow-hidden">
+                    <div className="text-[9px] font-bold text-white truncate leading-none">
                       {card.label}
                     </div>
-                    {card.widthPercent > 6 && (
-                      <div className="text-[9px] text-white/80 truncate">
-                        {card.sublabel}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
             );
           })}
-
           {/* Playhead */}
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-10"
+            className="absolute top-0 bottom-0 w-px bg-foreground pointer-events-none z-20"
             style={{ left: `${timestampToX(currentPosition)}%` }}
           />
         </div>
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-blue-500" />
+      <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground px-1 pt-1">
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-sm bg-blue-500" />
           <span>Ground Truth</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-green-500" />
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-sm bg-green-500" />
           <span>Match</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-red-500" />
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-sm bg-red-500" />
           <span>Mismatch</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-gray-500" />
-          <span>No Ground Truth</span>
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-sm bg-gray-500" />
+          <span>No GT</span>
         </div>
       </div>
     </div>

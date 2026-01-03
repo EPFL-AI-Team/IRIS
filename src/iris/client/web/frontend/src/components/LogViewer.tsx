@@ -1,131 +1,74 @@
 import { useRef, useEffect } from "react";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import type { LogEntry } from "../types";
+// import { ScrollArea } from "@/components/ui/scroll-area"; // Optional if you have it, else regular div works
+import { cn } from "@/lib/utils";
+import { Terminal } from "lucide-react";
 
-/**
- * LogViewer component for displaying activity logs.
- */
 export function LogViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
-
   const logs = useAppStore((state) => state.logs);
-  const clearLogs = useAppStore((state) => state.clearLogs);
-  const addLog = useAppStore((state) => state.addLog);
 
-  // Auto-scroll to bottom when new logs arrive
+  // Auto-scroll to bottom
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [logs]);
 
-  const handleClearLogs = () => {
-    clearLogs();
-    addLog("Log cleared", "INFO");
-  };
-
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Activity Log</CardTitle>
-        <CardAction>
-          <Button variant="outline" size="sm" onClick={handleClearLogs}>
-            <Trash2 className="w-4 h-4 mr-1" />
-            Clear
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div
-          ref={containerRef}
-          className="h-48 overflow-y-auto font-mono text-xs p-3 bg-muted/30"
-        >
-          {logs.map((log) => (
-            <LogEntryItem key={log.id} log={log} />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+    <div className="flex flex-col h-full bg-muted/10">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0 font-mono text-xs"
+      >
+        {logs.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50">
+            <Terminal className="w-8 h-8 mb-2 stroke-1" />
+            <p className="text-sm font-sans">No system logs yet.</p>
+          </div>
+        ) : (
+          logs.map((log) => (
+            <div
+              key={log.id}
+              className={cn(
+                "flex gap-3 p-2 rounded border bg-background/50 hover:bg-background transition-colors",
+                log.level === "ERROR" &&
+                  "border-red-200 bg-red-50/50 text-red-900",
+                log.level === "WARNING" &&
+                  "border-yellow-200 bg-yellow-50/50 text-yellow-900",
+                log.level === "INFO" && "border-border/40 text-foreground/80"
+              )}
+            >
+              {/* Timestamp */}
+              <div className="shrink-0 w-16 text-[10px] text-muted-foreground pt-0.5">
+                {log.timestamp.toLocaleTimeString([], {
+                  hour12: false,
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </div>
 
-/**
- * Individual log entry component.
- */
-function LogEntryItem({ log }: { log: LogEntry }) {
-  const timestamp = log.timestamp.toLocaleTimeString();
-
-  // Format message - handle JSON objects
-  const formatMessage = (message: string) => {
-    // Check if message looks like JSON
-    const trimmed = message.trim();
-    if (
-      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-      (trimmed.startsWith("[") && trimmed.endsWith("]"))
-    ) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        return (
-          <pre className="whitespace-pre-wrap break-all text-muted-foreground">
-            {JSON.stringify(parsed, null, 2)}
-          </pre>
-        );
-      } catch {
-        // Not valid JSON, return as-is
-      }
-    }
-
-    // Check for markdown code blocks
-    const fenceRegex = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
-    const match = trimmed.match(fenceRegex);
-    if (match) {
-      const content = match[1].trim();
-      try {
-        const parsed = JSON.parse(content);
-        return (
-          <pre className="whitespace-pre-wrap break-all text-muted-foreground">
-            {JSON.stringify(parsed, null, 2)}
-          </pre>
-        );
-      } catch {
-        return <span>{content}</span>;
-      }
-    }
-
-    return <span>{message}</span>;
-  };
-
-  const getLevelColor = () => {
-    switch (log.level) {
-      case "ERROR":
-        return "text-red-500";
-      case "WARNING":
-        return "text-yellow-500";
-      case "INFO":
-        return "text-blue-500";
-      case "DEBUG":
-        return "text-gray-500";
-      default:
-        return "text-foreground";
-    }
-  };
-
-  return (
-    <div className="flex gap-2 py-0.5">
-      <span className="text-muted-foreground shrink-0">[{timestamp}]</span>
-      <span className={`shrink-0 font-semibold ${getLevelColor()}`}>
-        {log.level}
-      </span>
-      <span className="break-all">{formatMessage(log.message)}</span>
+              {/* Message */}
+              <div className="flex-1 wrap-break-word leading-relaxed">
+                <span
+                  className={cn(
+                    "mr-2 font-bold text-[10px] px-1.5 py-0.5 rounded-[3px]",
+                    log.level === "ERROR"
+                      ? "bg-red-100 text-red-700"
+                      : log.level === "WARNING"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-blue-100 text-blue-700"
+                  )}
+                >
+                  {log.level}
+                </span>
+                {log.message}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

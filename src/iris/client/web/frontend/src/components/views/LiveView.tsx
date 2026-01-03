@@ -1,127 +1,131 @@
-import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardAction,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "../../store/useAppStore";
 import { VideoCanvas } from "../VideoCanvas";
 import { ResultsViewer } from "../ResultsViewer";
-import { LogPanel } from "../LogPanel";
-import { ControlButtons } from "../ControlButtons";
-import { CameraSelector } from "../CameraSelector";
-import { StatusBadge } from "../StatusBadge";
-import { SessionMetrics } from "../SessionMetrics";
-import { SegmentSettings } from "../SegmentSettings";
-import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { LogViewer } from "../LogViewer";
+import { Trash2, FileText, Activity } from "lucide-react";
 
-/**
- * LiveView component - Main layout for the Live Inference tab.
- * Features a dashboard-style layout with toolbar controls, video grid, and activity log.
- */
 export function LiveView() {
-  const fps = useAppStore((state) => state.fps);
-  const previewConnection = useAppStore((state) => state.previewConnection);
-  const resultsConnection = useAppStore((state) => state.resultsConnection);
-  const isStreaming = useAppStore((state) => state.isStreaming);
-  const requestResultsReconnect = useAppStore(
-    (state) => state.requestResultsReconnect
-  );
-  const requestPreviewReconnect = useAppStore(
-    (state) => state.requestPreviewReconnect
-  );
-  const addLog = useAppStore((state) => state.addLog);
+  const [activePanel, setActivePanel] = useState<"results" | "logs">("results");
   const clearResults = useAppStore((state) => state.clearResults);
+  const clearLogs = useAppStore((state) => state.clearLogs);
 
   const handleClearResults = async () => {
     try {
-      const response = await fetch("/api/results/clear", { method: "POST" });
-      if (response.ok) {
-        clearResults();
-      }
+      await fetch("/api/results/clear", { method: "POST" });
+      clearResults();
     } catch (error) {
       console.error("Failed to clear results:", error);
     }
   };
 
   return (
-    <div className="grid grid-cols-12 gap-6 h-[calc(100vh-6rem)]">
-      {/* Left Sidebar - Controls & Config */}
-      <div className="col-span-3 space-y-6 flex flex-col h-full overflow-hidden">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Controls</CardTitle>
+    // 1. CONTAINER: 'h-auto overflow-y-auto' for mobile scroll. 'lg:h-full lg:overflow-hidden' for desktop app-feel.
+    <div className="grid grid-cols-12 gap-4 h-auto lg:h-full lg:min-h-0 overflow-y-auto lg:overflow-hidden p-1">
+      {/* Left: Video Feed */}
+      {/* 2. VIDEO COL: 'col-span-12' on mobile. 'h-[500px]' fixed height on mobile so it's visible. */}
+      <div className="col-span-12 lg:col-span-8 h-125 lg:h-full flex flex-col min-h-0">
+        <Card className="h-full flex flex-col border-none shadow-md overflow-hidden gap-0">
+          <CardHeader className="h-10 flex flex-row items-center justify-between px-4 py-0 border-b shrink-0 bg-card space-y-0">
+            <CardTitle className="text-lg font-semibold">Live Feed</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <CameraSelector variant="vertical" />
-            <ControlButtons />
-            <div className="flex flex-wrap gap-2">
-              <StatusBadge
-                status={previewConnection}
-                label="Preview"
-                onClick={() => {
-                  requestPreviewReconnect();
-                  addLog("Retrying preview connection...", "INFO");
-                  toast.info("Retrying Preview connection...");
-                }}
-              />
-              <StatusBadge
-                status={resultsConnection}
-                label="Results"
-                onClick={() => {
-                  requestResultsReconnect();
-                  addLog("Retrying results connection...", "INFO");
-                  toast.info("Retrying Results connection...");
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex-1">
-          <SegmentSettings disabled={isStreaming} />
-        </div>
-      </div>
-
-      {/* Center - Video & Logs */}
-      <div className="col-span-6 flex flex-col gap-6 h-full">
-        <Card className="shrink-0">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between text-base">
-              <span>Live Feed</span>
-              <Badge variant="outline" className="font-mono">
-                {fps.toFixed(1)} FPS
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 min-h-0 p-0 relative flex flex-col">
             <VideoCanvas />
-            <div className="mt-4">
-              <SessionMetrics />
-            </div>
           </CardContent>
         </Card>
-
-        <div className="flex-1 min-h-0">
-          <LogPanel />
-        </div>
       </div>
 
-      {/* Right Sidebar - Results */}
-      <div className="col-span-3 h-full flex flex-col">
-        <Card className="h-full flex flex-col overflow-hidden">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Inference Results</CardTitle>
+      {/* Right: Results/Logs Panel */}
+      {/* 3. PANEL COL: 'col-span-12' on mobile. 'h-auto' to allow stacking. */}
+      <div className="col-span-12 lg:col-span-4 h-auto lg:h-full flex flex-col min-h-0">
+        {/* Tab Switcher */}
+        <div className="flex gap-1 bg-muted p-0 rounded-lg mb-2 shrink-0">
+          <TabButton
+            active={activePanel === "results"}
+            onClick={() => setActivePanel("results")}
+          >
+            Results
+          </TabButton>
+          <TabButton
+            active={activePanel === "logs"}
+            onClick={() => setActivePanel("logs")}
+          >
+            Logs
+          </TabButton>
+        </div>
+
+        {/* Panel Container */}
+        {/* 4. CARD HEIGHT: 'h-[600px]' on mobile so it has space to scroll. 'lg:flex-1' on desktop to fill remaining space. */}
+        <Card className="h-150 lg:h-auto lg:flex-1 flex flex-col min-h-0 shadow-md border-none overflow-hidden gap-0">
+          <CardHeader className="h-10 flex flex-row items-center justify-between px-4 py-0 border-b shrink-0 bg-muted/20 space-y-0">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              {activePanel === "results" ? (
+                <>
+                  <Activity className="w-4 h-4 text-emerald-600" />
+                  Inference Results
+                </>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  System Logs
+                </>
+              )}
+            </CardTitle>
+
             <CardAction>
-              <Button variant="outline" size="sm" onClick={handleClearResults}>
-                <Trash2 className="w-4 h-4 mr-1" />
-                Clear
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
+                onClick={
+                  activePanel === "results" ? handleClearResults : clearLogs
+                }
+                title={
+                  activePanel === "results" ? "Clear Results" : "Clear Logs"
+                }
+              >
+                <Trash2 className="w-4 h-4" />
               </Button>
             </CardAction>
           </CardHeader>
-          <CardContent className="flex-1 overflow-hidden p-0">
-            <ResultsViewer />
+
+          {/* Content Area */}
+          <CardContent className="flex-1 overflow-hidden p-0 bg-background">
+            {activePanel === "results" ? <ResultsViewer /> : <LogViewer />}
           </CardContent>
         </Card>
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 px-4 py-2 text-sm font-semibold uppercase tracking-wide rounded-md transition-all ${
+        active
+          ? "bg-background text-primary shadow-sm ring-1 ring-black/5"
+          : "text-muted-foreground hover:text-foreground hover:bg-black/5"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

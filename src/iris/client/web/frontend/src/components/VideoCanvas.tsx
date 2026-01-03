@@ -1,31 +1,21 @@
 import { useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { Badge } from "@/components/ui/badge";
-import { usePreviewWebSocket } from "../hooks/usePreviewWebSocket";
-import { useBrowserStream } from "../hooks/useBrowserStream";
-import { useClientCamera } from "../hooks/useClientCamera";
 
 /**
  * VideoCanvas component for displaying camera preview.
- * Supports both server camera (via WebSocket) and browser camera (via getUserMedia).
+ *
+ * In the new architecture, preview frames come from the backend USB camera
+ * via the unified WebSocket connection. The previewFrame state in the store
+ * is set by useClientWebSocket hook.
  */
 export function VideoCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const lastFrameTimeRef = useRef(0);
 
-  const cameraMode = useAppStore((state) => state.cameraMode);
-  const isStreaming = useAppStore((state) => state.isStreaming);
-  const clientVideoConfig = useAppStore((state) => state.clientVideoConfig);
-  const clientCameraRequested = useAppStore(
-    (state) => state.clientCameraRequested
-  );
-  const clearClientCameraRequest = useAppStore(
-    (state) => state.clearClientCameraRequest
-  );
-
-  // Browser stream for sending frames to inference server
-  const browserStream = useBrowserStream();
+  const previewFrame = useAppStore((state) => state.previewFrame);
+  const connectionStatus = useAppStore((state) => state.connectionStatus);
+  const serverAlive = useAppStore((state) => state.serverAlive);
 
   /**
    * Render a base64-encoded JPEG frame to the canvas.
@@ -71,104 +61,68 @@ export function VideoCanvas() {
 
       // Clean up
       imageBitmap.close();
-
-      // Track frame timing for debugging
-      const now = performance.now();
-      if (lastFrameTimeRef.current > 0) {
-        // Could calculate actual render FPS here
-      }
-      lastFrameTimeRef.current = now;
     } catch (error) {
       console.error("Error rendering frame:", error);
     }
   }, []);
 
-  // Frame handler for client camera
-  const handleClientFrame = useCallback(
-    (base64Jpeg: string) => {
-      // Render to canvas
-      renderFrame(base64Jpeg);
-
-      // Send to inference server if streaming is active
-      if (isStreaming) {
-        browserStream.sendFrame(base64Jpeg, clientVideoConfig.capture_fps);
-      }
-    },
-    [isStreaming, browserStream, renderFrame, clientVideoConfig.capture_fps]
-  );
-
-  // Client camera for capturing browser camera frames
-  const clientCamera = useClientCamera({
-    fps: clientVideoConfig.capture_fps,
-    width: clientVideoConfig.width,
-    height: clientVideoConfig.height,
-    onFrame: handleClientFrame,
-  });
-
-  // Server preview WebSocket (only active in server camera mode)
-  usePreviewWebSocket(renderFrame, cameraMode === "server");
-
-  // Handle client camera start request from CameraSelector
+  // Render preview frame when it updates
   useEffect(() => {
-    if (clientCameraRequested && cameraMode === "client") {
-      clientCamera.start();
-      clearClientCameraRequest();
+    if (previewFrame?.data) {
+      renderFrame(previewFrame.data);
     }
-  }, [
-    clientCameraRequested,
-    cameraMode,
-    clientCamera,
-    clearClientCameraRequest,
-  ]);
-
-  // Handle camera mode changes
-  useEffect(() => {
-    if (cameraMode === "server") {
-      // Stop client camera when switching to server mode
-      clientCamera.stop();
-    }
-  }, [cameraMode, clientCamera]);
-
-  // Connect/disconnect browser stream based on streaming state and camera mode
-  useEffect(() => {
-    if (cameraMode === "client" && isStreaming && clientCamera.isActive) {
-      browserStream.connect();
-    } else if (cameraMode !== "client" || !isStreaming) {
-      browserStream.disconnect();
-    }
-  }, [cameraMode, isStreaming, clientCamera.isActive, browserStream]);
+  }, [previewFrame, renderFrame]);
 
   const getPreviewStatus = (): {
     label: string;
     detail?: string;
     variant: "default" | "secondary" | "destructive" | "outline";
   } => {
-    if (cameraMode === "client") {
-      if (clientCamera.error) {
-        return {
-          label: "Camera Error",
-          detail: clientCamera.error,
-          variant: "destructive",
-        };
-      }
-      if (clientCamera.isActive) {
-        return { label: "Browser Camera", variant: "outline" };
-      }
-      return { label: "Camera Inactive", variant: "secondary" };
+    if (connectionStatus !== "connected") {
+      return {
+        label: "Disconnected",
+        detail: "Not connected to server",
+        variant: "destructive",
+      };
     }
 
-    return { label: "Server Camera", variant: "outline" };
+    if (!serverAlive) {
+      return {
+        label: "Server Offline",
+        detail: "Inference server not available",
+        variant: "secondary",
+      };
+    }
+
+    if (previewFrame) {
+      return { label: "Server Camera", variant: "outline" };
+    }
+
+    return { label: "Waiting for preview...", variant: "secondary" };
   };
 
   const previewStatus = getPreviewStatus();
 
   return (
     <>
-      <canvas ref={canvasRef} id="preview"></canvas>
-      <div id="preview-status" className="mt-2 flex items-center gap-2">
-        <Badge variant={previewStatus.variant}>{previewStatus.label}</Badge>
+      <canvas
+        ref={canvasRef}
+        id="preview"
+        className="flex-1 w-full min-h-0 object-contain bg-black"
+      />
+      <div
+        id="preview-status"
+        className="shrink-0 flex items-center gap-3 px-4 py-2 bg-background border-t border-border/50"
+      >
+        <Badge
+          variant={previewStatus.variant}
+          className="shrink-0 whitespace-nowrap"
+        >
+          {previewStatus.label}
+        </Badge>
+
         {previewStatus.detail ? (
-          <span className="text-xs text-muted-foreground truncate">
+          <span className="text-xs text-muted-foreground truncate font-medium">
             {previewStatus.detail}
           </span>
         ) : null}

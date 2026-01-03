@@ -1,20 +1,19 @@
 import { useRef, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Loader2, Camera, CheckCircle2, Terminal } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import type { ResultItem } from "../types";
+import { cn } from "@/lib/utils";
 
 /**
  * ResultsViewer component for displaying inference results.
- * Shows pending cards for in-progress jobs and completed results.
  */
 export function ResultsViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
-
   const results = useAppStore((state) => state.results);
 
-  // Auto-scroll to bottom when new results arrive
+  // Auto-scroll to bottom
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -22,16 +21,15 @@ export function ResultsViewer() {
   }, [results]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col bg-muted/10">
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto space-y-3 min-h-0"
+        className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scroll-smooth"
       >
         {results.length === 0 ? (
-          <div className="h-full flex items-center justify-center">
-            <p className="text-muted-foreground text-sm">
-              No results yet. Start streaming to see inference results.
-            </p>
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50">
+            <Camera className="w-12 h-12 mb-2 stroke-1" />
+            <p className="text-sm">Waiting for live inference...</p>
           </div>
         ) : (
           results.map((result, index) => (
@@ -43,9 +41,6 @@ export function ResultsViewer() {
   );
 }
 
-/**
- * Individual result card component.
- */
 function ResultCard({
   result,
   number,
@@ -55,33 +50,37 @@ function ResultCard({
 }) {
   const isPending =
     result.status === "pending" || result.status === "processing";
+  const timestamp = result.timestamp.toLocaleTimeString([], {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 
-  // Format timestamp
-  const timestamp = result.timestamp.toLocaleTimeString();
+  // Helper to render the content
+  const renderContent = () => {
+    if (!result.result) return null;
 
-  // Parse and format result text
-  const formatResult = (resultText: string | undefined) => {
-    if (!resultText) return null;
+    let content = result.result;
 
-    // Remove markdown code fences
-    const cleaned = resultText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/, "")
-      .replace(/```\s*$/, "")
-      .trim();
+    // Clean up Assistant/System prefixes often found in VLM output
+    if (content.includes("Assistant:")) {
+      content = content.split("Assistant:").pop()?.trim() || content;
+    }
+    content = content.replace(/^```json|```$/g, "").trim();
 
-    // Try to parse as JSON
     try {
-      const parsed = JSON.parse(cleaned);
+      // Try to render as nice Key-Value pairs if it's JSON
+      const parsed = JSON.parse(content);
       return (
-        <div className="font-mono text-sm space-y-1">
+        <div className="grid grid-cols-1 gap-y-2 text-sm mt-3 bg-muted/40 p-3 rounded-md border border-border/50">
           {Object.entries(parsed).map(([key, value]) => (
-            <div key={key} className="flex gap-2">
-              <span className="font-semibold text-muted-foreground">
-                {key.charAt(0).toUpperCase() + key.slice(1)}:
+            <div key={key} className="flex flex-col sm:flex-row sm:gap-4">
+              <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider min-w-25 py-0.5">
+                {key}
               </span>
-              <span>
-                {typeof value === "object" && value !== null
+              <span className="font-mono text-foreground break-all">
+                {typeof value === "object"
                   ? JSON.stringify(value)
                   : String(value)}
               </span>
@@ -90,55 +89,95 @@ function ResultCard({
         </div>
       );
     } catch {
-      // Not JSON, return as plain text
-      return <p className="text-sm">{cleaned}</p>;
+      // Fallback for plain text
+      return (
+        <div className="mt-3 text-sm leading-relaxed text-foreground/90 bg-muted/30 p-3 rounded-md border border-border/50 whitespace-pre-wrap">
+          {content}
+        </div>
+      );
     }
   };
 
   if (isPending) {
     return (
-      <Card className="border-l-4 border-l-yellow-500">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-2">
+      <Card className="border-l-2 border-l-yellow-500/50 bg-background shadow-sm">
+        <div className="p-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Badge variant="outline">#{number}</Badge>
-              <span className="text-xs text-muted-foreground">{timestamp}</span>
+              <Badge
+                variant="outline"
+                className="h-5 px-1.5 font-mono text-[10px]"
+              >
+                #{number}
+              </Badge>
+              <span className="text-xs text-muted-foreground font-mono">
+                {timestamp}
+              </span>
             </div>
-            <Badge variant="secondary">
-              {result.status === "processing" ? "Processing" : "Queued"}
-            </Badge>
+            <Loader2 className="w-3 h-3 animate-spin text-yellow-600" />
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm italic">Processing batch...</span>
+          <div className="mt-2 text-xs text-muted-foreground flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+            </span>
+            Processing frames...
           </div>
-          {result.pendingDetails && (
-            <p className="text-xs text-muted-foreground mt-2">
-              {result.pendingDetails}
-            </p>
-          )}
-        </CardContent>
+        </div>
       </Card>
     );
   }
 
   return (
-    <Card className="border-l-4 border-l-green-500">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
+    <Card
+      className={cn(
+        "group relative overflow-hidden transition-all duration-200 hover:shadow-md border-l-4",
+        "border-l-emerald-500" // Success indicator color
+      )}
+    >
+      <div className="p-4">
+        {/* Header Row */}
+        <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Badge variant="outline">#{number}</Badge>
-            <span className="text-xs text-muted-foreground">{timestamp}</span>
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold ring-1 ring-emerald-500/20">
+              {number}
+            </span>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
+                Time
+              </span>
+              <span className="text-xs font-mono">{timestamp}</span>
+            </div>
           </div>
-          <Badge variant="secondary">
-            Frames: {result.frames_processed || 0}
+
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
+                Latency
+              </div>
+              <div className="text-xs font-mono text-emerald-600 font-semibold">
+                {(result.inference_time || 0).toFixed(2)}s
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        {renderContent()}
+
+        {/* Footer/Meta */}
+        <div className="mt-2 flex items-center justify-between">
+          <Badge
+            variant="secondary"
+            className="text-[10px] h-5 px-1.5 text-muted-foreground bg-muted hover:bg-muted"
+          >
+            <Terminal className="w-3 h-3 mr-1" />
+            {result.frames_processed || 1} Frame
+            {(result.frames_processed || 1) !== 1 ? "s" : ""}
           </Badge>
+          <CheckCircle2 className="w-4 h-4 text-emerald-500/50 opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
-        <div className="mb-2">{formatResult(result.result)}</div>
-        <div className="text-xs text-muted-foreground">
-          Inference: {(result.inference_time || 0).toFixed(3)}s
-        </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }
