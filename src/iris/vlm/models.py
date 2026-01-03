@@ -100,8 +100,28 @@ def load_model_and_processor(
     if quantization_config is not None:
         model_kwargs["quantization_config"] = quantization_config
 
+    # Mac MPS device handling: Explicitly detect and use MPS when available
+    import torch
+    use_mps = False
+    if hardware == "mac" and torch.backends.mps.is_available():
+        logger.info("Mac MPS device detected - using explicit device mapping")
+        # Don't use device_map="auto" for MPS - it can fail silently
+        model_kwargs["device_map"] = None
+        use_mps = True
+
     logger.info(f"Loading model: {resolved_model_id}")
     model = AutoModelForImageTextToText.from_pretrained(resolved_model_id, **model_kwargs)
+
+    # Move to MPS device after loading if Mac
+    if use_mps:
+        logger.info("Moving model to MPS device")
+        try:
+            model = model.to("mps")
+            logger.info("Successfully moved model to MPS")
+        except Exception as e:
+            logger.warning(f"Failed to move model to MPS: {e}. Falling back to CPU.")
+            model = model.to("cpu")
+
     processor = AutoProcessor.from_pretrained(resolved_model_id)
 
     _log_model_info(model)

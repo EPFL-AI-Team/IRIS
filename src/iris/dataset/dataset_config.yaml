@@ -4,7 +4,7 @@
 # - Prefer absolute paths. Only `~` is expanded automatically.
 # - Edit the profile paths to match your machine/environment.
 
-default_profile: rcp-container
+default_profile: mac
 
 default_split_name: train_without_vis_analysis
 

@@ -8,7 +8,7 @@ server:
   # model_id: "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"
   # model_id: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"  # Direct model selection (qwen2.5-7b)
   # vlm_hardware: "v100"
-  # vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.)
+  vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.) - ENABLED for Mac optimizations
   # model_dtype: "float16"   # Optional: Override dtype (float16, float32, bfloat16, auto)
   
   # Backpressure Control:
@@ -24,10 +24,10 @@ server:
   enable_metrics: true
   jobs:
     video:
-      buffer_size: 4
-      overlap_frames: 2
+      buffer_size: 2          # Reduced from 4 for Mac CPU/MPS (less memory pressure, faster inference)
+      overlap_frames: 0       # Reduced from 2 for Mac (no temporal overlap, faster processing)
       default_fps: 5
-      max_new_tokens: 128
+      max_new_tokens: 64      # Reduced from 128 for Mac (shorter responses, faster generation)
       prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
 
 client:
@@ -48,7 +48,8 @@ client:
     cert_dir: "~/iris-certs"  # Directory containing key.pem and cert.pem
 
   # Segment configuration defaults (T, s, k)
+  # IMPORTANT: These are sent by client and override server buffer_size/overlap_frames!
   segment:
-    segment_time: 1.0        # T: Duration of each segment in seconds
-    frames_per_segment: 8    # s: Number of frames per segment
-    overlap_frames: 4        # k: Number of overlap frames
+    segment_time: 2.0        # T: Duration of each segment in seconds
+    frames_per_segment: 1    # s: Number of frames per segment (reduced for Mac - was 8)
+    overlap_frames: 0        # k: Number of overlap frames (disabled for Mac - was 4)

@@ -21,6 +21,12 @@ class ServerConfig(BaseModel):
         default=_yaml_config.get("server", {}).get("model_dtype"),
         description="Override model dtype (float16, float32, bfloat16, auto). Falls back to hardware profile if not set."
     )
+    
+    live_queue_threshold: int = Field(
+        default=_yaml_config.get("server", {}).get("live_queue_threshold", 1),
+        description="Queue depth threshold for dropping frames in live mode. Low=Latency, High=Throughput.",
+    )
+    
     max_queue_size: int = Field(default=_yaml_config.get("server", {}).get("max_queue_size", 10))
     num_workers: int = Field(default=_yaml_config.get("server", {}).get("num_workers", 1))
     host: str = Field(default=_yaml_config.get("server", {}).get("host", "0.0.0.0"))

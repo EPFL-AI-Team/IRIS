@@ -13,11 +13,11 @@ detection and appropriate inference paths.
 """
 
 import asyncio
+import gc
 import logging
 import time
-import gc
-from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from typing import Any
 
 import torch
@@ -67,7 +67,8 @@ class VideoJob(Job):
         self.max_new_tokens = max_new_tokens
 
         # Pre-buffered frames to process (passed in at construction)
-        self.frame_buffer: list[bytes] = frames.copy() if frames else []
+        # No need to copy - we own this batch and will process it once
+        self.frame_buffer: list[bytes] = frames if frames else []
 
         # Callbacks for server-side communication
         self.log_callback: Any = None  # Callable[[dict], None]
@@ -145,12 +146,20 @@ class VideoJob(Job):
         self.result = result
         self.processing_time = inference_time
 
-        # Explicitly clear memory
+        # Explicitly clear memory (aggressive cleanup for Mac MPS)
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
+            torch.mps.synchronize()  # Wait for MPS operations to complete
+            gc.collect()
+            logger.debug(f"[{self.job_id}] MPS memory cleared and synchronized")
         elif torch.cuda.is_available():
             torch.cuda.empty_cache()
-        gc.collect()
+            torch.cuda.synchronize()  # Wait for CUDA operations to complete
+            gc.collect()
+            logger.debug(f"[{self.job_id}] CUDA memory cleared and synchronized")
+        else:
+            gc.collect()
+            logger.debug(f"[{self.job_id}] CPU memory garbage collected")
 
         frames_per_second = frame_count / inference_time if inference_time > 0 else 0.0
         summary = (
@@ -183,10 +192,14 @@ class VideoJob(Job):
         """Blocking GPU inference (runs in ThreadPoolExecutor)."""
         if not frames_bytes:
             return "No frames to process"
-        
+
         # Decode bytes to PIL Images only now, inside the worker thread
         try:
-            frames = [Image.open(BytesIO(b)).convert("RGB") for b in frames_bytes]
+            frames = []
+            for b in frames_bytes:
+                img = Image.open(BytesIO(b)).convert("RGB")
+                img.thumbnail((640, 640))  # Resize in place, maintaining aspect ratio
+                frames.append(img)
         except Exception as e:
             logger.error(f"Failed to decode frames: {e}")
             return "Error decoding frames"
@@ -243,7 +256,7 @@ class VideoJob(Job):
                 videos=video_inputs,
                 return_tensors="pt",
                 **(video_kwargs or {}),
-            ).to(self.model.device) # pyright: ignore[reportOptionalCall]
+            ).to(self.model.device)  # pyright: ignore[reportOptionalCall]
 
             outputs = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
             generated_ids = outputs[0][len(inputs.input_ids[0]) :]
@@ -273,8 +286,7 @@ class VideoJob(Job):
         with torch.no_grad():
             # Apply chat template to get prompt text (not tokenized)
             prompt_text = self.processor.apply_chat_template(
-                messages,
-                add_generation_prompt=True
+                messages, add_generation_prompt=True
             )
 
             # Process with images passed separately
@@ -286,9 +298,7 @@ class VideoJob(Job):
 
             # Generate
             outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=self.max_new_tokens,
-                do_sample=False
+                **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
             )
 
             # Decode
