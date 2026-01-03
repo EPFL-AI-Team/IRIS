@@ -126,7 +126,7 @@ Focus on creating a readable timeline of events from the inference outputs. Use 
 async def generate_report_stream_gemini(
     summary: SessionSummary,
 ) -> AsyncGenerator[str, None]:
-    """Generate report using Google Gemini API with streaming.
+    """Generate report using Gemini 2.5 Flash with streaming.
 
     Args:
         summary: Session summary data.
@@ -154,7 +154,7 @@ async def generate_report_stream_gemini(
         client = genai.Client(api_key=api_key)
 
         async for chunk in await client.aio.models.generate_content_stream(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         ):
             if chunk.text:
