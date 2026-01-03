@@ -1297,10 +1297,10 @@ async def generate_report(request: dict[str, Any]) -> Any:
 
     annotations = state.analysis_annotations if state.analysis_annotations else None
 
-    # Check for Gemini API key
-    import os
+    # Check for Gemini API key (stored in UI or environment variables)
+    from iris.client.web.report_generator import get_gemini_api_key
 
-    has_gemini = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+    has_gemini = bool(get_gemini_api_key())
 
     if not has_gemini:
         # Return fallback report
@@ -1690,15 +1690,24 @@ async def client_websocket(websocket: WebSocket) -> None:
                         logger.info(f"Forwarding to frontend: type={msg_type}, job_id={result.get('job_id')}")
                         asyncio.create_task(websocket.send_json(result))
 
+                    # Calculate streaming FPS from segment configuration
+                    # FPS = s/T (frames_per_segment / segment_time)
+                    frames_per_segment = config.get("frames_per_segment", 2)
+                    segment_time = config.get("segment_time", 1.0)
+                    streaming_fps = frames_per_segment / segment_time if segment_time > 0 else state.config.video.capture_fps
+
+                    logger.info(f"Starting streaming with calculated FPS: {streaming_fps:.2f} (frames={frames_per_segment}, time={segment_time}s)")
+
                     state.streaming_client = StreamingClient(
                         state.config.server.ws_url,
                         state.camera,
                         result_callback=store_result,
                         session_config={
-                            "frames_per_segment": config.get("frames_per_segment", 2),
+                            "frames_per_segment": frames_per_segment,
                             "overlap_frames": config.get("overlap_frames", 0),
                             "session_id": state.session_id,
                         },
+                        streaming_fps=streaming_fps,
                     )
                     state.streaming_task = asyncio.create_task(
                         state.streaming_client.stream()
@@ -1724,6 +1733,7 @@ async def client_websocket(websocket: WebSocket) -> None:
                 session_repo.update_status(
                     session_id=state.session_id,
                     status="paused",
+                    completed_at=time.time(),
                 )
 
                 # Log inference stop

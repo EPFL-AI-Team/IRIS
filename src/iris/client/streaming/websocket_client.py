@@ -28,6 +28,7 @@ class StreamingClient:
         buffer_size: int = 8,
         overlap_frames: int = 4,
         session_config: dict | None = None,
+        streaming_fps: float | None = None,
     ):
         self.ws_url = ws_url
         self.camera = camera
@@ -54,7 +55,9 @@ class StreamingClient:
                 "overlap_frames": overlap_frames,
             }
 
-        self.capture_fps: float = float(camera.fps)
+        # Use provided streaming_fps if available (calculated from segment config),
+        # otherwise fall back to camera FPS
+        self.capture_fps: float = streaming_fps if streaming_fps is not None else float(camera.fps)
 
     async def stream(self) -> None:
         """Connect and stream frames with auto-reconnect."""
