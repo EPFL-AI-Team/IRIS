@@ -98,7 +98,12 @@ export function LiveView() {
           </CardHeader>
 
           {/* Content Area */}
-          <CardContent className="flex-1 overflow-hidden p-0 bg-background">
+          <CardContent className={
+            `flex-1 p-0 bg-background ` +
+            (activePanel === "results"
+              ? "overflow-y-scroll"
+              : "overflow-hidden")
+          }>
             {activePanel === "results" ? <ResultsViewer /> : <LogViewer />}
           </CardContent>
         </Card>
