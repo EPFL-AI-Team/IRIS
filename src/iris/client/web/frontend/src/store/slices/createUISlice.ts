@@ -31,11 +31,13 @@ export interface UISlice {
   addResult: (result: ResultItem) => void;
   updateResult: (jobId: string, updates: Partial<ResultItem>) => void;
   clearResults: () => void;
+  setResults: (results: ResultItem[]) => void;
 
   // System logs
   logs: LogEntry[];
   addLog: (message: string, level?: LogLevel) => void;
   clearLogs: () => void;
+  setLogs: (logs: LogEntry[]) => void;
 
   // Segment configuration (shared between live and analysis)
   segmentConfig: SegmentConfig;
@@ -102,6 +104,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       return { results: newResults };
     }),
   clearResults: () => set({ results: [] }),
+  setResults: (results) => set({ results }),
 
   // System logs
   logs: [],
@@ -120,6 +123,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       return { logs: newLogs };
     }),
   clearLogs: () => set({ logs: [] }),
+  setLogs: (logs) => set({ logs }),
 
   // Segment configuration - defaults: T=1s, s=2 frames, overlap=0 → FPS=2
   segmentConfig: {

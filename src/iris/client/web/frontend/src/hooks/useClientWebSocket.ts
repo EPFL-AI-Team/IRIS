@@ -31,6 +31,7 @@ let lastServerAliveState: boolean | null = null; // Track server status to avoid
 export function useClientWebSocket() {
   const wsRef = useRef<WebSocket | null>(sharedWs);
   const lastFrameTimeRef = useRef<number>(lastFrameTime);
+  const handleMessageRef = useRef<((data: Record<string, unknown>) => void) | null>(null);
 
   // Store setters
   const setConnectionStatus = useAppStore((state) => state.setConnectionStatus);
@@ -44,6 +45,8 @@ export function useClientWebSocket() {
   const updateResult = useAppStore((state) => state.updateResult);
   const addLog = useAppStore((state) => state.addLog);
   const addAnalysisLog = useAppStore((state) => state.addAnalysisLog);
+  const setLogs = useAppStore((state) => state.setLogs);
+  const setResults = useAppStore((state) => state.setResults);
 
   // Store state
   const segmentConfig = useAppStore((state) => state.segmentConfig);
@@ -76,7 +79,9 @@ export function useClientWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        handleMessage(data);
+        if (handleMessageRef.current) {
+          handleMessageRef.current(data);
+        }
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
       }
@@ -100,6 +105,51 @@ export function useClientWebSocket() {
     };
   }, [setConnectionStatus, setServerAlive, setFps, addLog]);
 
+  // Restore session data from backend after reconnect
+  const restoreSessionData = useCallback(
+    async (sessionId: string) => {
+      try {
+        const response = await fetch(`/api/session/${sessionId}/data`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!data.exists) return;
+
+        // Restore logs
+        if (data.logs && Array.isArray(data.logs)) {
+          const restoredLogs = data.logs.map((log: Record<string, unknown>) => ({
+            id: `log-restored-${log.id}`,
+            timestamp: new Date((log.timestamp as number) * 1000),
+            level: (log.level as string) || "INFO",
+            message: log.message as string,
+          }));
+          setLogs(restoredLogs);
+          console.log(`Restored ${restoredLogs.length} logs for session ${sessionId}`);
+        }
+
+        // Restore results
+        if (data.results && Array.isArray(data.results)) {
+          const restoredResults = data.results.map((result: Record<string, unknown>) => ({
+            id: `result-${result.job_id}`,
+            job_id: result.job_id as string,
+            timestamp: new Date((result.inference_start_ms as number) || Date.now()),
+            status: "completed" as const,
+            result: (result.result as Record<string, unknown>)?.raw as string || JSON.stringify(result.result),
+            frames_processed: (result.frame_end as number) - (result.frame_start as number),
+            inference_time: ((result.inference_end_ms as number) - (result.inference_start_ms as number)) / 1000,
+          }));
+          setResults(restoredResults);
+          console.log(`Restored ${restoredResults.length} results for session ${sessionId}`);
+        }
+
+        addLog(`Session data restored: ${data.logs?.length || 0} logs, ${data.results?.length || 0} results`, "INFO");
+      } catch (error) {
+        console.error("Failed to restore session data:", error);
+      }
+    },
+    [setLogs, setResults, addLog]
+  );
+
   const handleMessage = useCallback(
     (data: Record<string, unknown>) => {
       const msgType = data.type as string;
@@ -107,9 +157,10 @@ export function useClientWebSocket() {
       switch (msgType) {
         case "session_info":
         case "session_ack": {
+          const sessionId = data.session_id as string;
           const config = data.config as Record<string, unknown> | undefined;
           setSessionState({
-            sessionId: data.session_id as string,
+            sessionId,
             config: config
               ? {
                   frames_per_segment: (config.frames_per_segment as number) || 8,
@@ -118,7 +169,12 @@ export function useClientWebSocket() {
               : null,
             configured: true,
           });
-          addLog(`Session: ${data.session_id}`, "INFO");
+          addLog(`Session: ${sessionId}`, "INFO");
+
+          // Restore session data from backend if it exists
+          if (sessionId) {
+            restoreSessionData(sessionId);
+          }
           break;
         }
 
@@ -277,8 +333,14 @@ export function useClientWebSocket() {
       addLog,
       addAnalysisLog,
       activeTab,
+      restoreSessionData,
     ]
   );
+
+  // Keep ref updated with latest handleMessage
+  useEffect(() => {
+    handleMessageRef.current = handleMessage;
+  }, [handleMessage]);
 
   const disconnect = useCallback(() => {
     if (sharedWs) {

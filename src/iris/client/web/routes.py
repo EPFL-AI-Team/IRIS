@@ -1335,6 +1335,40 @@ async def get_stored_report(session_id: str) -> dict[str, Any]:
     return {"session_id": session_id, "report": report}
 
 
+@api_router.get("/session/{session_id}/data")
+async def get_session_data(session_id: str) -> dict[str, Any]:
+    """Get session data including logs and results for restoration.
+
+    Args:
+        session_id: Session identifier.
+
+    Returns:
+        Dictionary with session info, logs, and results.
+    """
+    from iris.client.web.repositories import (
+        logs_repo,
+        results_repo,
+        session_repo,
+    )
+
+    # Check if session exists
+    session = session_repo.get(session_id)
+    if not session:
+        return {"exists": False, "session_id": session_id}
+
+    # Fetch logs and results
+    logs = logs_repo.get_by_session(session_id)
+    results = results_repo.get_by_session(session_id)
+
+    return {
+        "exists": True,
+        "session_id": session_id,
+        "session": session,
+        "logs": logs,
+        "results": results,
+    }
+
+
 # ============================================================================
 # Simplified Communication Endpoints (New Architecture)
 # ============================================================================
