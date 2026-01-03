@@ -51,6 +51,7 @@ export function useClientWebSocket() {
   // Store state
   const segmentConfig = useAppStore((state) => state.segmentConfig);
   const activeTab = useAppStore((state) => state.activeTab);
+  const results = useAppStore((state) => state.results);
 
   const connect = useCallback(() => {
     // Check singleton first
@@ -203,6 +204,14 @@ export function useClientWebSocket() {
         case "result": {
           // Handle inference result - update existing pending card or add new
           console.log("Received result:", data);
+
+          // Calculate latency from submission time
+          const now = new Date();
+          const existingResult = results.find(r => r.job_id === data.job_id);
+          const latency = existingResult?.submittedAt
+            ? now.getTime() - existingResult.submittedAt.getTime()
+            : undefined;
+
           const result: ResultItem = {
             id: `result-${data.job_id}`,
             job_id: data.job_id as string,
@@ -211,6 +220,8 @@ export function useClientWebSocket() {
             result: data.result as string,
             frames_processed: data.frames_processed as number,
             inference_time: data.inference_time as number,
+            latency,
+            submittedAt: existingResult?.submittedAt,
           };
           // Try to update existing pending result first
           updateResult(data.job_id as string, {
@@ -219,23 +230,26 @@ export function useClientWebSocket() {
             frames_processed: data.frames_processed as number,
             inference_time: data.inference_time as number,
             timestamp: new Date((data.timestamp as number) * 1000),
+            latency,
           });
           // If no existing result, addResult handles dedup internally
           addResult(result);
           addLog(
-            `Result: ${data.frames_processed as number} frames, ${((data.inference_time as number) || 0).toFixed(2)}s`,
+            `Result: ${data.frames_processed as number} frames, ${((data.inference_time as number) || 0).toFixed(2)}s, latency: ${latency ? (latency / 1000).toFixed(2) : 'N/A'}s`,
             "INFO"
           );
           break;
         }
 
         case "batch_submitted": {
-          // Create a pending result card
+          // Create a pending result card with submission timestamp
+          const now = new Date();
           const pendingResult: ResultItem = {
             id: `result-${data.job_id}`,
             job_id: data.job_id as string,
             timestamp: new Date((data.timestamp as number) * 1000),
             status: "pending",
+            submittedAt: now, // Track when we submitted this batch
           };
           addResult(pendingResult);
           break;
@@ -334,6 +348,7 @@ export function useClientWebSocket() {
       addAnalysisLog,
       activeTab,
       restoreSessionData,
+      results,
     ]
   );
 
