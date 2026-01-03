@@ -1,20 +1,24 @@
 import { useEffect } from "react";
 import { Toaster, toast } from "sonner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sidebar } from "./components/Sidebar";
+import { TopBar } from "./components/TopBar";
 import { LiveView } from "./components/views/LiveView";
 import { AnalysisView } from "./components/AnalysisView";
-import { useResultsWebSocket } from "./hooks/useResultsWebSocket";
+import { useClientWebSocket } from "./hooks/useClientWebSocket";
 import { useAppStore } from "./store/useAppStore";
 import "./index.css";
 
 function App() {
   const addLog = useAppStore((state) => state.addLog);
   const setServerConfig = useAppStore((state) => state.setServerConfig);
+  const setClientVideoConfig = useAppStore(
+    (state) => state.setClientVideoConfig
+  );
   const setSegmentConfig = useAppStore((state) => state.setSegmentConfig);
+  const activeTab = useAppStore((state) => state.activeTab);
 
-  // Connect to results WebSocket (handles status updates and results)
-  useResultsWebSocket();
+  // Connect to unified client WebSocket
+  // Handles: session info, preview frames, results, metrics, server status
+  useClientWebSocket();
 
   // Load config defaults from backend on mount
   useEffect(() => {
@@ -27,6 +31,11 @@ function App() {
           // Set server config
           if (defaults.server) {
             setServerConfig(defaults.server);
+          }
+
+          // Set video config (backend USB camera settings)
+          if (defaults.video) {
+            setClientVideoConfig(defaults.video);
           }
 
           // Set segment config (T, s, k)
@@ -49,48 +58,19 @@ function App() {
     loadDefaults();
     addLog("IRIS Client initializing...", "INFO");
     toast.info("IRIS Client initialized");
-  }, [addLog, setServerConfig, setSegmentConfig]);
+  }, [addLog, setServerConfig, setClientVideoConfig, setSegmentConfig]);
 
   return (
-    <div className="h-screen w-full flex flex-col lg:flex-row bg-background text-foreground">
-      {/* Sidebar - hidden on mobile, shown on desktop */}
-      <aside className="hidden lg:flex lg:h-full overflow-y-scroll">
-        <Sidebar />
-      </aside>
+    <div className="h-screen w-full flex flex-col bg-background text-foreground">
+      {/* TopBar - all controls in expanded top bar */}
+      <TopBar />
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-y-scroll">
-        <Tabs defaultValue="live" className="flex-1 flex flex-col">
-          <div className="border-b px-4 shrink-0">
-            <TabsList className="h-12 my-5">
-              <TabsTrigger value="live">Live Inference</TabsTrigger>
-              <TabsTrigger value="analysis">Analysis & Benchmark</TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent
-            value="live"
-            forceMount
-            className="flex-1 p-4 overflow-auto m-0"
-          >
-            <LiveView />
-
-            {/* Mobile: show sidebar content below */}
-            <div className="lg:hidden mt-4">
-              <Sidebar />
-            </div>
-          </TabsContent>
-
-          <TabsContent
-            value="analysis"
-            className="flex-1 p-4 overflow-auto m-0"
-          >
-            <AnalysisView />
-          </TabsContent>
-        </Tabs>
+      {/* Main Content - switches based on activeTab */}
+      <main className="flex-1 overflow-auto p-4">
+        {activeTab === "live" ? <LiveView /> : <AnalysisView />}
       </main>
 
-      <Toaster position="top-right" richColors />
+      <Toaster position="bottom-right" richColors />
     </div>
   );
 }
