@@ -9,17 +9,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { FileText, Loader2, Download, Copy, Check } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
-
-type LLMProvider = "anthropic" | "openai" | "gemini";
 
 interface ReportModalProps {
   sessionId?: string;
@@ -28,16 +19,22 @@ interface ReportModalProps {
 }
 
 export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps) {
-  const [provider, setProvider] = useState<LLMProvider>("anthropic");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [reportContent, setReportContent] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const analysisJobId = useAppStore((s) => s.analysisJobId);
   const effectiveSessionId = sessionId || analysisJobId;
+
+  // Use store state for report status
+  const reportStatus = useAppStore((s) => s.reportStatus);
+  const reportContent = useAppStore((s) => s.reportContent);
+  const reportError = useAppStore((s) => s.reportError);
+  const setReportStatus = useAppStore((s) => s.setReportStatus);
+  const setReportContent = useAppStore((s) => s.setReportContent);
+  const setReportError = useAppStore((s) => s.setReportError);
+
+  const isGenerating = reportStatus === "generating";
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -57,21 +54,24 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
 
   const generateReport = useCallback(async () => {
     if (!effectiveSessionId) {
-      setError("No session ID available. Run analysis first.");
+      setReportError("No session ID available. Run analysis first.");
+      setReportStatus("error");
       return;
     }
 
-    setIsGenerating(true);
+    setReportStatus("generating");
     setReportContent("");
-    setError(null);
+    setReportError(null);
 
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(
-        `/api/report/generate?session_id=${effectiveSessionId}&provider=${provider}`,
-        { signal: abortControllerRef.current.signal }
-      );
+      const response = await fetch("/api/report/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: effectiveSessionId }),
+        signal: abortControllerRef.current.signal,
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -85,36 +85,42 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
 
       const decoder = new TextDecoder();
       let done = false;
+      let accumulated = "";
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
         if (value) {
           const text = decoder.decode(value, { stream: true });
-          setReportContent((prev) => prev + text);
+          accumulated += text;
+          setReportContent(accumulated);
         }
       }
+
+      setReportStatus("ready");
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        // User cancelled
+        setReportStatus("idle");
         return;
       }
-      setError(err instanceof Error ? err.message : "Failed to generate report");
+      const errorMsg = err instanceof Error ? err.message : "Failed to generate report";
+      setReportError(errorMsg);
+      setReportStatus("error");
     } finally {
-      setIsGenerating(false);
       abortControllerRef.current = null;
     }
-  }, [effectiveSessionId, provider]);
+  }, [effectiveSessionId, setReportStatus, setReportContent, setReportError]);
 
   const generateFallbackReport = useCallback(async () => {
     if (!effectiveSessionId) {
-      setError("No session ID available. Run analysis first.");
+      setReportError("No session ID available. Run analysis first.");
+      setReportStatus("error");
       return;
     }
 
-    setIsGenerating(true);
+    setReportStatus("generating");
     setReportContent("");
-    setError(null);
+    setReportError(null);
 
     try {
       const response = await fetch(`/api/report/fallback/${effectiveSessionId}`);
@@ -126,19 +132,20 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
 
       const data = await response.json();
       setReportContent(data.report);
+      setReportStatus("ready");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate report");
-    } finally {
-      setIsGenerating(false);
+      const errorMsg = err instanceof Error ? err.message : "Failed to generate report";
+      setReportError(errorMsg);
+      setReportStatus("error");
     }
-  }, [effectiveSessionId]);
+  }, [effectiveSessionId, setReportStatus, setReportContent, setReportError]);
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    setIsGenerating(false);
-  }, []);
+    setReportStatus("idle");
+  }, [setReportStatus]);
 
   const handleCopy = useCallback(async () => {
     if (reportContent) {
@@ -176,24 +183,6 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
         </DialogHeader>
 
         <div className="flex items-center gap-4 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Provider:</span>
-            <Select
-              value={provider}
-              onValueChange={(v) => setProvider(v as LLMProvider)}
-              disabled={isGenerating}
-            >
-              <SelectTrigger className="w-37.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="gemini">Gemini</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="flex gap-2">
             {isGenerating ? (
               <Button variant="destructive" onClick={handleCancel}>
@@ -208,7 +197,7 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
                       Generating...
                     </>
                   ) : (
-                    "Generate with AI"
+                    "Generate Report"
                   )}
                 </Button>
                 <Button variant="outline" onClick={generateFallbackReport}>
@@ -234,9 +223,9 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
           )}
         </div>
 
-        {error && (
+        {reportError && (
           <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
-            {error}
+            {reportError}
           </div>
         )}
 
@@ -259,7 +248,7 @@ export function ReportModal({ sessionId, open, onOpenChange }: ReportModalProps)
             </div>
           ) : (
             <span className="text-muted-foreground">
-              Click "Generate with AI" for an LLM-powered analysis or "Basic Stats" for a quick summary.
+              Click "Generate Report" for a Gemini-powered analysis or "Basic Stats" for a quick summary.
             </span>
           )}
         </div>
