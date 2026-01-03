@@ -43,7 +43,6 @@ export function TopBar() {
   // const segmentConfig = useAppStore((state) => state.segmentConfig);
   const addLog = useAppStore((state) => state.addLog);
   const analysisJobId = useAppStore((state) => state.analysisJobId);
-  const fps = useAppStore((state) => state.fps);
   const serverConfig = useAppStore((state) => state.serverConfig);
   const setServerConfig = useAppStore((state) => state.setServerConfig);
   const reportStatus = useAppStore((state) => state.reportStatus);
@@ -169,13 +168,6 @@ export function TopBar() {
               )}
               {reportStatus === "ready" && <FileText className="w-3 h-3" />}
               Report: {reportStatus.charAt(0).toUpperCase() + reportStatus.slice(1)}
-            </Badge>
-          )}
-
-          {/* FPS (when streaming) */}
-          {isStreaming && (
-            <Badge variant="outline" className="font-mono">
-              {fps.toFixed(1)} FPS
             </Badge>
           )}
 
