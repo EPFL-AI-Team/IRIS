@@ -814,7 +814,10 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     else:
         state.analysis_annotations = []
 
-    # [FIX] Calculate effective frames based on simulation FPS (sampling rate)
+    # [FIX] Define total_frames (native count)
+    total_frames = state.analysis_video_capture.total_frames
+
+    # Calculate effective frames based on simulation FPS (sampling rate)
     duration_sec = state.analysis_video_capture.get_duration_ms() / 1000.0
     effective_total_frames = int(duration_sec * simulation_fps)
 
@@ -840,7 +843,7 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
         "simulation_fps": simulation_fps,  # Derived FPS
         # Video metadata
         "annotation_count": len(state.analysis_annotations),
-        "total_frames": state.analysis_video_capture.total_frames, # Native frames
+        "total_frames": total_frames, # Now this variable exists again
         "effective_total_frames": effective_total_frames, # Sampled frames
         "total_chunks": total_chunks,
         "duration_sec": duration_sec,
