@@ -169,6 +169,20 @@ export function AnalysisControls() {
                 ? ` / ${sessionMetrics.segmentsTotal}`
                 : ""}
             </div>
+            {sessionMetrics.batchSize &&
+              sessionMetrics.batchSize > 1 &&
+              sessionMetrics.segmentsTotal && (
+                <div className="col-span-2 text-blue-500">
+                  Batches Left:{" "}
+                  {Math.ceil(
+                    Math.max(
+                      0,
+                      sessionMetrics.segmentsTotal -
+                        sessionMetrics.segmentsProcessed
+                    ) / sessionMetrics.batchSize
+                  )}
+                </div>
+              )}
           </div>
         )}
       </div>

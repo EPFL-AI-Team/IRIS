@@ -951,16 +951,19 @@ async def analysis_websocket(websocket: WebSocket) -> None:
         """Send video frames to inference server at simulation FPS."""
         nonlocal frame_count
         try:
+            native_fps = state.analysis_video_capture.native_fps if state.analysis_video_capture.native_fps > 0 else 30.0
+            
             while True:
                 # Defensive check: ensure video_capture still exists
                 if not state.analysis_video_capture:
                     logger.info("Analysis video capture was stopped, ending frame transmission")
                     break
 
-                frame_jpeg = state.analysis_video_capture.get_frame_jpeg(
-                    quality=state.config.video.jpeg_quality
-                )
-                if frame_jpeg is None:
+                # Calculate target frame index based on simulation FPS
+                # This ensures we skip frames to match the target playback speed
+                target_frame_idx = int(frame_count * native_fps / simulation_fps)
+                
+                if target_frame_idx >= state.analysis_video_capture.total_frames:
                     # End of video
                     logger.info(
                         f"Analysis complete: {frame_count} frames processed in "
@@ -975,10 +978,19 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     })
                     break
 
+                # Seek to the correct frame
+                state.analysis_video_capture.seek(target_frame_idx)
+
+                frame_jpeg = state.analysis_video_capture.get_frame_jpeg(
+                    quality=state.config.video.jpeg_quality
+                )
+                
+                if frame_jpeg is None:
+                    # Should have been caught by index check, but safety fallback
+                    break
+
                 # Calculate video timestamp for this frame
-                video_timestamp = 0.0
-                if state.analysis_video_capture.native_fps > 0:
-                    video_timestamp = frame_count / state.analysis_video_capture.native_fps
+                video_timestamp = target_frame_idx / native_fps
 
                 # Send frame to inference server
                 message = {
@@ -990,15 +1002,18 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 await server_ws.send(json.dumps(message))
 
                 # Send progress to frontend
-                progress_percent = (frame_count / total_frames) * 100
-                current_position_ms = state.analysis_video_capture.get_position_ms()
+                # Note: We use target_frame_idx for video progress, but frame_count for processing progress
+                progress_percent = (target_frame_idx / total_frames) * 100
+                current_position_ms = video_timestamp * 1000.0
 
                 # Calculate chunk progress and estimated time
                 current_chunk = frame_count // frames_per_chunk + 1
                 elapsed_time = time.time() - start_time
                 if frame_count > 0 and elapsed_time > 0:
                     frames_per_second = frame_count / elapsed_time
-                    remaining_frames = total_frames - frame_count
+                    # Estimate remaining *sent* frames, not total video frames
+                    total_frames_to_send = int(total_frames / native_fps * simulation_fps)
+                    remaining_frames = total_frames_to_send - frame_count
                     estimated_time_remaining = (
                         remaining_frames / frames_per_second
                         if frames_per_second > 0
@@ -1011,7 +1026,7 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     "type": "progress",
                     "job_id": job_id,
                     "current_frame": frame_count,
-                    "total_frames": total_frames,
+                    "total_frames": int(total_frames / native_fps * simulation_fps),
                     "progress_percent": progress_percent,
                     "position_ms": current_position_ms,
                     "current_chunk": current_chunk,

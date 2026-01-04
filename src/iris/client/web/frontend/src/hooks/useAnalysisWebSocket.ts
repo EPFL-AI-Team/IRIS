@@ -83,6 +83,7 @@ export function useAnalysisWebSocket() {
               queueDepth: metrics.queue_depth,
               processingRate: metrics.processing_rate,
               framesReceived: metrics.frames_received,
+              batchSize: metrics.batch_size,
             });
             break;
           }

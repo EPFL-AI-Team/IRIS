@@ -81,6 +81,7 @@ class SessionState:
             "queue_depth": queue_depth,
             "processing_rate": round(rate, 2),
             "frames_received": self.frames_received,
+            "batch_size": config.batch_inference.batch_size if config.batch_inference.enabled else 1,
         }
 
 

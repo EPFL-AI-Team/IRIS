@@ -115,6 +115,7 @@ export interface SessionMetricsMessage {
   queue_depth: number;
   processing_rate: number; // segments per second
   frames_received: number;
+  batch_size?: number;
 }
 
 /**
@@ -140,4 +141,5 @@ export interface SessionMetrics {
   queueDepth: number;
   processingRate: number;
   framesReceived: number;
+  batchSize?: number;
 }
