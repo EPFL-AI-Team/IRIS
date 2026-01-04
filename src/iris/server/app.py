@@ -485,6 +485,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         batch_counter = 0
         client_fps = default_fps
 
+        # Batch inference accumulator (analysis mode only)
+        batch_accumulator: list[dict] = []  # [{"frames": [...], "segment_id": str, "prompt": str, "client_fps": float}, ...]
+        batch_segment_counter = 0
+
         try:
             # Wait for session_config as first message
             logger.info(f"Waiting for session_config from client...")
@@ -651,47 +655,100 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     logger.error(f"Error decoding frame: {e}")
                     continue
 
-                # When buffer reaches threshold, create and submit batch job
+                # When buffer reaches threshold, handle batching
                 if frame_buffer.is_ready():
-                    batch_job_id = f"{connection_job_id}_batch_{batch_counter}"
+                    # Get buffered frames
+                    buffered_frames = frame_buffer.get_batch()
 
-                    # Create one-shot VideoJob with buffered frames
-                    from iris.server.inference.jobs import VideoJob
-
-                    batch_job = VideoJob(
-                        job_id=batch_job_id,
-                        model=None,  # Will be injected by worker
-                        processor=None,  # Will be injected by worker
-                        executor=state.queue.executor,
-                        frames=frame_buffer.get_batch(),
-                        prompt=prompt,
-                        buffer_size=buffer_size,
-                        overlap_frames=overlap_frames,
-                        default_fps=default_fps,
-                        max_new_tokens=max_new_tokens,
-                        client_fps=client_fps,
+                    # Check if batch inference enabled for analysis mode
+                    batch_cfg = config.batch_inference
+                    should_batch = (
+                        batch_cfg.enabled
+                        and session.mode == "analysis"
+                        and batch_cfg.batch_size > 1
                     )
 
-                    # Set result callback
-                    batch_job.result_callback = sync_result_callback
+                    if should_batch:
+                        # Accumulate segment for batch processing
+                        segment_data = {
+                            "frames": buffered_frames,
+                            "segment_id": f"seg_{batch_segment_counter}",
+                            "prompt": prompt,
+                            "client_fps": client_fps,
+                        }
+                        batch_accumulator.append(segment_data)
+                        batch_segment_counter += 1
 
-                    if state.shutting_down:
                         logger.info(
-                            "Shutdown in progress; skipping batch submission %s",
-                            batch_job_id,
+                            f"Accumulated segment {batch_segment_counter}, "
+                            f"batch progress: {len(batch_accumulator)}/{batch_cfg.batch_size}"
                         )
-                        break
 
-                    # Submit directly to queue
-                    await state.queue.submit(batch_job)
+                        # Check if batch ready
+                        if len(batch_accumulator) >= batch_cfg.batch_size:
+                            # Create BatchVideoJob
+                            from iris.server.inference.jobs.batch_video import BatchVideoJob
 
-                    # Log with queue depth
-                    queue_depth = state.queue.queue.qsize()
-                    logger.info(f"Submitted {batch_job_id}, queue_depth={queue_depth}")
+                            batch_job_id = f"{connection_job_id}_batch_{batch_counter}"
+                            batch_job = BatchVideoJob(
+                                job_id=batch_job_id,
+                                model=None,  # Injected by worker
+                                processor=None,
+                                executor=state.queue.executor,
+                                segments=batch_accumulator.copy(),
+                                max_new_tokens=max_new_tokens,
+                            )
 
-                    # Keep last N frames for temporal overlap
-                    frame_buffer.slide_window()
-                    batch_counter += 1
+                            batch_job.result_callback = sync_result_callback
+                            batch_job.log_callback = log_callback
+
+                            if not state.shutting_down:
+                                await state.queue.submit(batch_job)
+                                queue_depth = state.queue.queue.qsize()
+                                logger.info(
+                                    f"Submitted BatchVideoJob {batch_job_id}: "
+                                    f"{len(batch_accumulator)} segments, queue_depth={queue_depth}"
+                                )
+
+                            # Clear accumulator
+                            batch_accumulator.clear()
+                            batch_counter += 1
+
+                        # Slide window for next segment
+                        frame_buffer.slide_window()
+
+                    else:
+                        # Original single-segment processing
+                        batch_job_id = f"{connection_job_id}_batch_{batch_counter}"
+
+                        from iris.server.inference.jobs import VideoJob
+
+                        batch_job = VideoJob(
+                            job_id=batch_job_id,
+                            model=None,
+                            processor=None,
+                            executor=state.queue.executor,
+                            frames=buffered_frames,
+                            prompt=prompt,
+                            buffer_size=buffer_size,
+                            overlap_frames=overlap_frames,
+                            default_fps=default_fps,
+                            max_new_tokens=max_new_tokens,
+                            client_fps=client_fps,
+                        )
+
+                        batch_job.result_callback = sync_result_callback
+
+                        if not state.shutting_down:
+                            await state.queue.submit(batch_job)
+                            queue_depth = state.queue.queue.qsize()
+                            logger.info(
+                                f"Submitted VideoJob {batch_job_id}: "
+                                f"{len(buffered_frames)} frames, queue_depth={queue_depth}"
+                            )
+
+                        batch_counter += 1
+                        frame_buffer.slide_window()
 
         except WebSocketDisconnect as e:
             code = getattr(e, "code", None)
@@ -702,8 +759,30 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 reason,
             )
 
-            # Submit partial batch if there are remaining frames
-            if len(frame_buffer) > 0:
+            # Flush any remaining accumulated segments in batch mode
+            if batch_accumulator and not state.shutting_down:
+                logger.info(f"Flushing {len(batch_accumulator)} remaining segments in partial batch")
+
+                from iris.server.inference.jobs.batch_video import BatchVideoJob
+
+                final_batch_id = f"{connection_job_id}_batch_final"
+                final_batch = BatchVideoJob(
+                    job_id=final_batch_id,
+                    model=None,
+                    processor=None,
+                    executor=state.queue.executor,
+                    segments=batch_accumulator.copy(),
+                    max_new_tokens=max_new_tokens,
+                )
+
+                final_batch.result_callback = sync_result_callback
+                final_batch.log_callback = log_callback
+
+                await state.queue.submit(final_batch)
+                logger.info(f"Submitted final partial batch: {len(batch_accumulator)} segments")
+
+            # Submit partial batch if there are remaining frames in frame_buffer
+            elif len(frame_buffer) > 0:
                 batch_job_id = f"{connection_job_id}_batch_{batch_counter}_partial"
                 logger.info(f"Submitting partial batch with {len(frame_buffer)} frames")
 
