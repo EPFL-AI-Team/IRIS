@@ -24,15 +24,16 @@ const VERB_PREPOSITIONS: Record<string, string> = {
  * @returns Natural language description
  */
 export function formatResultAsNaturalLanguage(result: Record<string, unknown>): string {
-  // Extract fields (handle both "verb"/"action" and "hand"/"hand_side" variations)
-  const hand = String(result.hand || result.hand_side || "unknown");
+  // Extract fields (handle both "verb"/"action" variations)
   const verb = String(result.verb || result.action || "unknown");
   const tool = String(result.tool || "unknown").replace(/_/g, " ");
   const target = result.target;
 
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
   // Case 1: No target object
   if (!target || target === "none" || target === "null" || target === "nan") {
-    return `The ${hand} hand is performing a '${verb}' action using the ${tool}.`;
+    return `Performing a '${verb}' action using the ${tool}.`;
   }
 
   // Case 2: With target object
@@ -42,7 +43,7 @@ export function formatResultAsNaturalLanguage(result: Record<string, unknown>): 
   // Convert verb to present continuous (-ing form)
   const verbIng = verb.endsWith("e") ? verb.slice(0, -1) + "ing" : verb + "ing";
 
-  return `The ${hand} hand is ${verbIng} the ${tool} ${prep} the ${targetStr}.`;
+  return `${capitalize(verbIng)} the ${tool} ${prep} the ${targetStr}.`;
 }
 
 /**
