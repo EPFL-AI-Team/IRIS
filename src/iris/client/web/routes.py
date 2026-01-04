@@ -695,6 +695,21 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 # Defensive check: ensure video_capture still exists
                 if not state.analysis_video_capture:
                     logger.info("Analysis video capture was stopped, ending frame transmission")
+                    # CRITICAL: Send completion signal to prevent server deadlock
+                    logger.info("Sending completion signal to inference server...")
+                    await server_ws.send(json.dumps({"type": "complete"}))
+
+                    # Notify frontend
+                    duration_sec = time.time() - start_time
+                    await websocket.send_json({
+                        "type": "complete",
+                        "job_id": job_id,
+                        "total_frames": frame_count,
+                        "total_results": len(state.analysis_results),
+                        "duration_sec": duration_sec,
+                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
+                        "speedup_factor": (frame_count / simulation_fps) / duration_sec if duration_sec > 0 else 0,
+                    })
                     break
 
                 # Calculate the logical time for the frame we want to send
@@ -732,9 +747,28 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 frame_jpeg = state.analysis_video_capture.get_frame_jpeg(
                     quality=state.config.video.jpeg_quality
                 )
-                
+
                 if frame_jpeg is None:
-                    # Should have been caught by index check, but safety fallback
+                    # Safety fallback: end of video reached unexpectedly
+                    logger.info(
+                        f"Analysis complete (frame read failed): {frame_count} frames sent in "
+                        f"{time.time() - start_time:.1f}s"
+                    )
+                    # CRITICAL: Send completion signal to inference server
+                    logger.info("Sending completion signal to inference server...")
+                    await server_ws.send(json.dumps({"type": "complete"}))
+
+                    # Notify frontend
+                    duration_sec = time.time() - start_time
+                    await websocket.send_json({
+                        "type": "complete",
+                        "job_id": job_id,
+                        "total_frames": frame_count,
+                        "total_results": len(state.analysis_results),
+                        "duration_sec": duration_sec,
+                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
+                        "speedup_factor": (frame_count / simulation_fps) / duration_sec if duration_sec > 0 else 0,
+                    })
                     break
 
                 # The video timestamp is the logical time we calculated
