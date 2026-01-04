@@ -9,7 +9,7 @@ let smoothedFps = 0; // Exponentially smoothed FPS
 let lastServerAliveState: boolean | null = null; // Track server status to avoid repeated logs
 
 /**
- * Simple WebSocket hook for unified frontend communication.
+ * Unified WebSocket hook for frontend communication via /ws/client.
  *
  * Pattern from FastAPI docs:
  * 1. Connect on mount
@@ -17,10 +17,11 @@ let lastServerAliveState: boolean | null = null; // Track server status to avoid
  * 3. Show "Disconnected" status on close
  * 4. User can click "Reconnect" button (no auto-reconnect)
  *
- * This replaces the previous separate hooks:
- * - useResultsWebSocket (for /ws/results)
- * - useBrowserStream (for /ws/browser-stream)
- * - useClientCamera (for browser camera)
+ * This hook manages the unified control plane WebSocket that handles:
+ * - Live camera preview frames
+ * - Inference results
+ * - Session status updates
+ * - Camera and streaming state
  *
  * Note: Analysis-specific WebSocket is still handled by useAnalysisWebSocket
  * which connects to /ws/analysis endpoint.

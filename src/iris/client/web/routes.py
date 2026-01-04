@@ -35,7 +35,7 @@ class StartRequest(BaseModel):
 class SessionConfig(BaseModel):
     frames_per_segment: int = 8
     overlap_frames: int = 4
-    camera_mode: str = "client"  # 'client' or 'server'
+    # camera_mode removed - server-only camera selection
 
 
 # Global store for active sessions (Simple in-memory for demo)
@@ -252,169 +252,6 @@ async def select_camera(request: dict[str, int]) -> dict[str, Any]:
     return {"status": "ok", "camera_index": camera_index}
 
 
-@ws_router.websocket("/preview")
-async def preview_websocket(websocket: WebSocket) -> None:
-    """WebSocket endpoint for local video preview."""
-    state = get_app_state()
-    await websocket.accept()
-
-    # Initialize camera if not already running
-    if state.camera is None:
-        state.camera = CameraCapture(
-            camera_index=state.config.video.camera_index,
-            width=state.config.video.width,
-            height=state.config.video.height,
-            fps=state.config.video.capture_fps,
-        )
-        if not state.camera.start():
-            state.camera = None
-            await websocket.close()
-            return
-
-    try:
-        while True:
-            if state.camera:
-                frame_jpeg = state.camera.get_frame_jpeg(quality=70)
-                if frame_jpeg:
-                    await websocket.send_text(base64.b64encode(frame_jpeg).decode())
-            # Match preview rate to configured capture FPS
-            await asyncio.sleep(1.0 / state.config.video.capture_fps)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        logger.error(f"Preview WebSocket error: {e}")
-        try:
-            await websocket.close()
-        except Exception:
-            pass
-    finally:
-        # Stop camera if we're not streaming to server
-        if state.camera and (
-            state.streaming_client is None or not state.streaming_client.running
-        ):
-            state.camera.stop()
-            state.camera = None
-
-
-@ws_router.websocket("/results")
-async def results_websocket(websocket: WebSocket) -> None:
-    """WebSocket endpoint for inference results and status updates."""
-    state = get_app_state()
-    await websocket.accept()
-
-    last_sent_index = 0
-    loop = asyncio.get_event_loop()
-    last_keepalive = loop.time()
-    # Send an initial status update immediately on connect.
-    last_status_update = 0.0
-    keepalive_interval = 15.0  # seconds
-    status_update_interval = 1.0  # seconds - send status every second
-
-    try:
-        while True:
-            now = loop.time()
-
-            # Send all new results since last check
-            current_count = len(state.results_history)
-            if current_count > last_sent_index:
-                # Send all new results
-                for i, result in enumerate(
-                    state.results_history[last_sent_index:], start=last_sent_index
-                ):
-                    try:
-                        await websocket.send_json(result)
-                        logger.debug(
-                            f"Sent result {i + 1}/{current_count}: {result.get('job_id')}"
-                        )
-                    except WebSocketDisconnect:
-                        logger.info("Results WebSocket disconnected during send")
-                        raise
-                    except Exception as e:
-                        logger.error(f"Failed to send result {i}: {e}")
-                        raise  # Re-raise to close connection
-                last_sent_index = current_count
-                last_keepalive = now  # Reset timer when data sent
-
-            # Send periodic status updates (replacing HTTP polling)
-            if now - last_status_update > status_update_interval:
-                try:
-                    # Determine streaming server connection status (with defensive checks)
-                    streaming_server_status = "disconnected"
-                    streaming_active = False
-                    current_fps = 0.0
-                    camera_active = False
-
-                    try:
-                        if state.streaming_client:
-                            streaming_server_status = (
-                                state.streaming_client.connection_state
-                            )
-                            streaming_active = state.streaming_client.running
-                            current_fps = state.streaming_client.get_fps()
-                    except Exception:
-                        pass  # Use defaults on error
-
-                    try:
-                        if state.camera and state.camera.cap:
-                            camera_active = state.camera.cap.isOpened()
-                    except Exception:
-                        pass  # Use default on error
-
-                    status_message = {
-                        "type": "status_update",
-                        "camera_active": camera_active,
-                        "streaming_active": streaming_active,
-                        "streaming_server_status": streaming_server_status,
-                        "fps": current_fps,
-                        "config": {
-                            "server": {
-                                "host": state.config.server.host,
-                                "port": state.config.server.port,
-                                "endpoint": state.config.server.endpoint,
-                            },
-                            "video": {
-                                "width": state.config.video.width,
-                                "height": state.config.video.height,
-                                "capture_fps": state.config.video.capture_fps,
-                                "jpeg_quality": state.config.video.jpeg_quality,
-                                "camera_index": state.config.video.camera_index,
-                            },
-                        },
-                        "timestamp": now,
-                    }
-                    await websocket.send_json(status_message)
-                    last_status_update = now
-                    last_keepalive = now  # Status update counts as keepalive
-                except WebSocketDisconnect:
-                    logger.info("Results WebSocket disconnected during status update")
-                    raise
-                except Exception as e:
-                    logger.error(f"Failed to send status update: {e}")
-                    # Don't raise - continue trying
-
-            # Keepalive ping when idle (fallback if status updates fail)
-            elif now - last_keepalive > keepalive_interval:
-                try:
-                    await websocket.send_json({"type": "keepalive", "timestamp": now})
-                    last_keepalive = now
-                except WebSocketDisconnect:
-                    logger.info("Results WebSocket disconnected during keepalive")
-                    raise
-
-            await asyncio.sleep(0.1)  # Check for new results 10 times per second
-    except asyncio.CancelledError:
-        logger.debug("Results WebSocket cancelled during shutdown")
-        # Don't raise - let it close gracefully
-    except WebSocketDisconnect:
-        logger.info("Results WebSocket disconnected")
-    except Exception as e:
-        logger.error(f"Results WebSocket error: {e}")
-        try:
-            await websocket.close()
-        except Exception:
-            pass
-
-
 @api_router.get("/results/history")
 async def get_results_history() -> dict[str, Any]:
     """Get all stored inference results."""
@@ -431,149 +268,6 @@ async def clear_results_history() -> dict[str, str]:
     state = get_app_state()
     state.results_history.clear()
     return {"status": "ok", "message": "Results history cleared"}
-
-
-@ws_router.websocket("/browser-stream")
-async def browser_stream_websocket(websocket: WebSocket, session_id: str) -> None:
-    """WebSocket endpoint for browser camera frame streaming.
-
-    Acts as a high-performance proxy between Browser and Inference Server.
-    REQUIRES 'session_id' query parameter.
-
-    Protocol:
-        1. Initialization: Config loaded from session_store (set via /session/init).
-        2. Streaming: Proxy blindly forwards raw messages (frames/results) without parsing.
-    """
-    state = get_app_state()
-    await websocket.accept()
-
-    # Validate Session
-    if session_id not in session_store:
-        logger.warning(f"Browser stream rejected: invalid session_id {session_id}")
-        await websocket.close(code=4001, reason="Session not initialized")
-        return
-
-    session_data = session_store[session_id]
-    stored_config = session_data["config"]
-
-    # Get inference server URL from config
-    inference_ws_url = state.config.server.ws_url
-    logger.info(
-        "Browser stream connecting to inference server at %s for session %s",
-        inference_ws_url,
-        session_id,
-    )
-
-    # Convert to session_config for inference server
-    session_config = {
-        "frames_per_segment": stored_config.get("frames_per_segment", 8),
-        "overlap_frames": stored_config.get("overlap_frames", 4),
-    }
-
-    # -------------------------------------------------------------------------
-    # Connect & Stream (Optimized Pass-Through)
-    # -------------------------------------------------------------------------
-    try:
-        async with websockets.connect(
-            inference_ws_url,
-            ping_interval=20,
-            ping_timeout=60,
-            close_timeout=30.0,
-            max_queue=None,
-        ) as server_ws:
-            # Send converted config to inference server
-            config_message = {
-                "type": "session_config",
-                "config": session_config,
-                "mode": "live",
-                "total_frames": None,
-                "session_id": session_id,
-            }
-            await server_ws.send(json.dumps(config_message))
-            logger.info(
-                "Proxy established for session %s with config: %s",
-                session_id,
-                session_config,
-            )
-
-            # High-performance bidirectional forwarding
-            # We avoid json.loads/dumps for frame data to minimize CPU/latency
-
-            async def forward_to_inference():
-                """Browser -> Inference Server (Frames)"""
-                try:
-                    while True:
-                        # Receive raw message (text or bytes)
-                        message = await websocket.receive()
-
-                        if "text" in message:
-                            await server_ws.send(message["text"])
-                        elif "bytes" in message:
-                            await server_ws.send(message["bytes"])
-                        else:
-                            # Handle disconnect or other event types
-                            if message.get("type") == "websocket.disconnect":
-                                raise WebSocketDisconnect()
-                except WebSocketDisconnect:
-                    logger.info("Browser disconnected")
-                    raise
-                except Exception as e:
-                    logger.error("Error forwarding to inference: %s", e)
-                    raise
-
-            async def receive_from_inference():
-                """Inference Server -> Browser (Results/Logs)"""
-                try:
-                    while True:
-                        response = await server_ws.recv()
-
-                        # We do need to snoop ONE type of message: "result"
-                        # to store it in history. But we can do this optimistically.
-                        # Most messages are small, so parsing them is okay.
-                        # Frames (upstream) are heavy, Results (downstream) are light.
-
-                        try:
-                            data = json.loads(response)
-                            msg_type = data.get("type")
-
-                            # Store results/logs in history
-                            if msg_type == "result":
-                                state.results_history.append(data)
-                                if (
-                                    len(state.results_history)
-                                    > state.max_results_history
-                                ):
-                                    state.results_history.pop(0)
-
-                            # Forward raw response to browser
-                            await websocket.send_text(response)
-
-                        except json.JSONDecodeError:
-                            # If not JSON, just forward raw
-                            await websocket.send_text(response)
-
-                except websockets.exceptions.ConnectionClosed:
-                    logger.info("Inference server closed connection")
-                    raise
-                except Exception as e:
-                    logger.error("Error receiving from inference: %s", e)
-                    raise
-
-            # Run loops
-            await asyncio.gather(forward_to_inference(), receive_from_inference())
-
-    except (ConnectionRefusedError, OSError) as e:
-        logger.error("Failed to connect to inference server: %s", e)
-        await websocket.send_json({
-            "type": "error",
-            "message": "Inference server unavailable",
-        })
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        logger.error("Proxy error: %s", e)
-    finally:
-        logger.info("Proxy connection closed")
 
 
 # ============================================================================
@@ -1470,24 +1164,58 @@ async def get_session_data(session_id: str) -> dict[str, Any]:
 
 @api_router.post("/session/reset")
 async def reset_session() -> dict[str, Any]:
-    """Reset session - generate new session_id and clear history."""
-    from iris.client.web.repositories import session_repo
+    """Reset session and clear all state (client + server)."""
+    from iris.client.web.repositories import session_repo, logs_repo, results_repo
+    import httpx
 
     state = get_app_state()
+
+    # Step 1: Generate new session_id and clear local state
+    old_session_id = state.session_id
     new_session_id = state.reset_session()
 
-    # Create new session in database immediately
+    # Clear database logs and results for old session
+    try:
+        if logs_repo:
+            logs_repo.clear_logs(old_session_id)
+        if results_repo:
+            results_repo.clear_results(old_session_id)
+    except Exception as e:
+        logger.warning(f"Failed to clear old session data from database: {e}")
+
+    # Step 2 (CRITICAL): Clear inference server queue to prevent ghost results
+    # This prevents buffered results from previous session from arriving
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{state.config.server_url}/api/queue/clear",
+                timeout=5.0
+            )
+            logger.info(f"Cleared inference server queue: {response.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to clear inference server queue: {e}")
+        # Don't fail reset if server unreachable - allow client reset to proceed
+
+    # Create new session in database
     try:
         session_repo.create(
             session_id=new_session_id,
             config=state.session_config,
         )
-        logger.info(f"Created new session in DB after API reset: {new_session_id}")
+        logger.info(f"Created new session in DB after reset: {new_session_id}")
     except Exception as e:
-        logger.error(f"Failed to create session in DB after API reset: {e}")
+        logger.error(f"Failed to create session in DB after reset: {e}")
 
-    logger.info(f"Session reset: new session_id={new_session_id}")
-    return {"status": "ok", "session_id": new_session_id}
+    logger.info(
+        f"Session reset complete: {old_session_id} → {new_session_id} "
+        f"(client state cleared + server queue flushed)"
+    )
+
+    return {
+        "status": "success",
+        "session_id": new_session_id,
+        "message": "Session reset (client state + server queue cleared)"
+    }
 
 
 @api_router.post("/queue/clear")
@@ -1754,7 +1482,7 @@ async def client_websocket(websocket: WebSocket) -> None:
                         session_config={
                             "frames_per_segment": frames_per_segment,
                             "overlap_frames": config.get("overlap_frames", 0),
-                            "session_id": state.session_id,
+                            # Client session_id NEVER sent to inference server (strict architecture boundary)
                         },
                         streaming_fps=streaming_fps,
                     )

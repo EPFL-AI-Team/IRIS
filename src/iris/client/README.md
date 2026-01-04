@@ -33,7 +33,7 @@ client/
 │  │  └─────┬──────┘  └──────┬─────┘  └───────────┬────────────┘  │   │
 │  │        │                │                     │               │   │
 │  │        └───────────WebSocket──────────────────┘               │   │
-│  │                   /ws/results, /ws/preview, /ws/analysis      │   │
+│  │                   /ws/client, /ws/analysis                    │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                              │                                       │
 │  ┌──────────────────────────────────────────────────────────────┐   │
@@ -91,10 +91,8 @@ client/
 - Serves React frontend as static files
 - REST API for control (start/stop, config, camera selection)
 - WebSocket endpoints:
-  - `/ws/preview` - Live camera preview to browser
-  - `/ws/results` - Inference results + status updates
+  - `/ws/client` - Unified control plane (preview frames, results, status updates)
   - `/ws/analysis` - Analysis mode progress/results
-  - `/ws/browser-stream` - Browser camera → inference server
 
 **AppState** (`dependencies.py`)
 - Singleton holding runtime state
