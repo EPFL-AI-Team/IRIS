@@ -699,16 +699,13 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     logger.info("Sending completion signal to inference server...")
                     await server_ws.send(json.dumps({"type": "complete"}))
 
-                    # Notify frontend
+                    # Notify frontend that UPLOAD is complete
                     duration_sec = time.time() - start_time
                     await websocket.send_json({
-                        "type": "complete",
+                        "type": "upload_complete",
                         "job_id": job_id,
                         "total_frames": frame_count,
-                        "total_results": len(state.analysis_results),
                         "duration_sec": duration_sec,
-                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
-                        "speedup_factor": (frame_count / simulation_fps) / duration_sec if duration_sec > 0 else 0,
                     })
                     break
 
@@ -728,16 +725,13 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     logger.info("Sending completion signal to inference server...")
                     await server_ws.send(json.dumps({"type": "complete"}))
                     
-                    # Notify frontend (keep this)
+                    # Notify frontend that UPLOAD is complete (but wait for results)
                     duration_sec = time.time() - start_time
                     await websocket.send_json({
-                        "type": "complete",
+                        "type": "upload_complete",
                         "job_id": job_id,
                         "total_frames": frame_count,
-                        "total_results": len(state.analysis_results),
                         "duration_sec": duration_sec,
-                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
-                        "speedup_factor": (frame_count / simulation_fps) / duration_sec if duration_sec > 0 else 0,
                     })
                     break
 
@@ -758,16 +752,13 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     logger.info("Sending completion signal to inference server...")
                     await server_ws.send(json.dumps({"type": "complete"}))
 
-                    # Notify frontend
+                    # Notify frontend that UPLOAD is complete (but wait for results)
                     duration_sec = time.time() - start_time
                     await websocket.send_json({
-                        "type": "complete",
+                        "type": "upload_complete",
                         "job_id": job_id,
                         "total_frames": frame_count,
-                        "total_results": len(state.analysis_results),
                         "duration_sec": duration_sec,
-                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
-                        "speedup_factor": (frame_count / simulation_fps) / duration_sec if duration_sec > 0 else 0,
                     })
                     break
 
@@ -853,7 +844,18 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 # [FIX] Handle processing completion
                 if msg_type == "processing_complete":
                     logger.info("Inference server finished all processing.")
-                    # Optionally notify frontend if needed, or just exit to close cleanly
+                    
+                    # Notify frontend that ANALYSIS is fully complete
+                    # Now we have the final result count
+                    duration_sec = time.time() - start_time
+                    await websocket.send_json({
+                        "type": "complete",
+                        "job_id": job_id,
+                        "total_frames": frame_count,
+                        "total_results": len(state.analysis_results),
+                        "duration_sec": duration_sec,
+                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
+                    })
                     break
 
                 # Augment result messages with frame/timestamp ranges
