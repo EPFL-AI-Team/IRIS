@@ -129,8 +129,19 @@ class ServerConfig(BaseModel):
             config_dict["max_queue_size"] = args.max_queue_size
         if args.live_queue_threshold is not None:
             config_dict["live_queue_threshold"] = args.live_queue_threshold
-        # If you want to allow jobs override via CLI, add here:
-        # if args.jobs is not None:
-        #     config_dict["jobs"] = args.jobs
+
+        # Handle batch inference overrides
+        batch_inference_config = config_dict.get("batch_inference", {})
+        if args.batch_inference_size is not None:
+            batch_inference_config["batch_size"] = args.batch_inference_size
+            batch_inference_config["enabled"] = True  # Implied
+        
+        if args.batch_inference_enabled is True:
+            batch_inference_config["enabled"] = True
+        
+        if args.batch_inference_disabled is True:
+            batch_inference_config["enabled"] = False
+            
+        config_dict["batch_inference"] = batch_inference_config
 
         return cls(**config_dict)

@@ -33,8 +33,8 @@ server:
   # Note: Only applies to analysis mode. Live mode always processes segments individually.
   # ============================================================================
   batch_inference:
-    enabled: true       # Enabled for A100 (has sufficient VRAM)
-    batch_size: 16      # Optimal batch size for A100 80GB
+    enabled: true
+    batch_size: 16
 
 client:
   video:

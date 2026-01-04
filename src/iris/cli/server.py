@@ -103,6 +103,27 @@ Examples:
         help="When to drop frames in live mode (default: 1)"
     )
 
+    # Batch inference configuration
+    batch_group = parser.add_mutually_exclusive_group()
+    batch_group.add_argument(
+        "--batch-inference-enabled",
+        action="store_true",
+        default=None,
+        help="Force enable batch inference, overriding config file"
+    )
+    batch_group.add_argument(
+        "--batch-inference-disabled",
+        action="store_true",
+        default=None,
+        help="Force disable batch inference, overriding config file"
+    )
+    parser.add_argument(
+        "--batch-inference-size",
+        type=int,
+        default=None,
+        help="Set batch size (implies --batch-inference-enabled)"
+    )
+
     # Configuration file
     parser.add_argument(
         "--config",
