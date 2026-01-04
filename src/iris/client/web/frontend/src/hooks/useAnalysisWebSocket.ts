@@ -85,6 +85,20 @@ export function useAnalysisWebSocket() {
               framesReceived: metrics.frames_received,
               batchSize: metrics.batch_size,
             });
+
+            // Update progress bar to show segment-based progress (concrete counts)
+            if (metrics.segments_total && metrics.segments_total > 0) {
+              const inferenceProgress =
+                (metrics.segments_processed / metrics.segments_total) * 100;
+
+              setAnalysisProgress({
+                current_frame: metrics.segments_processed,  // Concrete segment count
+                total_frames: metrics.segments_total,       // Total segments to process
+                progress_percent: inferenceProgress,         // Percentage for progress bar
+                position_ms: 0,
+                processing_rate: metrics.processing_rate,
+              });
+            }
             break;
           }
 

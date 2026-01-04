@@ -148,12 +148,21 @@ export function AnalysisControls() {
         {progress && isRunning && (
           <div className="space-y-1.5 pt-1">
             <div className="flex justify-between text-[10px] leading-none text-muted-foreground font-mono">
-              <span>{progress.progress_percent.toFixed(0)}%</span>
               <span>
-                {Math.round(progress.estimated_time_remaining || 0)}s left
+                {progress.current_frame} / {progress.total_frames} segments
+              </span>
+              <span>
+                {progress.processing_rate && progress.processing_rate > 0 && progress.total_frames
+                  ? `ETA: ${((progress.total_frames - progress.current_frame) / progress.processing_rate / 60).toFixed(1)} min`
+                  : `${progress.progress_percent.toFixed(0)}%`}
               </span>
             </div>
             <Progress value={progress.progress_percent} className="h-1.5" />
+            {progress.processing_rate && progress.processing_rate > 0 && (
+              <div className="text-[10px] text-center text-muted-foreground font-mono">
+                {progress.processing_rate.toFixed(1)} seg/s
+              </div>
+            )}
           </div>
         )}
 
