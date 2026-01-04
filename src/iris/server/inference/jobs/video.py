@@ -163,8 +163,8 @@ class VideoJob(Job):
 
         frames_per_second = frame_count / inference_time if inference_time > 0 else 0.0
         summary = (
-            f"Inference complete | frames={frame_count} "
-            f"time={inference_time:.3f}s fps={frames_per_second:.2f}"
+            f"Single inference complete | frames={frame_count} "
+            f"time={inference_time:.3f}s fps={frames_per_second:.2f} mode=single"
         )
 
         logger.info(f"[{self.job_id}] {summary}")
@@ -180,6 +180,9 @@ class VideoJob(Job):
                 "result": result,
                 "frames_processed": frame_count,
                 "inference_time": inference_time,
+                "batch_size": 1,  # Single job, not batched
+                "batch_inference_time": inference_time,  # Same as inference_time for single job
+                "segment_inference_time": inference_time,  # Same as inference_time for single job
                 "buffer_size": self.buffer_size,
                 "overlap_frames": self.overlap_frames,
                 "client_fps": self.client_fps,
