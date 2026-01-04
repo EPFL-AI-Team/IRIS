@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection, connect
 
 from iris.client.capture.camera import CameraCapture
 
@@ -57,7 +57,9 @@ class StreamingClient:
 
         # Use provided streaming_fps if available (calculated from segment config),
         # otherwise fall back to camera FPS
-        self.capture_fps: float = streaming_fps if streaming_fps is not None else float(camera.fps)
+        self.capture_fps: float = (
+            streaming_fps if streaming_fps is not None else float(camera.fps)
+        )
 
     async def stream(self) -> None:
         """Connect and stream frames with auto-reconnect."""
@@ -73,7 +75,7 @@ class StreamingClient:
                 # Disable client-side pings; let server handle keepalive. This avoids
                 # spurious timeouts (1011) on slow or bursty networks/inference.
                 async with (
-                    websockets.connect(
+                    connect(
                         self.ws_url,
                         ping_interval=20,  # Send ping every 20s
                         ping_timeout=60,  # Timeout after 60s (increased to prevent timeout during inference)
@@ -119,7 +121,7 @@ class StreamingClient:
                 logger.error("Unexpected error: %s", e, exc_info=True)
                 break
 
-    async def _stream_loop(self, ws: WebSocketClientProtocol) -> None:
+    async def _stream_loop(self, ws: ClientConnection) -> None:
         """Main streaming loop once connected.
 
         Protocol:
@@ -181,7 +183,7 @@ class StreamingClient:
             recv_task.cancel()
             raise e
 
-    async def _send_loop(self, ws: WebSocketClientProtocol) -> None:
+    async def _send_loop(self, ws: ClientConnection) -> None:
         """Loop for sending frames."""
         while self.running:
             try:
@@ -223,7 +225,7 @@ class StreamingClient:
                 )
                 raise
 
-    async def _recv_loop(self, ws: WebSocketClientProtocol) -> None:
+    async def _recv_loop(self, ws: ClientConnection) -> None:
         """Loop for receiving results."""
         while self.running:
             try:
@@ -247,12 +249,16 @@ class StreamingClient:
                         fps,
                     )
                     if self.result_callback:
-                        logger.debug(f"Forwarding result to callback: job_id={message.get('job_id')}")
+                        logger.debug(
+                            f"Forwarding result to callback: job_id={message.get('job_id')}"
+                        )
                         self.result_callback(message)
 
                 elif msg_type == "session_metrics":
                     # Forward session metrics to frontend for real-time display
-                    logger.debug(f"Session metrics: segments={message.get('segments_processed')}, queue={message.get('queue_depth')}")
+                    logger.debug(
+                        f"Session metrics: segments={message.get('segments_processed')}, queue={message.get('queue_depth')}"
+                    )
                     if self.result_callback:
                         logger.debug("Forwarding metrics to callback")
                         self.result_callback(message)
@@ -272,7 +278,9 @@ class StreamingClient:
                             )
                             if match:
                                 job_id = match.group(1)
-                                logger.debug(f"Forwarding batch_submitted to callback: job_id={job_id}")
+                                logger.debug(
+                                    f"Forwarding batch_submitted to callback: job_id={job_id}"
+                                )
                                 self.result_callback({
                                     "type": "batch_submitted",
                                     "job_id": job_id,
@@ -282,7 +290,9 @@ class StreamingClient:
 
                         # Forward all logs to frontend (not just special ones)
                         if self.result_callback:
-                            logger.debug(f"Forwarding log to callback: level={log_level}")
+                            logger.debug(
+                                f"Forwarding log to callback: level={log_level}"
+                            )
                             self.result_callback({
                                 "type": "log",
                                 "message": log_text,
@@ -293,14 +303,18 @@ class StreamingClient:
 
                 elif msg_type == "session_ack":
                     # Session ack already handled at startup, but forward if received again
-                    logger.info(f"Session acknowledged: session_id={message.get('session_id')}")
+                    logger.info(
+                        f"Session acknowledged: session_id={message.get('session_id')}"
+                    )
                     if self.result_callback:
                         logger.debug("Forwarding session_ack to callback")
                         self.result_callback(message)
 
                 else:
                     # Unknown message type - log it
-                    logger.warning(f"Unknown message type from inference server: {msg_type}")
+                    logger.warning(
+                        f"Unknown message type from inference server: {msg_type}"
+                    )
 
             except asyncio.CancelledError:
                 raise
