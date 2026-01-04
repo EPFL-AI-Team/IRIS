@@ -142,12 +142,12 @@ export function LogPanel() {
 
   // Auto-scroll to active log or bottom during analysis
   useEffect(() => {
-    if (!autoScroll || !scrollRef.current) return;
+    if (!scrollRef.current) return;
 
-    if (analysisMode === "running") {
+    if (analysisMode === "running" && autoScroll) {
       // During analysis, scroll to bottom to show latest
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    } else if (activeLogIndex >= 0) {
+    } else if (analysisMode === "playback" && activeLogIndex >= 0) {
       // During playback, scroll to active log
       const logElements = scrollRef.current.querySelectorAll("[data-log-entry]");
       const activeElement = logElements[activeLogIndex];
@@ -155,7 +155,15 @@ export function LogPanel() {
         activeElement.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [analysisLogs.length, activeLogIndex, autoScroll, analysisMode]);
+    // Note: Removed analysisLogs.length from dependencies to prevent hijacking scroll after completion
+  }, [activeLogIndex, autoScroll, analysisMode]);
+
+  // Separate effect to handle new log arrivals during analysis
+  useEffect(() => {
+    if (analysisMode === "running" && autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [analysisLogs.length, analysisMode, autoScroll]);
 
   const handleSeek = (timeMs: number) => {
     setCurrentPlaybackPosition(timeMs);
@@ -184,9 +192,12 @@ export function LogPanel() {
                   if (analysisMode === "running") {
                     setAutoScroll(true);
                   }
-                  if (scrollRef.current) {
-                    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-                  }
+                  // Use requestAnimationFrame to ensure DOM has rendered before scrolling
+                  requestAnimationFrame(() => {
+                    if (scrollRef.current) {
+                      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                    }
+                  });
                 }}
               >
                 <ChevronDown className="w-3 h-3 mr-1" />
