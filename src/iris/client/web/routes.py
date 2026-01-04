@@ -952,7 +952,9 @@ async def analysis_websocket(websocket: WebSocket) -> None:
         nonlocal frame_count
         try:
             native_fps = state.analysis_video_capture.native_fps if state.analysis_video_capture.native_fps > 0 else 30.0
-            
+            total_frames_to_send = int(state.analysis_video_capture.get_duration_ms() / 1000 * simulation_fps)
+            estimated_time_remaining = 0
+
             while True:
                 # Defensive check: ensure video_capture still exists
                 if not state.analysis_video_capture:
@@ -1012,16 +1014,12 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 elapsed_time = time.time() - start_time
                 if frame_count > 0 and elapsed_time > 0:
                     frames_per_second_sent = frame_count / elapsed_time
-                    # Estimate remaining *sent* frames, not total video frames
-                    total_frames_to_send = int(state.analysis_video_capture.get_duration_ms() / 1000 * simulation_fps)
                     remaining_frames_to_send = total_frames_to_send - frame_count
                     estimated_time_remaining = (
                         remaining_frames_to_send / frames_per_second_sent
                         if frames_per_second_sent > 0
                         else 0
                     )
-                else:
-                    estimated_time_remaining = 0
 
                 await websocket.send_json({
                     "type": "progress",
