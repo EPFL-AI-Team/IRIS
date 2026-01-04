@@ -159,23 +159,17 @@ class StreamingClient:
         recv_task = asyncio.create_task(self._recv_loop(ws))
 
         try:
-            # Wait for either to finish (e.g. on error or stop)
-            done, pending = await asyncio.wait(
-                [send_task, recv_task], return_when=asyncio.FIRST_COMPLETED
-            )
-
-            # Cancel the other task
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-            # Re-raise exception if any
-            for task in done:
-                if task.exception():
-                    raise task.exception()
+            # Wait for send_task to finish (video done)
+            await send_task
+            
+            # Initiate graceful shutdown handshake
+            if self.running: # Only if client is still active (not externally stopped)
+                logger.info("Client: Sending completion signal to server...")
+                await ws.send(json.dumps({"type": "complete"}))
+                
+                # Wait for server to finish processing and send acknowledgement
+                # recv_task will return when it receives "processing_complete"
+                await recv_task
 
         except Exception as e:
             # Ensure both are cancelled on external error
@@ -189,8 +183,9 @@ class StreamingClient:
             try:
                 frame_jpeg = self.camera.get_frame_jpeg(quality=self.jpeg_quality)
                 if frame_jpeg is None:
-                    await asyncio.sleep(0.1)
-                    continue
+                    # End loop when source is exhausted
+                    logger.info("Video source exhausted.")
+                    break
 
                 # Calculate send rate FPS (for monitoring)
                 now = time.time()
@@ -253,6 +248,11 @@ class StreamingClient:
                             f"Forwarding result to callback: job_id={message.get('job_id')}"
                         )
                         self.result_callback(message)
+
+                elif msg_type == "processing_complete":
+                    logger.info("Server finished processing all frames. Closing connection.")
+                    self.running = False
+                    return
 
                 elif msg_type == "session_metrics":
                     # Forward session metrics to frontend for real-time display
