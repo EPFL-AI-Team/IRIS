@@ -4,7 +4,7 @@ import { useAnalysisWebSocket } from "../../hooks/useAnalysisWebSocket";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ReportModal } from "../ReportModal";
-import { Play, Square, FileText } from "lucide-react";
+import { Play, Square, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function AnalysisControls() {
@@ -134,33 +134,48 @@ export function AnalysisControls() {
         )}
 
         {/* Detailed Session Metrics */}
-        {isRunning && sessionMetrics && (
-          <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono bg-muted/20 p-2 rounded border border-border/50">
-            <div>Elapsed: {sessionMetrics.elapsedSeconds.toFixed(1)}s</div>
-            <div>Rate: {sessionMetrics.processingRate.toFixed(1)} seg/s</div>
-            <div>Queue: {sessionMetrics.queueDepth}</div>
-            <div>
-              Segments: {sessionMetrics.segmentsProcessed}
-              {sessionMetrics.segmentsTotal
-                ? ` / ${sessionMetrics.segmentsTotal}`
-                : ""}
-            </div>
-            {sessionMetrics.batchSize &&
-              sessionMetrics.batchSize > 1 &&
-              sessionMetrics.segmentsTotal && (
-                <div className="col-span-2 text-blue-500">
-                  Batches Left:{" "}
-                  {Math.ceil(
-                    Math.max(
-                      0,
-                      sessionMetrics.segmentsTotal -
-                        sessionMetrics.segmentsProcessed
-                    ) / sessionMetrics.batchSize
+        {isRunning && sessionMetrics && (() => {
+          const batchSize = sessionMetrics.batchSize || 1;
+          const segmentsProcessed = sessionMetrics.segmentsProcessed;
+          const segmentsTotal = sessionMetrics.segmentsTotal || 0;
+          const batchesCompleted = Math.floor(segmentsProcessed / batchSize);
+          const totalBatches = Math.ceil(segmentsTotal / batchSize);
+          const segmentsInCurrentBatch = segmentsProcessed % batchSize;
+          const showBatches = batchSize > 1 && segmentsTotal > 0 && batchesCompleted >= 1;
+
+          return (
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono bg-muted/20 p-2 rounded border border-border/50">
+              <div>Elapsed: {sessionMetrics.elapsedSeconds.toFixed(1)}s</div>
+              <div>Rate: {sessionMetrics.processingRate.toFixed(1)} seg/s</div>
+              <div className="flex items-center gap-1">
+                <span>Queue:</span>
+                {sessionMetrics.queueDepth > 0 && (
+                  <Loader2 className="w-3 h-3 animate-spin inline" />
+                )}
+                <span>{sessionMetrics.queueDepth}</span>
+                {segmentsInCurrentBatch > 0 && batchSize > 1 && (
+                  <span className="text-blue-400">
+                    ({segmentsInCurrentBatch}/{batchSize} in batch)
+                  </span>
+                )}
+              </div>
+              <div>
+                Segments: {segmentsProcessed}
+                {segmentsTotal ? ` / ${segmentsTotal}` : ""}
+              </div>
+              {showBatches && (
+                <div className="col-span-2 text-blue-400 flex items-center gap-1">
+                  <span>Batches: {batchesCompleted} / {totalBatches}</span>
+                  {segmentsInCurrentBatch > 0 && (
+                    <span className="text-muted-foreground">
+                      (processing {segmentsInCurrentBatch}/{batchSize})
+                    </span>
                   )}
                 </div>
               )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
       </div>
 
       <ReportModal

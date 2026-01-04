@@ -1,6 +1,7 @@
 import { useCallback, useRef, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
 import type { AnalysisResult, AnalysisLog, SessionAckMessage, SessionMetricsMessage } from "../types";
+import { toast } from "sonner";
 
 /**
  * Generate unique ID for analysis logs.
@@ -171,6 +172,11 @@ export function useAnalysisWebSocket() {
               message: `Analysis complete: ${data.total_frames} frames processed, ${data.total_results} results in ${data.duration_sec?.toFixed(1) || "?"}s`,
             };
             addAnalysisLog(completeLog);
+
+            // Show completion notification
+            toast.success("Analysis Complete", {
+              description: `Processed ${data.total_frames} frames with ${data.total_results} results in ${data.duration_sec?.toFixed(1) || "?"}s`,
+            });
 
             // Close the WebSocket
             ws.close();

@@ -28,7 +28,10 @@ export function ReportModal({
   const contentRef = useRef<HTMLDivElement>(null);
 
   const analysisJobId = useAppStore((s) => s.analysisJobId);
-  const effectiveSessionId = sessionId || analysisJobId;
+
+  // ALWAYS use analysisJobId from store - it has the correct analysis_ prefix
+  // The sessionId prop can have stale values due to React render timing
+  const effectiveSessionId = analysisJobId || sessionId;
 
   // Use store state for report status
   const reportStatus = useAppStore((s) => s.reportStatus);
@@ -194,7 +197,7 @@ export function ReportModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
@@ -254,7 +257,7 @@ export function ReportModal({
 
         <div
           ref={contentRef}
-          className="flex-1 min-h-75 max-h-[60vh] overflow-auto bg-background rounded-md border p-4"
+          className="flex-1 overflow-auto bg-background rounded-md border p-4"
         >
           {isGenerating && !reportContent && (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -271,7 +274,7 @@ export function ReportModal({
             </div>
           ) : (
             <span className="text-muted-foreground">
-              Click "Generate Report" for a Gemini-powered analysis or "Basic
+              Click "Generate Report" for an AI-powered analysis or "Basic
               Stats" for a quick summary.
             </span>
           )}

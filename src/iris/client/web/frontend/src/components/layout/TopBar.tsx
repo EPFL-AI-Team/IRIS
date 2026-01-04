@@ -322,33 +322,38 @@ export function TopBar() {
 
         {/* Right: Control Buttons */}
         <div className="flex items-center gap-2">
-          <Button
-            onClick={handleStart}
-            disabled={isStreaming || connectionStatus !== "connected"}
-            size="sm"
-          >
-            <Play className="w-4 h-4 mr-1" />
-            Start
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleStop}
-            disabled={!isStreaming}
-            size="sm"
-          >
-            <Square className="w-4 h-4 mr-1" />
-            Stop
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleClearQueue}
-            disabled={!isStreaming}
-            size="sm"
-            title="Clear inference queue"
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
-          <Separator orientation="vertical" className="h-6" />
+          {/* Live mode controls - only show in Live tab */}
+          {activeTab === "live" && (
+            <>
+              <Button
+                onClick={handleStart}
+                disabled={isStreaming || connectionStatus !== "connected"}
+                size="sm"
+              >
+                <Play className="w-4 h-4 mr-1" />
+                Start
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleStop}
+                disabled={!isStreaming}
+                size="sm"
+              >
+                <Square className="w-4 h-4 mr-1" />
+                Stop
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleClearQueue}
+                disabled={!isStreaming}
+                size="sm"
+                title="Clear inference queue"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+              <Separator orientation="vertical" className="h-6" />
+            </>
+          )}
           <Button
             variant="outline"
             onClick={() => setReportModalOpen(true)}
