@@ -147,8 +147,8 @@ export function LogPanel() {
     if (analysisMode === "running" && autoScroll) {
       // During analysis, scroll to bottom to show latest
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    } else if (analysisMode === "playback" && activeLogIndex >= 0) {
-      // During playback, scroll to active log
+    } else if (analysisMode !== "running" && activeLogIndex >= 0) {
+      // During playback/review (complete, paused, etc.), scroll to active log
       const logElements = scrollRef.current.querySelectorAll("[data-log-entry]");
       const activeElement = logElements[activeLogIndex];
       if (activeElement) {
