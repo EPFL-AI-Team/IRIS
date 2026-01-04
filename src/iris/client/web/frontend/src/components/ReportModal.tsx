@@ -263,7 +263,7 @@ export function ReportModal({
             </div>
           )}
           {reportContent ? (
-            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-foreground prose-p:text-foreground prose-li:text-foreground prose-strong:text-foreground">
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-foreground prose-p:text-foreground prose-li:text-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-code:bg-muted/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
               <Markdown remarkPlugins={[remarkGfm]}>{reportContent}</Markdown>
               {isGenerating && (
                 <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />
