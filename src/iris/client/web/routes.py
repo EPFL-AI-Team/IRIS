@@ -552,6 +552,25 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
 
     # Create job metadata
     job_id = f"analysis_{uuid.uuid4().hex[:8]}"
+
+    # Create persistent session in DB for report generation
+    from iris.client.web.repositories import session_repo
+    try:
+        session_repo.create(
+            session_id=job_id,
+            config={
+                "frames_per_segment": frames_per_segment,
+                "overlap_frames": overlap_frames,
+                "segment_time": segment_time,
+                "simulation_fps": simulation_fps,
+            },
+            video_file=video_filename,
+            annotation_file=annotation_filename,
+        )
+        logger.info(f"Created analysis session {job_id} in DB")
+    except Exception as e:
+        logger.error(f"Failed to create session in DB: {e}")
+
     state.active_analysis_job = {
         "job_id": job_id,
         "video_file": video_filename,

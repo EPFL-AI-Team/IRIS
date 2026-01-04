@@ -78,7 +78,7 @@ function LogEntry({ log, isActive, onSeek }: LogEntryProps) {
             {log.inference_time_ms !== undefined && (
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                {log.inference_time_ms.toFixed(0)}ms
+                {(log.inference_time_ms / 1000).toFixed(2)}s
               </span>
             )}
           </div>
@@ -181,7 +181,9 @@ export function LogPanel() {
                 size="sm"
                 className="h-7 text-xs"
                 onClick={() => {
-                  setAutoScroll(true);
+                  if (analysisMode === "running") {
+                    setAutoScroll(true);
+                  }
                   if (scrollRef.current) {
                     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
                   }

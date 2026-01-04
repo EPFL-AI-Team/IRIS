@@ -907,34 +907,21 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
     # Metrics broadcast loop - sends session metrics every 500ms
     async def metrics_broadcast_loop() -> None:
-        """Broadcast session metrics to client every 500ms.
+        """Broadcast session metrics to client every 1s.
 
-        Only sends metrics when there's actual activity to avoid spamming
-        the connection with unchanged data.
+        Sends metrics periodically to ensure elapsed time and rate
+        updates are visible on the client even during long inference steps.
         """
-        last_segments_processed = 0
-        last_queue_depth = 0
-        last_frames_received = 0
-
         try:
             while connection_state["active"]:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)
                 if session and connection_state["active"]:
                     queue_depth = state.queue.queue.qsize() if state.queue else 0
+                    
+                    # Always send metrics to keep timer alive
+                    metrics = session.to_metrics(queue_depth)
+                    await outgoing_queue.put(metrics)
 
-                    # Only send metrics if something has changed
-                    if (
-                        session.segments_processed != last_segments_processed
-                        or queue_depth != last_queue_depth
-                        or session.frames_received != last_frames_received
-                    ):
-                        metrics = session.to_metrics(queue_depth)
-                        await outgoing_queue.put(metrics)
-
-                        # Update last known values
-                        last_segments_processed = session.segments_processed
-                        last_queue_depth = queue_depth
-                        last_frames_received = session.frames_received
         except asyncio.CancelledError:
             pass  # Normal shutdown
         except Exception as e:
