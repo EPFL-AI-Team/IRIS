@@ -1,10 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAppStore } from "../../store/useAppStore";
 import { useAnalysisWebSocket } from "../../hooks/useAnalysisWebSocket";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { ReportModal } from "../ReportModal";
 import { Play, Square, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -24,23 +22,8 @@ export function AnalysisControls() {
   );
   const clearAnalysisLogs = useAppStore((state) => state.clearAnalysisLogs);
   const analysisJobId = useAppStore((state) => state.analysisJobId);
-  const autoGenerateReport = useAppStore((state) => state.autoGenerateReport);
-  const setAutoGenerateReport = useAppStore(
-    (state) => state.setAutoGenerateReport
-  );
   const sessionMetrics = useAppStore((state) => state.sessionMetrics);
   const { connect, disconnect } = useAnalysisWebSocket();
-
-  useEffect(() => {
-    if (analysisMode === "complete" && autoGenerateReport && analysisJobId) {
-      // Wrap in setTimeout to defer the state update prevents the cascading render warning
-      const timer = setTimeout(() => {
-        setReportModalOpen(true);
-      }, 0);
-
-      return () => clearTimeout(timer);
-    }
-  }, [analysisMode, autoGenerateReport, analysisJobId]);
 
   const handleStart = async () => {
     if (!selectedVideo) {
@@ -127,24 +110,8 @@ export function AnalysisControls() {
         )}
       </div>
 
-      {/* Row 2: Options & Progress */}
+      {/* Row 2: Progress & Metrics */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="auto-report"
-            checked={autoGenerateReport}
-            onCheckedChange={(c) => setAutoGenerateReport(c === true)}
-            disabled={isRunning}
-            className="h-3.5 w-3.5"
-          />
-          <Label
-            htmlFor="auto-report"
-            className="text-xs cursor-pointer text-muted-foreground"
-          >
-            Auto-generate report on finish
-          </Label>
-        </div>
-
         {progress && isRunning && (
           <div className="space-y-1.5 pt-1">
             <div className="flex justify-between text-[10px] leading-none text-muted-foreground font-mono">
