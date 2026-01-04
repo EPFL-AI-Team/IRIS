@@ -567,6 +567,12 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
             video_file=video_filename,
             annotation_file=annotation_filename,
         )
+        # Update session to running with started_at timestamp
+        session_repo.update_status(
+            session_id=job_id,
+            status="running",
+            started_at=time.time(),
+        )
         logger.info(f"Created analysis session {job_id} in DB")
     except Exception as e:
         logger.error(f"Failed to create session in DB: {e}")
@@ -595,6 +601,34 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     # Create StreamingClient (will be connected via WebSocket)
     def store_analysis_result(result: dict[str, Any]) -> None:
         state.analysis_results.append(result)
+
+        # Persist result to database
+        try:
+            from iris.client.web.repositories import logs_repo, results_repo
+            inference_time_ms = result.get("inference_time", 0) * 1000
+            video_time_ms = int(result.get("video_time_ms", 0))
+
+            results_repo.store(
+                session_id=job_id,
+                job_id=job_id,
+                video_time_ms=video_time_ms,
+                inference_start_ms=video_time_ms,  # Approximate
+                inference_end_ms=video_time_ms + inference_time_ms,
+                frame_start=result.get("frame_range", [0, 0])[0] if "frame_range" in result else 0,
+                frame_end=result.get("frame_range", [0, 0])[1] if "frame_range" in result else 0,
+                result=result.get("result", {}),
+            )
+
+            # Also persist a log entry for this result
+            frame_range = result.get("frame_range", [0, 0])
+            inference_time_sec = result.get("inference_time", 0)
+            logs_repo.append(
+                session_id=job_id,
+                level="INFO",
+                message=f"Inference result: frames {frame_range[0]}-{frame_range[1]}, time: {inference_time_sec:.2f}s",
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist analysis result to DB: {e}")
 
     state.analysis_streaming_client = StreamingClient(
         state.config.server.ws_url,
@@ -655,6 +689,8 @@ async def analysis_websocket(websocket: WebSocket) -> None:
     Streams progress updates and inference results to the frontend
     while processing a video file through the inference server.
     """
+    from iris.client.web.repositories import session_repo
+
     state = get_app_state()
     await websocket.accept()
 
@@ -863,7 +899,14 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 # [FIX] Handle processing completion
                 if msg_type == "processing_complete":
                     logger.info("Inference server finished all processing.")
-                    
+
+                    # Update session status in database
+                    session_repo.update_status(
+                        session_id=job_id,
+                        status="completed",
+                        completed_at=time.time(),
+                    )
+
                     # Notify frontend that ANALYSIS is fully complete
                     # Now we have the final result count
                     duration_sec = time.time() - start_time
@@ -1085,7 +1128,7 @@ async def generate_report(request: dict[str, Any]) -> Any:
         generate_fallback_report,
         generate_report_stream,
     )
-    from iris.client.web.repositories import reports_repo, results_repo, session_repo
+    from iris.client.web.repositories import logs_repo, reports_repo, results_repo, session_repo
 
     session_id = request.get("session_id")
     force_regenerate = request.get("force_regenerate", False)
@@ -1133,9 +1176,12 @@ async def generate_report(request: dict[str, Any]) -> Any:
         }
         # Use in-memory results history for live sessions
         results = state.results_history
+        # No logs in database for live sessions
+        logs = []
     else:
-        # Analysis session - get results from database
+        # Analysis session - get results and logs from database
         results = results_repo.get_by_session(session_id)
+        logs = logs_repo.get_by_session(session_id)
 
     annotations = state.analysis_annotations if state.analysis_annotations else None
 
@@ -1146,7 +1192,7 @@ async def generate_report(request: dict[str, Any]) -> Any:
 
     if not has_gemini:
         # Return fallback report
-        report = generate_fallback_report(session, results, annotations)
+        report = generate_fallback_report(session, results, annotations, logs)
         return {"report": report, "provider": "fallback"}
 
     # Stream and store report
@@ -1155,7 +1201,7 @@ async def generate_report(request: dict[str, Any]) -> Any:
 
     async def stream_and_store():
         nonlocal accumulated
-        async for chunk in generate_report_stream(session, results, annotations):
+        async for chunk in generate_report_stream(session, results, annotations, logs):
             accumulated.append(chunk)
             yield chunk
 
