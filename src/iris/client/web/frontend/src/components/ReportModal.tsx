@@ -254,7 +254,7 @@ export function ReportModal({
 
         <div
           ref={contentRef}
-          className="flex-1 min-h-75 max-h-[60vh] overflow-auto bg-muted/50 rounded-md p-4"
+          className="flex-1 min-h-75 max-h-[60vh] overflow-auto bg-background rounded-md border p-4"
         >
           {isGenerating && !reportContent && (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -263,7 +263,7 @@ export function ReportModal({
             </div>
           )}
           {reportContent ? (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-foreground prose-p:text-foreground prose-li:text-foreground prose-strong:text-foreground">
               <Markdown remarkPlugins={[remarkGfm]}>{reportContent}</Markdown>
               {isGenerating && (
                 <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />
