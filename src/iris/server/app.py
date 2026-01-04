@@ -567,7 +567,33 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 if data.get("type") == "complete":
                     logger.info(f"Received completion signal for session {session_id}. Flushing buffers...")
 
-                    # 1. Flush any pending batch segments
+                    # 1. Promote partial buffer to accumulator if we are already batching
+                    # This ensures the last segment (even if partial) is included in the final batch
+                    if batch_accumulator and frame_buffer and len(frame_buffer) > 0:
+                        logger.info(f"Promoting {len(frame_buffer)} partial frames to batch accumulator")
+                        buffered_frames = frame_buffer.get_batch()
+                        buffered_timestamps = frame_buffer.get_metadata()
+                        
+                        video_time_ms = 0.0
+                        if buffered_timestamps and buffered_timestamps[0] is not None:
+                            video_time_ms = buffered_timestamps[0] * 1000.0
+                        else:
+                            stride = buffer_size - overlap_frames
+                            if stride > 0 and client_fps > 0:
+                                video_time_ms = (batch_segment_counter * stride / client_fps) * 1000.0
+
+                        segment_data = {
+                            "frames": buffered_frames,
+                            "segment_id": f"seg_{batch_segment_counter}",
+                            "prompt": prompt,
+                            "client_fps": client_fps,
+                            "video_time_ms": video_time_ms,
+                        }
+                        batch_accumulator.append(segment_data)
+                        batch_segment_counter += 1
+                        frame_buffer.clear()
+
+                    # 2. Flush any pending batch segments
                     if batch_accumulator:
                         from iris.server.inference.jobs.batch_video import BatchVideoJob
                         final_batch_id = f"{connection_job_id}_batch_final"
@@ -586,8 +612,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         last_submitted_job = final_batch
                         batch_accumulator.clear()
 
-                    # 2. Flush any partial frames in buffer
-                    elif frame_buffer and len(frame_buffer) > 0:
+                    # 3. Flush any partial frames in buffer (only if not promoted above)
+                    if frame_buffer and len(frame_buffer) > 0:
                         from iris.server.inference.jobs import VideoJob
                         partial_id = f"{connection_job_id}_batch_partial"
                         
@@ -613,7 +639,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         await state.queue.submit(batch_job)
                         last_submitted_job = batch_job
 
-                    # 3. Wait for the last job to complete
+                    # 4. Wait for the last job to complete
                     if last_submitted_job:
                         logger.info(f"Waiting for job {last_submitted_job.job_id} to complete...")
                         while last_submitted_job.status.value not in ["completed", "failed", "cancelled"]:
