@@ -957,6 +957,11 @@ async def analysis_websocket(websocket: WebSocket) -> None:
     async def send_frames(server_ws: websockets.WebSocketClientProtocol) -> None:
         """Send video frames to inference server at simulation FPS."""
         nonlocal frame_count
+
+        # Progress throttling to prevent UI flooding in Turbo Mode
+        last_progress_update_time = 0.0
+        PROGRESS_UPDATE_INTERVAL = 0.1  # 100ms = max 10 updates/second
+
         try:
             native_fps = state.analysis_video_capture.native_fps if state.analysis_video_capture.native_fps > 0 else 30.0
             total_frames_to_send = int(state.analysis_video_capture.get_duration_ms() / 1000 * simulation_fps)
@@ -985,12 +990,15 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     await server_ws.send(json.dumps({"type": "complete"}))
                     
                     # Notify frontend (keep this)
+                    duration_sec = time.time() - start_time
                     await websocket.send_json({
                         "type": "complete",
                         "job_id": job_id,
                         "total_frames": frame_count,
                         "total_results": len(state.analysis_results),
-                        "duration_sec": time.time() - start_time,
+                        "duration_sec": duration_sec,
+                        "actual_send_fps": frame_count / duration_sec if duration_sec > 0 else 0,
+                        "speedup_factor": (frame_count / simulation_fps) / duration_sec if duration_sec > 0 else 0,
                     })
                     break
 
@@ -1017,36 +1025,45 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 }
                 await server_ws.send(json.dumps(message))
 
-                # Send progress to frontend
-                progress_percent = (target_frame_idx / total_frames) * 100
-                current_position_ms = video_timestamp * 1000.0
+                # Send progress to frontend (throttled to avoid flooding in Turbo Mode)
+                current_time = time.time()
+                should_send_progress = (
+                    frame_count == 0 or  # Always send first frame
+                    (current_time - last_progress_update_time) >= PROGRESS_UPDATE_INTERVAL or
+                    target_frame_idx >= state.analysis_video_capture.total_frames - 1  # Always send last frame
+                )
 
-                # Calculate chunk progress and estimated time
-                current_chunk = frame_count // frames_per_chunk + 1
-                elapsed_time = time.time() - start_time
-                if frame_count > 0 and elapsed_time > 0:
-                    frames_per_second_sent = frame_count / elapsed_time
-                    remaining_frames_to_send = total_frames_to_send - frame_count
-                    estimated_time_remaining = (
-                        remaining_frames_to_send / frames_per_second_sent
-                        if frames_per_second_sent > 0
-                        else 0
-                    )
+                if should_send_progress:
+                    progress_percent = (target_frame_idx / total_frames) * 100
+                    current_position_ms = video_timestamp * 1000.0
 
-                await websocket.send_json({
-                    "type": "progress",
-                    "job_id": job_id,
-                    "current_frame": frame_count,
-                    "total_frames": total_frames_to_send,
-                    "progress_percent": progress_percent,
-                    "position_ms": current_position_ms,
-                    "current_chunk": current_chunk,
-                    "total_chunks": total_chunks,
-                    "estimated_time_remaining": estimated_time_remaining,
-                })
+                    # Calculate chunk progress and estimated time
+                    current_chunk = frame_count // frames_per_chunk + 1
+                    elapsed_time = time.time() - start_time
+                    if frame_count > 0 and elapsed_time > 0:
+                        frames_per_second_sent = frame_count / elapsed_time
+                        remaining_frames_to_send = total_frames_to_send - frame_count
+                        estimated_time_remaining = (
+                            remaining_frames_to_send / frames_per_second_sent
+                            if frames_per_second_sent > 0
+                            else 0
+                        )
+
+                    await websocket.send_json({
+                        "type": "progress",
+                        "job_id": job_id,
+                        "current_frame": frame_count,
+                        "total_frames": total_frames_to_send,
+                        "progress_percent": progress_percent,
+                        "position_ms": current_position_ms,
+                        "current_chunk": current_chunk,
+                        "total_chunks": total_chunks,
+                        "estimated_time_remaining": estimated_time_remaining,
+                    })
+                    last_progress_update_time = current_time
 
                 frame_count += 1
-                await asyncio.sleep(1.0 / simulation_fps)
+                # No sleep - send frames as fast as possible (Turbo Mode)
 
         except WebSocketDisconnect:
             logger.info("Frontend disconnected during frame sending")
