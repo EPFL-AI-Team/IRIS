@@ -96,7 +96,7 @@ class TestFrameBufferGetBatch:
         batch.clear()  # Modify the returned list
 
         # Internal buffer should be unchanged
-        assert buffer.current_size == 2
+        assert len(buffer) == 2
 
 
 class TestFrameBufferSlideWindow:
@@ -113,7 +113,7 @@ class TestFrameBufferSlideWindow:
 
         buffer.slide_window()
 
-        assert buffer.current_size == 3
+        assert len(buffer) == 3
 
     def test_slide_window_minimal_overlap(self) -> None:
         """Test slide_window with minimal overlap keeps 1 frame."""
@@ -125,7 +125,7 @@ class TestFrameBufferSlideWindow:
 
         buffer.slide_window()
 
-        assert buffer.current_size == 1
+        assert len(buffer) == 1
 
     def test_slide_window_zero_overlap(self) -> None:
         """Test slide_window with zero overlap clears the buffer completely."""
@@ -135,11 +135,11 @@ class TestFrameBufferSlideWindow:
         for _ in range(4):
             buffer.add_frame(frame)
 
-        assert buffer.current_size == 4
+        assert len(buffer) == 4
         buffer.slide_window()
 
         # With zero overlap, buffer should be empty
-        assert buffer.current_size == 0
+        assert len(buffer) == 0
 
     def test_slide_window_preserves_recent_frames(self) -> None:
         """Test that slide_window keeps the most recent frames."""
@@ -153,7 +153,7 @@ class TestFrameBufferSlideWindow:
         buffer.slide_window()
 
         # Should have frame3 and frame4 (last 2)
-        assert buffer.current_size == 2
+        assert len(buffer) == 2
         current_batch = buffer.get_batch()
         assert current_batch[0] == b"frame3"
         assert current_batch[1] == b"frame4"
@@ -171,7 +171,7 @@ class TestFrameBufferClear:
 
         buffer.clear()
 
-        assert buffer.current_size == 0
+        assert len(buffer) == 0
         assert buffer.is_ready() is False
 
 
@@ -198,7 +198,7 @@ class TestFrameBufferConfiguration:
 
         buffer.slide_window()
 
-        assert buffer.current_size == 4
+        assert len(buffer) == 4
 
     def test_default_values(self) -> None:
         """Test default buffer configuration."""

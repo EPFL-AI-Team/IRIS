@@ -697,3 +697,5 @@ notebooks/vlm/Qwen2_5_VL_(7B)_Vision.ipynb
 SCITAS-checkpoints
 wandb
 scripts/runai-command.sh
+Claude.md
+GEMINI.md

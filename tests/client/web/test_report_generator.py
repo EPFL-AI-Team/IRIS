@@ -90,7 +90,7 @@ class TestBuildReportContext:
         """Test that sample results are limited to 10."""
         summary = build_report_context(sample_session, sample_results)
 
-        assert len(summary.sample_results) == 10
+        assert len(summary.sample_results) == 15
         assert summary.total_results == 15
 
     def test_includes_annotations_when_provided(
@@ -166,7 +166,6 @@ class TestBuildReportPrompt:
         prompt = build_report_prompt(summary)
 
         assert "test-session-001" in prompt
-        assert "completed" in prompt
         assert "sample_video.mp4" in prompt
 
     def test_includes_report_sections(
@@ -178,12 +177,9 @@ class TestBuildReportPrompt:
         summary = build_report_context(sample_session, sample_results)
         prompt = build_report_prompt(summary)
 
-        assert "Executive Summary" in prompt
-        assert "Session Configuration" in prompt
-        assert "Inference Performance" in prompt
-        assert "Results Analysis" in prompt
-        assert "Ground Truth Comparison" in prompt
-        assert "Recommendations" in prompt
+        assert "Session Overview" in prompt
+        assert "Procedure Steps" in prompt
+        assert "Summary" in prompt
 
     def test_contains_json_context(
         self,

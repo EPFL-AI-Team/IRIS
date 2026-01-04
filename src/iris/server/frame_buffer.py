@@ -18,6 +18,10 @@ class FrameBuffer:
     def get_batch(self) -> list[bytes]:
         return list(self.buffer)
 
+    def clear(self) -> None:
+        """Clear the buffer."""
+        self.buffer.clear()
+
     def slide_window(self) -> None:
         stride = self.buffer_size - self.overlap_frames
         if stride <= 0:
