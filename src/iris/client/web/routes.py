@@ -814,11 +814,14 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     else:
         state.analysis_annotations = []
 
+    # [FIX] Calculate effective frames based on simulation FPS (sampling rate)
+    duration_sec = state.analysis_video_capture.get_duration_ms() / 1000.0
+    effective_total_frames = int(duration_sec * simulation_fps)
+
     # Calculate total chunks for progress tracking
-    total_frames = state.analysis_video_capture.total_frames
-    frames_per_chunk = frames_per_segment - overlap_frames
+    frames_per_chunk = max(1, frames_per_segment - overlap_frames)
     total_chunks = (
-        max(1, (total_frames + frames_per_chunk - 1) // frames_per_chunk)
+        max(1, (effective_total_frames + frames_per_chunk - 1) // frames_per_chunk)
         if frames_per_chunk > 0
         else 1
     )
@@ -837,9 +840,10 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
         "simulation_fps": simulation_fps,  # Derived FPS
         # Video metadata
         "annotation_count": len(state.analysis_annotations),
-        "total_frames": total_frames,
+        "total_frames": state.analysis_video_capture.total_frames, # Native frames
+        "effective_total_frames": effective_total_frames, # Sampled frames
         "total_chunks": total_chunks,
-        "duration_sec": state.analysis_video_capture.get_duration_ms() / 1000.0,
+        "duration_sec": duration_sec,
     }
 
     # Clear previous analysis results
@@ -973,6 +977,11 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                         f"Analysis complete: {frame_count} frames sent in "
                         f"{time.time() - start_time:.1f}s"
                     )
+                    # [FIX] Send completion signal to INFERENCE SERVER
+                    logger.info("Sending completion signal to inference server...")
+                    await server_ws.send(json.dumps({"type": "complete"}))
+                    
+                    # Notify frontend (keep this)
                     await websocket.send_json({
                         "type": "complete",
                         "job_id": job_id,
@@ -1063,6 +1072,12 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                         )
                     continue
 
+                # [FIX] Handle processing completion
+                if msg_type == "processing_complete":
+                    logger.info("Inference server finished all processing.")
+                    # Optionally notify frontend if needed, or just exit to close cleanly
+                    break
+
                 # Augment result messages with frame/timestamp ranges
                 if msg_type == "result":
                     # Defensive check: ensure video_capture still exists
@@ -1136,28 +1151,13 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 total_frames,
             )
 
-            # Run send and receive tasks concurrently
+            # Run tasks concurrently.
+            # send_task finishes when the video ends and it sends the "complete" signal.
+            # recv_task finishes when it receives the "processing_complete" signal from the server.
             send_task = asyncio.create_task(send_frames(server_ws))
             recv_task = asyncio.create_task(receive_results(server_ws))
 
-            try:
-                _, pending = await asyncio.wait(
-                    [send_task, recv_task],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                # Cancel remaining tasks
-                for task in pending:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-
-            except Exception as e:
-                send_task.cancel()
-                recv_task.cancel()
-                raise e
+            await asyncio.gather(send_task, recv_task)
 
     except websockets.exceptions.InvalidStatusCode as e:
         logger.error(f"Inference server returned invalid status: {e}")
