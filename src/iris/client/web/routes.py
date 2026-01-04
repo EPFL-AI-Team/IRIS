@@ -1112,14 +1112,24 @@ async def generate_report(request: dict[str, Any]) -> Any:
     # If no session in DB, this might be a live session
     # Use in-memory data from AppState
     if not session:
+        # Get video_file and annotation_file from active analysis job or video capture
+        video_file = None
+        annotation_file = None
+
+        if state.active_analysis_job:
+            video_file = state.active_analysis_job.get("video_file")
+            annotation_file = state.active_analysis_job.get("annotation_file")
+        elif state.analysis_video_capture:
+            video_file = state.analysis_video_capture.video_path
+
         # Create minimal session dict from in-memory state
         session = {
             "id": session_id,
             "status": "running" if state.is_streaming else "idle",
             "created_at": time.time(),
             "config": state.session_config,
-            "video_file": None,  # Live sessions don't have video files
-            "annotation_file": None,
+            "video_file": video_file,
+            "annotation_file": annotation_file,
         }
         # Use in-memory results history for live sessions
         results = state.results_history
