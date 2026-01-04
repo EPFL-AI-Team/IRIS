@@ -481,6 +481,33 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
             "message": f"Video file not found: {video_filename}",
         }
 
+    # Clear inference server queue to prevent "ghost results" from previous sessions
+    inference_server_url = (
+        f"http://{state.config.server.host}:{state.config.server.port}"
+    )
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(f"{inference_server_url}/api/queue/clear")
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(
+                    f"Cleared inference queue: {result.get('cleared_jobs', 0)} jobs, "
+                    f"{result.get('freed_mb', 0):.1f}MB freed"
+                )
+            else:
+                logger.warning(
+                    f"Failed to clear inference queue: HTTP {response.status_code}"
+                )
+    except httpx.TimeoutException:
+        logger.warning("Timeout clearing inference queue (server slow)")
+    except httpx.ConnectError:
+        logger.warning("Could not connect to inference server to clear queue")
+    except Exception as e:
+        # Non-fatal: log warning but allow analysis to proceed
+        logger.warning(f"Error clearing inference queue: {e}")
+
     # Create VideoFileCapture
     state.analysis_video_capture = VideoFileCapture(
         video_path=str(video_path),
@@ -630,10 +657,13 @@ async def analysis_websocket(websocket: WebSocket) -> None:
 
     # Get video metadata
     total_frames = state.analysis_video_capture.total_frames
+    duration_ms = state.analysis_video_capture.get_duration_ms()
+    duration_sec = duration_ms / 1000.0
     simulation_fps = state.active_analysis_job["simulation_fps"]
     job_id = state.active_analysis_job["job_id"]
     frames_per_segment = state.active_analysis_job.get("frames_per_segment", 8)
     overlap_frames = state.active_analysis_job.get("overlap_frames", 4)
+    segment_time = state.active_analysis_job.get("segment_time", 1.0)
     total_chunks = state.active_analysis_job.get("total_chunks", 1)
 
     # Get inference server URL
@@ -799,26 +829,28 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                         logger.info("Analysis video capture was stopped, ending result reception")
                         break
 
-                    # Add metadata about frame range
+                    # Trust server's video_time_ms (calculated when segment was created)
+                    # This eliminates race condition in Turbo Mode where frame_count
+                    # advances to video end before results arrive
+                    video_time_ms = message.get("video_time_ms", 0.0)
                     frames_processed = message.get("frames_processed", 8)
-                    current_frame = frame_count
-                    start_frame = max(0, current_frame - frames_processed)
 
-                    message["frame_range"] = [start_frame, current_frame - 1]
-                    message["timestamp_range_ms"] = [
-                        int(
-                            start_frame / state.analysis_video_capture.native_fps * 1000
-                        )
+                    # Calculate frame range from video time (for display/logging)
+                    native_fps = (
+                        state.analysis_video_capture.native_fps
                         if state.analysis_video_capture.native_fps > 0
-                        else 0,
-                        int(
-                            (current_frame - 1)
-                            / state.analysis_video_capture.native_fps
-                            * 1000
-                        )
-                        if state.analysis_video_capture.native_fps > 0
-                        else 0,
-                    ]
+                        else 30.0
+                    )
+                    start_frame_approx = int((video_time_ms / 1000.0) * native_fps)
+                    end_frame_approx = start_frame_approx + frames_processed - 1
+
+                    # Calculate end timestamp from segment duration
+                    segment_time = state.active_analysis_job.get("segment_time", 1.0)
+                    end_time_ms = video_time_ms + (segment_time * 1000.0)
+
+                    # Augment message with accurate timestamps
+                    message["frame_range"] = [start_frame_approx, end_frame_approx]
+                    message["timestamp_range_ms"] = [int(video_time_ms), int(end_time_ms)]
                     message["job_id"] = job_id
                     results_sent += 1
 
@@ -852,17 +884,19 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 "config": {
                     "frames_per_segment": frames_per_segment,
                     "overlap_frames": overlap_frames,
+                    "segment_time": segment_time,
                 },
                 "mode": "analysis",
-                "total_frames": total_frames,
+                "duration_sec": duration_sec,
             }
             await server_ws.send(json.dumps(config_message))
             logger.info(
                 "Sent session_config to inference server: "
-                "frames_per_segment=%d, overlap=%d, total_frames=%d",
+                "frames_per_segment=%d, overlap=%d, segment_time=%.2f, duration_sec=%.1f",
                 frames_per_segment,
                 overlap_frames,
-                total_frames,
+                segment_time,
+                duration_sec,
             )
 
             # Run tasks concurrently.
