@@ -4,7 +4,8 @@ server:
   model_id: "/scratch/iris/checkpoints/qwen3b_finebio_finetune_iris/"
   live_queue_threshold: 15
   max_queue_size: 15
-  
+  vlm_hardware: "a100"
+
   num_workers: 1
   port: 8005
   graceful_shutdown_timeout: 30.0

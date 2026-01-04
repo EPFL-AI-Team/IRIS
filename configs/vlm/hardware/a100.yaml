@@ -1,0 +1,9 @@
+device: "auto"  # Will be overridden by explicit MPS detection in models.py
+
+model:
+  dtype: "bfloat16"                    # A100 has native support for this
+  attn_implementation: "flash_attention_2"        # More stable than sdpa on MPS
+  low_cpu_mem_usage: true            # Reduce CPU memory during model loading
+
+# No quantization for Mac (MPS doesn't support BitsAndBytes)
+# quantization: {}
