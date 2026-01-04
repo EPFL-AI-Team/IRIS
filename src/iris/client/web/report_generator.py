@@ -25,12 +25,14 @@ class SessionSummary:
     sample_results: list[dict[str, Any]]
     ground_truth_count: int
     annotations_sample: list[dict[str, Any]]
+    logs: list[dict[str, Any]]
 
 
 def build_report_context(
     session: dict[str, Any],
     results: list[dict[str, Any]],
     annotations: list[dict[str, Any]] | None = None,
+    logs: list[dict[str, Any]] | None = None,
 ) -> SessionSummary:
     """Build context for LLM report generation.
 
@@ -38,6 +40,7 @@ def build_report_context(
         session: Session data from database.
         results: List of inference results.
         annotations: Optional ground truth annotations.
+        logs: Optional session logs with timestamps.
 
     Returns:
         SessionSummary with data for the report.
@@ -49,7 +52,7 @@ def build_report_context(
     # Take sample of results for context (avoid huge prompts)
     # sample_results = results[:5] if len(results) > 5 else results
     sample_results = results
-    
+
     # Simplify results for prompt
     simplified_results = []
     for r in sample_results:
@@ -59,6 +62,16 @@ def build_report_context(
             "inference_duration_ms": r.get("inference_duration_ms"),
             "result": r.get("result"),
         })
+
+    # Simplify logs for prompt (include timestamp and message)
+    simplified_logs = []
+    if logs:
+        for log in logs:
+            simplified_logs.append({
+                "timestamp": log.get("timestamp"),
+                "level": log.get("level"),
+                "message": log.get("message"),
+            })
 
     return SessionSummary(
         session_id=session.get("id", "unknown"),
@@ -71,6 +84,7 @@ def build_report_context(
         sample_results=simplified_results,
         ground_truth_count=len(annotations) if annotations else 0,
         annotations_sample=annotations[:5] if annotations else [],
+        logs=simplified_logs,
     )
 
 
@@ -89,6 +103,7 @@ def build_report_prompt(summary: SessionSummary) -> str:
         "video_file": summary.video_file,
         "total_results": summary.total_results,
         "sample_results": summary.sample_results,  # All inference outputs in order
+        "logs": summary.logs,  # Session logs with timestamps
     }
 
     return f"""You are a laboratory scientist writing a concise procedure protocol.
@@ -188,6 +203,7 @@ async def generate_report_stream(
     session: dict[str, Any],
     results: list[dict[str, Any]],
     annotations: list[dict[str, Any]] | None = None,
+    logs: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Generate a streaming report using Gemini 2.5 Flash.
 
@@ -195,11 +211,12 @@ async def generate_report_stream(
         session: Session data from database.
         results: List of inference results.
         annotations: Optional ground truth annotations.
+        logs: Optional session logs with timestamps.
 
     Yields:
         Markdown text chunks as they're generated.
     """
-    summary = build_report_context(session, results, annotations)
+    summary = build_report_context(session, results, annotations, logs)
     async for chunk in generate_report_stream_gemini(summary):
         yield chunk
 
@@ -208,6 +225,7 @@ def generate_fallback_report(
     session: dict[str, Any],
     results: list[dict[str, Any]],
     annotations: list[dict[str, Any]] | None = None,
+    logs: list[dict[str, Any]] | None = None,
 ) -> str:
     """Generate a basic statistics report without LLM.
 
@@ -217,11 +235,12 @@ def generate_fallback_report(
         session: Session data.
         results: Inference results.
         annotations: Optional annotations.
+        logs: Optional session logs with timestamps.
 
     Returns:
         Markdown report string.
     """
-    summary = build_report_context(session, results, annotations)
+    summary = build_report_context(session, results, annotations, logs)
 
     # Calculate basic statistics
     if results:
