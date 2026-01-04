@@ -140,26 +140,9 @@ export function LogPanel() {
     );
   });
 
-  // Auto-scroll to active log or bottom during analysis
+  // Auto-scroll only during running mode with new logs
   useEffect(() => {
-    if (!scrollRef.current) return;
-
-    if (analysisMode === "running" && autoScroll) {
-      // During analysis, scroll to bottom to show latest
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    } else if (analysisMode !== "running" && activeLogIndex >= 0) {
-      // During playback/review (complete, paused, etc.), scroll to active log
-      const logElements = scrollRef.current.querySelectorAll("[data-log-entry]");
-      const activeElement = logElements[activeLogIndex];
-      if (activeElement) {
-        activeElement.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-    // Note: Removed analysisLogs.length from dependencies to prevent hijacking scroll after completion
-  }, [activeLogIndex, autoScroll, analysisMode]);
-
-  // Separate effect to handle new log arrivals during analysis
-  useEffect(() => {
+    // Only auto-scroll during analysis when running and user hasn't scrolled away
     if (analysisMode === "running" && autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
