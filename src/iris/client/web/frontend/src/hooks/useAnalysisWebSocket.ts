@@ -212,6 +212,15 @@ export function useAnalysisWebSocket() {
             break;
           }
 
+          case "upload_complete": {
+            // Video upload to server completed
+            addLog(
+              `Upload complete: ${data.total_frames} frames uploaded in ${data.duration_sec?.toFixed(1) || "?"}s`,
+              "INFO"
+            );
+            break;
+          }
+
           default:
             console.warn("Unknown analysis message type:", data.type);
         }
