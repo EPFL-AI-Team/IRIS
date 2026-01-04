@@ -45,6 +45,23 @@ server:
       max_new_tokens: 64      # Reduced from 128 for Mac (shorter responses, faster generation)
       prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
 
+  # ============================================================================
+  # Batch Inference Configuration (Analysis Mode Only)
+  # ============================================================================
+  # Batch inference processes multiple video segments in a single GPU call
+  # for significantly faster analysis throughput (9-10x speedup expected).
+  #
+  # enabled: Set to true to enable batch inference for analysis mode
+  # batch_size: Number of segments to process per GPU batch
+  #   - Recommended for Mac: 2-4 (limited VRAM)
+  #   - Recommended for A100 80GB: 16-32
+  #
+  # Note: Only applies to analysis mode. Live mode always processes segments individually.
+  # ============================================================================
+  batch_inference:
+    enabled: false      # Start disabled for safety (Mac has limited VRAM)
+    batch_size: 2       # Conservative batch size for Mac
+
 client:
   video:
     width: 640

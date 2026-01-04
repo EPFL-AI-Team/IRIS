@@ -5,6 +5,21 @@ from pydantic import BaseModel, Field, model_validator
 from iris.config import _yaml_config
 
 
+class BatchInferenceConfig(BaseModel):
+    """Batch inference configuration for analysis mode."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable batch inference (analysis mode only)",
+    )
+    batch_size: int = Field(
+        default=16,
+        ge=1,
+        le=128,
+        description="Number of segments to process in one GPU batch",
+    )
+
+
 class ServerConfig(BaseModel):
     """Server inference configuration."""
 
@@ -73,6 +88,12 @@ class ServerConfig(BaseModel):
     jobs: dict = Field(
         default_factory=lambda: _yaml_config.get("server", {}).get("jobs", {}),
         description="Job configurations (video, etc.)",
+    )
+    batch_inference: BatchInferenceConfig = Field(
+        default_factory=lambda: BatchInferenceConfig(
+            **_yaml_config.get("server", {}).get("batch_inference", {})
+        ),
+        description="Batch inference settings",
     )
 
     @model_validator(mode="after")

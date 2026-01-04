@@ -20,6 +20,22 @@ server:
       max_new_tokens: 128
       prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
 
+  # ============================================================================
+  # Batch Inference Configuration (Analysis Mode Only)
+  # ============================================================================
+  # Batch inference processes multiple video segments in a single GPU call
+  # for significantly faster analysis throughput (9-10x speedup expected).
+  #
+  # enabled: Set to true to enable batch inference for analysis mode
+  # batch_size: Number of segments to process per GPU batch
+  #   - Recommended for A100 80GB: 16-32
+  #
+  # Note: Only applies to analysis mode. Live mode always processes segments individually.
+  # ============================================================================
+  batch_inference:
+    enabled: true       # Enabled for A100 (has sufficient VRAM)
+    batch_size: 16      # Optimal batch size for A100 80GB
+
 client:
   video:
     width: 640

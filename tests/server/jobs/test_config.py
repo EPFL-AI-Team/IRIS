@@ -14,6 +14,7 @@ class TestJobType:
         """Test JobType enum has expected values."""
         assert JobType.SINGLE_FRAME.value == "single_frame"
         assert JobType.VIDEO.value == "video"
+        assert JobType.BATCH_VIDEO.value == "batch_video"
 
     def test_job_type_string_conversion(self) -> None:
         """Test JobType can be used as string."""
