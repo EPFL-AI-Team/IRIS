@@ -959,14 +959,16 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     logger.info("Analysis video capture was stopped, ending frame transmission")
                     break
 
-                # Calculate target frame index based on simulation FPS
-                # This ensures we skip frames to match the target playback speed
-                target_frame_idx = int(frame_count * native_fps / simulation_fps)
+                # Calculate the logical time for the frame we want to send
+                logical_time_sec = frame_count / simulation_fps
+                
+                # Convert this logical time into a physical frame index in the video file
+                target_frame_idx = int(logical_time_sec * native_fps)
                 
                 if target_frame_idx >= state.analysis_video_capture.total_frames:
                     # End of video
                     logger.info(
-                        f"Analysis complete: {frame_count} frames processed in "
+                        f"Analysis complete: {frame_count} frames sent in "
                         f"{time.time() - start_time:.1f}s"
                     )
                     await websocket.send_json({
@@ -989,8 +991,8 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     # Should have been caught by index check, but safety fallback
                     break
 
-                # Calculate video timestamp for this frame
-                video_timestamp = target_frame_idx / native_fps
+                # The video timestamp is the logical time we calculated
+                video_timestamp = logical_time_sec
 
                 # Send frame to inference server
                 message = {
@@ -1002,7 +1004,6 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 await server_ws.send(json.dumps(message))
 
                 # Send progress to frontend
-                # Note: We use target_frame_idx for video progress, but frame_count for processing progress
                 progress_percent = (target_frame_idx / total_frames) * 100
                 current_position_ms = video_timestamp * 1000.0
 
@@ -1010,13 +1011,13 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                 current_chunk = frame_count // frames_per_chunk + 1
                 elapsed_time = time.time() - start_time
                 if frame_count > 0 and elapsed_time > 0:
-                    frames_per_second = frame_count / elapsed_time
+                    frames_per_second_sent = frame_count / elapsed_time
                     # Estimate remaining *sent* frames, not total video frames
-                    total_frames_to_send = int(total_frames / native_fps * simulation_fps)
-                    remaining_frames = total_frames_to_send - frame_count
+                    total_frames_to_send = int(state.analysis_video_capture.get_duration_ms() / 1000 * simulation_fps)
+                    remaining_frames_to_send = total_frames_to_send - frame_count
                     estimated_time_remaining = (
-                        remaining_frames / frames_per_second
-                        if frames_per_second > 0
+                        remaining_frames_to_send / frames_per_second_sent
+                        if frames_per_second_sent > 0
                         else 0
                     )
                 else:
@@ -1026,7 +1027,7 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     "type": "progress",
                     "job_id": job_id,
                     "current_frame": frame_count,
-                    "total_frames": int(total_frames / native_fps * simulation_fps),
+                    "total_frames": total_frames_to_send,
                     "progress_percent": progress_percent,
                     "position_ms": current_position_ms,
                     "current_chunk": current_chunk,
