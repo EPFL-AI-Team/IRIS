@@ -975,11 +975,16 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     })
                     break
 
+                # Calculate video timestamp for this frame
+                video_timestamp = 0.0
+                if state.analysis_video_capture.native_fps > 0:
+                    video_timestamp = frame_count / state.analysis_video_capture.native_fps
+
                 # Send frame to inference server
                 message = {
                     "frame": base64.b64encode(frame_jpeg).decode(),
                     "frame_id": frame_count,
-                    "timestamp": time.time(),
+                    "timestamp": video_timestamp,
                     "fps": simulation_fps,
                 }
                 await server_ws.send(json.dumps(message))

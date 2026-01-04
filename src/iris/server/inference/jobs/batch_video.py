@@ -137,6 +137,7 @@ class BatchVideoJob(Job):
                     "client_fps": segment.get("client_fps", 5.0),
                     "sample_fps": segment.get("client_fps", 5.0),
                     "timestamp": time.time(),
+                    "video_time_ms": segment.get("video_time_ms", 0.0),
                 }
                 self.result_callback(result_data)
 

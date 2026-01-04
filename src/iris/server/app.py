@@ -633,6 +633,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
                 try:
                     frame_bytes = base64.b64decode(frame_b64)
+                    frame_timestamp = data.get("timestamp")  # Capture timestamp
 
                     # ---------------------------------------------------------
                     # BACKPRESSURE: Drop frames if queue is too full
@@ -649,16 +650,28 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         continue
                     # ---------------------------------------------------------
 
-                    # Add raw bytes to buffer (NOT PIL Image - saves memory)
-                    frame_buffer.add_frame(frame_bytes)
+                    # Add raw bytes to buffer with timestamp metadata
+                    frame_buffer.add_frame(frame_bytes, metadata=frame_timestamp)
                 except Exception as e:
                     logger.error(f"Error decoding frame: {e}")
                     continue
 
                 # When buffer reaches threshold, handle batching
                 if frame_buffer.is_ready():
-                    # Get buffered frames
+                    # Get buffered frames and metadata
                     buffered_frames = frame_buffer.get_batch()
+                    buffered_timestamps = frame_buffer.get_metadata()
+
+                    # Determine video time for this segment (start time)
+                    video_time_ms = 0.0
+                    if buffered_timestamps and buffered_timestamps[0] is not None:
+                        # Use actual timestamp from first frame
+                        video_time_ms = buffered_timestamps[0] * 1000.0
+                    else:
+                        # Fallback to calculated time
+                        stride = buffer_size - overlap_frames
+                        if stride > 0 and client_fps > 0:
+                            video_time_ms = (batch_segment_counter * stride / client_fps) * 1000.0
 
                     # Check if batch inference enabled for analysis mode
                     batch_cfg = config.batch_inference
@@ -675,6 +688,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                             "segment_id": f"seg_{batch_segment_counter}",
                             "prompt": prompt,
                             "client_fps": client_fps,
+                            "video_time_ms": video_time_ms,
                         }
                         batch_accumulator.append(segment_data)
                         batch_segment_counter += 1
@@ -735,6 +749,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                             default_fps=default_fps,
                             max_new_tokens=max_new_tokens,
                             client_fps=client_fps,
+                            video_time_ms=video_time_ms,
                         )
 
                         batch_job.result_callback = sync_result_callback
@@ -785,6 +800,18 @@ async def inference_endpoint(websocket: WebSocket) -> None:
             elif len(frame_buffer) > 0:
                 batch_job_id = f"{connection_job_id}_batch_{batch_counter}_partial"
                 logger.info(f"Submitting partial batch with {len(frame_buffer)} frames")
+                
+                # Get frames and calculate timestamp for partial batch
+                buffered_frames = frame_buffer.get_batch()
+                buffered_timestamps = frame_buffer.get_metadata()
+                
+                video_time_ms = 0.0
+                if buffered_timestamps and buffered_timestamps[0] is not None:
+                     video_time_ms = buffered_timestamps[0] * 1000.0
+                else:
+                    stride = buffer_size - overlap_frames
+                    if stride > 0 and client_fps > 0:
+                        video_time_ms = (batch_segment_counter * stride / client_fps) * 1000.0
 
                 from iris.server.inference.jobs import VideoJob
 
@@ -793,13 +820,14 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     model=None,  # Will be injected by worker
                     processor=None,  # Will be injected by worker
                     executor=state.queue.executor,
-                    frames=frame_buffer.get_batch(),
+                    frames=buffered_frames,
                     prompt=prompt,
                     buffer_size=buffer_size,
                     overlap_frames=overlap_frames,
                     default_fps=default_fps,
                     max_new_tokens=max_new_tokens,
                     client_fps=client_fps,
+                    video_time_ms=video_time_ms,
                 )
                 batch_job.result_callback = sync_result_callback
 

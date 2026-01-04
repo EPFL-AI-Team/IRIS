@@ -49,6 +49,7 @@ class VideoJob(Job):
         default_fps: float = 5.0,
         max_new_tokens: int = 128,
         client_fps: float | None = None,
+        video_time_ms: float = 0.0,
     ):
         super().__init__(job_id)
         self.model = model  # May be None until worker injects
@@ -65,6 +66,7 @@ class VideoJob(Job):
             float(client_fps) if client_fps is not None else self.default_fps
         )
         self.max_new_tokens = max_new_tokens
+        self.video_time_ms = video_time_ms
 
         # Pre-buffered frames to process (passed in at construction)
         # No need to copy - we own this batch and will process it once
@@ -188,6 +190,7 @@ class VideoJob(Job):
                 "client_fps": self.client_fps,
                 "sample_fps": self.client_fps,
                 "timestamp": time.time(),
+                "video_time_ms": self.video_time_ms,
             }
             self.result_callback(result_data)
 

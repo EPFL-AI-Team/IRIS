@@ -28,6 +28,7 @@ export function AnalysisControls() {
   const setAutoGenerateReport = useAppStore(
     (state) => state.setAutoGenerateReport
   );
+  const sessionMetrics = useAppStore((state) => state.sessionMetrics);
   const { connect, disconnect } = useAnalysisWebSocket();
 
   useEffect(() => {
@@ -153,6 +154,21 @@ export function AnalysisControls() {
               </span>
             </div>
             <Progress value={progress.progress_percent} className="h-1.5" />
+          </div>
+        )}
+
+        {/* Detailed Session Metrics */}
+        {isRunning && sessionMetrics && (
+          <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono bg-muted/20 p-2 rounded border border-border/50">
+            <div>Elapsed: {sessionMetrics.elapsedSeconds.toFixed(1)}s</div>
+            <div>Rate: {sessionMetrics.processingRate.toFixed(1)} seg/s</div>
+            <div>Queue: {sessionMetrics.queueDepth}</div>
+            <div>
+              Segments: {sessionMetrics.segmentsProcessed}
+              {sessionMetrics.segmentsTotal
+                ? ` / ${sessionMetrics.segmentsTotal}`
+                : ""}
+            </div>
           </div>
         )}
       </div>
