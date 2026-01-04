@@ -216,6 +216,9 @@ export function useClientWebSocket() {
             id: `result-${data.job_id}`,
             job_id: data.job_id as string,
             timestamp: new Date((data.timestamp as number) * 1000),
+            // [NEW] Map server fields to UI types
+            videoTimeMs: data.video_time_ms as number | undefined,
+            batchSize: data.batch_size as number | undefined,
             status: "completed",
             result: data.result as string,
             frames_processed: data.frames_processed as number,
@@ -231,6 +234,8 @@ export function useClientWebSocket() {
             inference_time: data.inference_time as number,
             timestamp: new Date((data.timestamp as number) * 1000),
             latency,
+            videoTimeMs: data.video_time_ms as number | undefined,
+            batchSize: data.batch_size as number | undefined,
           });
           // If no existing result, addResult handles dedup internally
           addResult(result);

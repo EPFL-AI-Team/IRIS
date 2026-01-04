@@ -12,7 +12,9 @@ export interface LogEntry {
 export interface ResultItem {
   id: string;
   job_id: string;
-  timestamp: Date;
+  timestamp: Date; // Wall clock time
+  videoTimeMs?: number; // Position in video
+  batchSize?: number; // Size of the batch this result belongs to
   status: "pending" | "processing" | "completed";
   result?: string;
   frames_processed?: number;

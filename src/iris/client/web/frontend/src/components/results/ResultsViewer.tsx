@@ -7,6 +7,15 @@ import type { ResultItem } from "../../types";
 import { cn } from "@/lib/utils";
 import { formatResultAsNaturalLanguage } from "@/utils/formatResult";
 
+// Helper to format video time
+const formatVideoTime = (ms: number) => {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const millis = Math.floor(ms % 1000);
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
+};
+
 /**
  * ResultsViewer component for displaying inference results.
  */
@@ -51,12 +60,16 @@ function ResultCard({
 }) {
   const isPending =
     result.status === "pending" || result.status === "processing";
-  const timestamp = result.timestamp.toLocaleTimeString([], {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  
+  // Use video time if available, otherwise fall back to wall clock
+  const timeDisplay = result.videoTimeMs !== undefined 
+    ? formatVideoTime(result.videoTimeMs)
+    : result.timestamp.toLocaleTimeString([], {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
 
   // Helper to render the content
   const renderContent = () => {
@@ -161,13 +174,21 @@ function ResultCard({
             </span>
             <div className="flex flex-col">
               <span className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
-                Time
+                {result.videoTimeMs !== undefined ? "Video Time" : "Time"}
               </span>
-              <span className="text-xs font-mono">{timestamp}</span>
+              <span className="text-xs font-mono font-bold text-foreground">
+                {timeDisplay}
+              </span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            {/* [NEW] Batch Badge */}
+            {result.batchSize && result.batchSize > 1 && (
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-blue-600 border-blue-200 bg-blue-50">
+                Batch ({result.batchSize})
+              </Badge>
+            )}
             {result.inference_time !== undefined && (
               <div className="text-right">
                 <div className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
