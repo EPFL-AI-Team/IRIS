@@ -4,7 +4,7 @@ server:
   model_id: "/scratch/iris/checkpoints/qwen3b_finebio_finetune_iris/"
   live_queue_threshold: 15
   max_queue_size: 15
-  vlm_hardware: "a100"
+  vlm_hardware: "v100"    # Options: "a100" (80GB+), "v100" (32GB)
 
   num_workers: 1
   port: 8005

@@ -1,0 +1,9 @@
+device: "cuda"
+
+model:
+  dtype: "float16"                   # V100 (Volta) does not support bfloat16
+  attn_implementation: "sdpa"        # "flash_attention_2" requires Ampere (A100) or newer
+  low_cpu_mem_usage: true
+
+# V100 32GB can comfortably run Qwen2.5-3B (~7GB) or even 7B (~15GB) in float16
+# quantization: {}
