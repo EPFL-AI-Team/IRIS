@@ -716,6 +716,38 @@ async def analysis_websocket(websocket: WebSocket) -> None:
     duration_sec = duration_ms / 1000.0
     simulation_fps = state.active_analysis_job["simulation_fps"]
     job_id = state.active_analysis_job["job_id"]
+
+    # Define result storage callback for this analysis session
+    def store_analysis_result(result: dict[str, Any]) -> None:
+        """Store analysis result to database."""
+        state.analysis_results.append(result)
+
+        try:
+            from iris.client.web.repositories import logs_repo, results_repo
+            inference_time_ms = result.get("inference_time", 0) * 1000
+            video_time_ms = int(result.get("video_time_ms", 0))
+
+            results_repo.store(
+                session_id=job_id,
+                job_id=job_id,
+                video_time_ms=video_time_ms,
+                inference_start_ms=video_time_ms,
+                inference_end_ms=video_time_ms + inference_time_ms,
+                frame_start=result.get("frame_range", [0, 0])[0] if "frame_range" in result else 0,
+                frame_end=result.get("frame_range", [0, 0])[1] if "frame_range" in result else 0,
+                result=result.get("result", {}),
+            )
+
+            # Also persist a log entry
+            frame_range = result.get("frame_range", [0, 0])
+            inference_time_sec = result.get("inference_time", 0)
+            logs_repo.append(
+                session_id=job_id,
+                level="INFO",
+                message=f"Inference result: frames {frame_range[0]}-{frame_range[1]}, time: {inference_time_sec:.2f}s",
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist analysis result to DB: {e}")
     frames_per_segment = state.active_analysis_job.get("frames_per_segment", 8)
     overlap_frames = state.active_analysis_job.get("overlap_frames", 4)
     segment_time = state.active_analysis_job.get("segment_time", 1.0)
@@ -952,6 +984,9 @@ async def analysis_websocket(websocket: WebSocket) -> None:
                     message["job_id"] = job_id
                     results_sent += 1
 
+                    # Store result to database via callback
+                    store_analysis_result(message)
+
                 # Forward to frontend
                 await websocket.send_json(message)
 
@@ -1130,31 +1165,46 @@ async def generate_report(request: dict[str, Any]) -> Any:
     )
     from iris.client.web.repositories import logs_repo, reports_repo, results_repo, session_repo
 
+    logger.info("=" * 80)
+    logger.info("REPORT GENERATION REQUEST RECEIVED")
+    logger.info("=" * 80)
+
     session_id = request.get("session_id")
     force_regenerate = request.get("force_regenerate", False)
 
+    logger.info(f"session_id: {session_id}")
+    logger.info(f"force_regenerate: {force_regenerate}")
+
     if not session_id:
+        logger.error("No session_id provided in request")
         return {"error": "session_id is required"}
 
     # Check if report already exists (unless force_regenerate is True)
     if not force_regenerate:
+        logger.info("Checking for existing cached report")
         existing_report = reports_repo.get_latest_by_session(session_id)
         if existing_report:
-            logger.info(f"Returning cached report for session {session_id}")
+            logger.info(f"Found cached report for session {session_id}, returning")
+            logger.info("=" * 80)
             return {
                 "report": existing_report["content"],
                 "provider": existing_report.get("provider", "gemini"),
                 "cached": True,
                 "created_at": existing_report.get("created_at"),
             }
+        logger.info("No cached report found")
 
     # Try to get session from database
+    logger.info(f"Fetching session from database: {session_id}")
     session = session_repo.get(session_id)
+    logger.info(f"Session from DB: {'Found' if session else 'Not found'}")
+
     state = get_app_state()
 
     # If no session in DB, this might be a live session
     # Use in-memory data from AppState
     if not session:
+        logger.warning("Session not in database, creating from in-memory state")
         # Get video_file and annotation_file from active analysis job or video capture
         video_file = None
         annotation_file = None
@@ -1174,25 +1224,34 @@ async def generate_report(request: dict[str, Any]) -> Any:
             "video_file": video_file,
             "annotation_file": annotation_file,
         }
+        logger.info(f"Created in-memory session: video_file={video_file}")
         # Use in-memory results history for live sessions
         results = state.results_history
         # No logs in database for live sessions
         logs = []
+        logger.info(f"Using in-memory results: {len(results)} results, 0 logs")
     else:
         # Analysis session - get results and logs from database
+        logger.info("Fetching results and logs from database")
         results = results_repo.get_by_session(session_id)
         logs = logs_repo.get_by_session(session_id)
+        logger.info(f"Retrieved {len(results)} results and {len(logs)} logs from DB")
 
     annotations = state.analysis_annotations if state.analysis_annotations else None
+    logger.info(f"Annotations: {len(annotations) if annotations else 0}")
 
     # Check for Gemini API key (stored in UI or environment variables)
     from iris.client.web.report_generator import get_gemini_api_key
 
     has_gemini = bool(get_gemini_api_key())
+    logger.info(f"Gemini API key available: {has_gemini}")
 
     if not has_gemini:
         # Return fallback report
+        logger.info("No Gemini API key, generating fallback report")
         report = generate_fallback_report(session, results, annotations, logs)
+        logger.info(f"Fallback report generated, returning JSON response ({len(report)} chars)")
+        logger.info("=" * 80)
         return {"report": report, "provider": "fallback"}
 
     # Stream and store report
@@ -1234,18 +1293,30 @@ async def get_fallback_report(session_id: str) -> dict[str, Any]:
     Useful when no API key is configured.
     """
     from iris.client.web.report_generator import generate_fallback_report
-    from iris.client.web.repositories import results_repo, session_repo
+    from iris.client.web.repositories import logs_repo, results_repo, session_repo
+
+    logger.info("=" * 80)
+    logger.info(f"FALLBACK REPORT REQUEST: session_id={session_id}")
+    logger.info("=" * 80)
 
     session = session_repo.get(session_id)
     if not session:
+        logger.error(f"Session not found: {session_id}")
+        logger.info("=" * 80)
         return {"error": "Session not found", "session_id": session_id}
 
+    logger.info("Fetching results and logs from database")
     results = results_repo.get_by_session(session_id)
+    logs = logs_repo.get_by_session(session_id)
+    logger.info(f"Retrieved {len(results)} results and {len(logs)} logs")
 
     state = get_app_state()
     annotations = state.analysis_annotations if state.analysis_annotations else None
 
-    report = generate_fallback_report(session, results, annotations)
+    logger.info("Generating fallback report")
+    report = generate_fallback_report(session, results, annotations, logs)
+    logger.info(f"Fallback report generated, returning response ({len(report)} chars)")
+    logger.info("=" * 80)
     return {"report": report, "provider": "fallback"}
 
 

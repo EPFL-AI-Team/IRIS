@@ -23,8 +23,6 @@ class SessionSummary:
     config: dict[str, Any]
     total_results: int
     sample_results: list[dict[str, Any]]
-    ground_truth_count: int
-    annotations_sample: list[dict[str, Any]]
     logs: list[dict[str, Any]]
 
 
@@ -39,15 +37,29 @@ def build_report_context(
     Args:
         session: Session data from database.
         results: List of inference results.
-        annotations: Optional ground truth annotations.
+        annotations: Optional ground truth annotations (unused, kept for compatibility).
         logs: Optional session logs with timestamps.
 
     Returns:
         SessionSummary with data for the report.
     """
+    logger.info("=" * 80)
+    logger.info("BUILDING REPORT CONTEXT")
+    logger.info("=" * 80)
+
     started_at = session.get("started_at", 0)
     completed_at = session.get("completed_at", time.time())
     duration_sec = (completed_at - started_at) if started_at else 0
+
+    logger.info(f"Session ID: {session.get('id', 'unknown')}")
+    logger.info(f"Session status: {session.get('status', 'unknown')}")
+    logger.info(f"Started at: {started_at}")
+    logger.info(f"Completed at: {completed_at}")
+    logger.info(f"Duration: {duration_sec:.2f}s")
+    logger.info(f"Video file: {session.get('video_file')}")
+    logger.info(f"Annotation file: {session.get('annotation_file')}")
+    logger.info(f"Total results: {len(results)}")
+    logger.info(f"Total logs: {len(logs) if logs else 0}")
 
     # Take sample of results for context (avoid huge prompts)
     # sample_results = results[:5] if len(results) > 5 else results
@@ -63,6 +75,8 @@ def build_report_context(
             "result": r.get("result"),
         })
 
+    logger.info(f"Simplified {len(simplified_results)} results for prompt")
+
     # Simplify logs for prompt (include timestamp and message)
     simplified_logs = []
     if logs:
@@ -72,8 +86,9 @@ def build_report_context(
                 "level": log.get("level"),
                 "message": log.get("message"),
             })
+        logger.info(f"Simplified {len(simplified_logs)} logs for prompt")
 
-    return SessionSummary(
+    summary = SessionSummary(
         session_id=session.get("id", "unknown"),
         status=session.get("status", "unknown"),
         duration_sec=duration_sec,
@@ -82,10 +97,19 @@ def build_report_context(
         config=session.get("config", {}),
         total_results=len(results),
         sample_results=simplified_results,
-        ground_truth_count=len(annotations) if annotations else 0,
-        annotations_sample=annotations[:5] if annotations else [],
         logs=simplified_logs,
     )
+
+    logger.info("SessionSummary created:")
+    logger.info(f"  - session_id: {summary.session_id}")
+    logger.info(f"  - status: {summary.status}")
+    logger.info(f"  - duration_sec: {summary.duration_sec:.2f}")
+    logger.info(f"  - video_file: {summary.video_file}")
+    logger.info(f"  - total_results: {summary.total_results}")
+    logger.info(f"  - total logs: {len(summary.logs)}")
+    logger.info("=" * 80)
+
+    return summary
 
 
 def build_report_prompt(summary: SessionSummary) -> str:
@@ -97,6 +121,9 @@ def build_report_prompt(summary: SessionSummary) -> str:
     Returns:
         Formatted prompt string optimized for protocol steps.
     """
+    logger.info("BUILDING REPORT PROMPT")
+    logger.info(f"Creating context dict for {summary.total_results} results and {len(summary.logs)} logs")
+
     context = {
         "session_id": summary.session_id,
         "duration_sec": round(summary.duration_sec, 2),
@@ -106,12 +133,16 @@ def build_report_prompt(summary: SessionSummary) -> str:
         "logs": summary.logs,  # Session logs with timestamps
     }
 
-    return f"""You are a laboratory scientist writing a concise procedure protocol.
+    context_json = json.dumps(context, indent=2, default=str)
+    logger.info(f"Context JSON length: {len(context_json)} characters")
+    logger.info(f"Context preview (first 500 chars):\n{context_json[:500]}")
+
+    prompt = f"""You are a laboratory scientist writing a concise procedure protocol.
 
 ## Session Data
 
 ```json
-{json.dumps(context, indent=2, default=str)}
+{context_json}
 ```
 
 ## Task
@@ -133,6 +164,11 @@ Generate a brief protocol summary (100-150 words) documenting the key steps obse
 
 Write in professional laboratory protocol style. Be concise and focus on observable actions.
 """
+
+    logger.info(f"Prompt length: {len(prompt)} characters")
+    logger.info(f"Prompt preview (first 300 chars):\n{prompt[:300]}")
+
+    return prompt
 
 
 def get_gemini_api_key() -> str | None:
@@ -168,9 +204,13 @@ async def generate_report_stream_gemini(
     Yields:
         Markdown text chunks as they're generated.
     """
+    logger.info("GENERATING STREAMING GEMINI REPORT")
+
     try:
         from google import genai
+        logger.info("Google genai package imported successfully")
     except ImportError:
+        logger.error("google-genai package not installed")
         yield "# Report Generation Error\n\n"
         yield "The `google-genai` package is not installed. "
         yield "Install it with: `pip install google-genai`\n"
@@ -178,21 +218,35 @@ async def generate_report_stream_gemini(
 
     api_key = get_gemini_api_key()
     if not api_key:
+        logger.warning("No Gemini API key found")
         yield "# Report Generation Error\n\n"
         yield "Gemini API key is not configured. Set it via the TopBar settings or environment variables (GOOGLE_API_KEY or GEMINI_API_KEY).\n"
         return
 
+    logger.info("Gemini API key found, building prompt")
     prompt = build_report_prompt(summary)
 
     try:
+        logger.info("Creating Gemini client")
         client = genai.Client(api_key=api_key)
+
+        logger.info("Starting streaming content generation with model: gemini-2.5-flash")
+        chunk_count = 0
+        total_chars = 0
 
         async for chunk in await client.aio.models.generate_content_stream(
             model="gemini-2.5-flash",
             contents=prompt,
         ):
             if chunk.text:
+                chunk_count += 1
+                total_chars += len(chunk.text)
+                if chunk_count % 10 == 0:
+                    logger.info(f"Received chunk {chunk_count}, total chars: {total_chars}")
                 yield chunk.text
+
+        logger.info(f"Streaming complete: {chunk_count} chunks, {total_chars} total characters")
+        logger.info("=" * 80)
 
     except Exception as e:
         logger.error(f"Report generation error: {e}", exc_info=True)
@@ -234,12 +288,15 @@ def generate_fallback_report(
     Args:
         session: Session data.
         results: Inference results.
-        annotations: Optional annotations.
+        annotations: Optional annotations (unused, kept for compatibility).
         logs: Optional session logs with timestamps.
 
     Returns:
         Markdown report string.
     """
+    logger.info("GENERATING FALLBACK REPORT")
+    logger.info(f"Input: {len(results)} results, {len(logs) if logs else 0} logs")
+
     summary = build_report_context(session, results, annotations, logs)
 
     # Calculate basic statistics
@@ -248,8 +305,10 @@ def generate_fallback_report(
         avg_inference = sum(inference_times) / len(inference_times)
         min_inference = min(inference_times)
         max_inference = max(inference_times)
+        logger.info(f"Inference stats: avg={avg_inference:.1f}ms, min={min_inference:.1f}ms, max={max_inference:.1f}ms")
     else:
         avg_inference = min_inference = max_inference = 0
+        logger.warning("No results to calculate inference statistics")
 
     report = f"""# Analysis Report
 
@@ -259,12 +318,10 @@ def generate_fallback_report(
 - **Status:** {summary.status}
 - **Duration:** {summary.duration_sec:.1f} seconds
 - **Video File:** {summary.video_file or 'N/A'}
-- **Annotation File:** {summary.annotation_file or 'N/A'}
+- **Total Inferences:** {summary.total_results}
 
 ## Inference Statistics
 
-- **Total Inferences:** {summary.total_results}
-- **Ground Truth Annotations:** {summary.ground_truth_count}
 - **Average Inference Time:** {avg_inference:.1f} ms
 - **Min Inference Time:** {min_inference:.1f} ms
 - **Max Inference Time:** {max_inference:.1f} ms
@@ -279,5 +336,8 @@ def generate_fallback_report(
 
 *This is a basic statistics report. For detailed AI-powered analysis, configure an LLM API key.*
 """
+
+    logger.info(f"Fallback report generated, length: {len(report)} characters")
+    logger.info("=" * 80)
 
     return report
