@@ -129,6 +129,16 @@ function ResultCard({
   };
 
   if (isPending) {
+    // For pending cards, we can still show the submission time
+    const submissionTime = result.submittedAt
+      ? result.submittedAt.toLocaleTimeString([], {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "...";
+
     return (
       <Card className="border-l-2 border-l-yellow-500/50 bg-background shadow-sm">
         <div className="p-3">
@@ -141,7 +151,7 @@ function ResultCard({
                 #{number}
               </Badge>
               <span className="text-xs text-muted-foreground font-mono">
-                {timestamp}
+                {submissionTime}
               </span>
             </div>
             <Loader2 className="w-3 h-3 animate-spin text-yellow-600" />
