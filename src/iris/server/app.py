@@ -44,7 +44,7 @@ class SessionState:
     session_id: str
     config: dict = field(default_factory=dict)
     mode: str = "live"
-    total_frames: int | None = None
+    duration_sec: float | None = None  # Required for analysis mode
     start_time: float = field(default_factory=time.time)
     frames_received: int = 0
     segments_processed: int = 0
@@ -61,15 +61,26 @@ class SessionState:
         elapsed = time.time() - self.start_time
         rate = self.segments_processed / elapsed if elapsed > 0 else 0.0
 
-        # Calculate segments_total for analysis mode
+        # Calculate segments_total for analysis mode using logical FPS
         segments_total = None
-        if self.mode == "analysis" and self.total_frames:
+        if self.mode == "analysis" and self.duration_sec:
             frames_per_segment = self.config.get("frames_per_segment", 8)
             overlap_frames = self.config.get("overlap_frames", 4)
+            segment_time = self.config.get("segment_time", 1.0)
+
+            # Validate inputs
+            if segment_time <= 0:
+                logger.warning(f"Invalid segment_time: {segment_time}, using default 1.0")
+                segment_time = 1.0
+
+            # Calculate logical FPS and effective frames
+            logical_fps = frames_per_segment / segment_time
+            effective_total_frames = int(self.duration_sec * logical_fps)
+
             frames_per_chunk = frames_per_segment - overlap_frames
             if frames_per_chunk > 0:
                 segments_total = max(
-                    1, (self.total_frames + frames_per_chunk - 1) // frames_per_chunk
+                    1, (effective_total_frames + frames_per_chunk - 1) // frames_per_chunk
                 )
 
         return {
@@ -618,6 +629,18 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     cfg = data.get("config", {})
                     buffer_size = cfg.get("frames_per_segment", default_buffer_size)
                     overlap_frames = cfg.get("overlap_frames", default_overlap)
+                    segment_time = cfg.get("segment_time", 1.0)
+                    mode = data.get("mode", "live")
+                    duration_sec = data.get("duration_sec")
+
+                    # Validate required fields for analysis mode
+                    if mode == "analysis" and duration_sec is None:
+                        logger.error("Analysis mode requires duration_sec in session_config")
+                        await outgoing_queue.put({
+                            "type": "error",
+                            "message": "Analysis mode requires duration_sec parameter"
+                        })
+                        continue
 
                     # Create session state
                     session = SessionState(
@@ -625,9 +648,10 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         config={
                             "frames_per_segment": buffer_size,
                             "overlap_frames": overlap_frames,
+                            "segment_time": segment_time,
                         },
-                        mode=data.get("mode", "live"),
-                        total_frames=data.get("total_frames"),
+                        mode=mode,
+                        duration_sec=duration_sec,
                         start_time=time.time(),
                     )
 
