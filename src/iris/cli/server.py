@@ -57,9 +57,9 @@ Examples:
     parser.add_argument(
         "--vlm-hardware",
         type=str,
-        choices=["v100", "mac"],
+        choices=["v100", "mac", "a100"],
         default=None,
-        help="Hardware profile for optimizations (v100, mac)"
+        help="Hardware profile for optimizations (v100, mac, a100)"
     )
     parser.add_argument(
         "--model-dtype",

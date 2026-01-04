@@ -109,6 +109,16 @@ def load_model_and_processor(
         model_kwargs["device_map"] = None
         use_mps = True
 
+    # Log the resolved configuration for debugging
+    logger.info(
+        f"Initializing model with: "
+        f"dtype={model_kwargs.get('torch_dtype', 'auto')}, "
+        f"attn_implementation={attn_implementation}, "
+        f"device_map={model_kwargs.get('device_map', 'auto')}, "
+        f"low_cpu_mem_usage={low_cpu_mem_usage}, "
+        f"quantization={'enabled' if quantization_config else 'disabled'}"
+    )
+
     logger.info(f"Loading model: {resolved_model_id}")
     model = AutoModelForImageTextToText.from_pretrained(resolved_model_id, **model_kwargs)
 

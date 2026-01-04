@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from iris.config import _yaml_config
 
@@ -95,6 +95,19 @@ class ServerConfig(BaseModel):
         ),
         description="Batch inference settings",
     )
+
+    @field_validator("vlm_hardware")
+    @classmethod
+    def validate_hardware(cls, v: str | None) -> str | None:
+        """Validate hardware profile name."""
+        if v is not None:
+            valid_profiles = ["v100", "mac", "a100"]
+            if v not in valid_profiles:
+                raise ValueError(
+                    f"Unknown hardware profile: '{v}'. "
+                    f"Valid options: {', '.join(valid_profiles)}"
+                )
+        return v
 
     @model_validator(mode="after")
     def validate_queue_parameters(self) -> "ServerConfig":
