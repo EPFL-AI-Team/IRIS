@@ -163,28 +163,28 @@ export function TimelineVisualization() {
     }));
   }, [results, getSegmentColor, timestampToX, durationToWidth]); // Added dependencies
 
-  // Build ground truth cards
-  const groundTruthCards = useMemo((): TimelineCard[] => {
-    return groundTruth.map((ann, i) => ({
-      id: `gt-${i}`,
-      startMs: ann.start_ms,
-      endMs: ann.end_ms,
-      xPercent: timestampToX(ann.start_ms),
-      widthPercent: durationToWidth(ann.end_ms - ann.start_ms),
-      overlapDepth: 0,
-      color: "bg-blue-500",
-      type: "ground_truth",
-      label: ann.action,
-      sublabel: `${ann.tool} → ${ann.target}`,
-      details: {
-        action: ann.action,
-        tool: ann.tool,
-        target: ann.target,
-        context: ann.context,
-        time: `${ann.start_sec.toFixed(1)}s - ${ann.end_sec.toFixed(1)}s`,
-      },
-    }));
-  }, [groundTruth, timestampToX, durationToWidth]); // Added dependencies
+  // Build ground truth cards - COMMENTED OUT
+  // const groundTruthCards = useMemo((): TimelineCard[] => {
+  //   return groundTruth.map((ann, i) => ({
+  //     id: `gt-${i}`,
+  //     startMs: ann.start_ms,
+  //     endMs: ann.end_ms,
+  //     xPercent: timestampToX(ann.start_ms),
+  //     widthPercent: durationToWidth(ann.end_ms - ann.start_ms),
+  //     overlapDepth: 0,
+  //     color: "bg-blue-500",
+  //     type: "ground_truth",
+  //     label: ann.action,
+  //     sublabel: `${ann.tool} → ${ann.target}`,
+  //     details: {
+  //       action: ann.action,
+  //       tool: ann.tool,
+  //       target: ann.target,
+  //       context: ann.context,
+  //       time: `${ann.start_sec.toFixed(1)}s - ${ann.end_sec.toFixed(1)}s`,
+  //     },
+  //   }));
+  // }, [groundTruth, timestampToX, durationToWidth]); // Added dependencies
 
   const maxOverlapDepth = useMemo(() => {
     return Math.max(0, ...inferenceCards.map((c) => c.overlapDepth));
@@ -215,7 +215,7 @@ export function TimelineVisualization() {
   }
 
   // --- COMPACT MODE SETTINGS ---
-  const gtRowHeight = 28;
+  // const gtRowHeight = 28; // Commented out - ground truth row disabled
   const infRowHeight = 32 + maxOverlapDepth * 12;
 
   return (
@@ -228,7 +228,8 @@ export function TimelineVisualization() {
         <span>{(videoDuration / 1000).toFixed(1)}s</span>
       </div>
 
-      {/* Ground Truth Row */}
+      {/* Ground Truth Row - COMMENTED OUT */}
+      {/*
       <div className="space-y-0.5">
         <div className="text-[10px] font-medium text-muted-foreground px-1">
           Ground Truth ({groundTruthCards.length})
@@ -261,13 +262,13 @@ export function TimelineVisualization() {
               )}
             </div>
           ))}
-          {/* Playhead */}
           <div
             className="absolute top-0 bottom-0 w-px bg-foreground pointer-events-none z-20"
             style={{ left: `${timestampToX(currentPosition)}%` }}
           />
         </div>
       </div>
+      */}
 
       {/* Inference Results Row */}
       <div className="space-y-0.5">
@@ -318,8 +319,9 @@ export function TimelineVisualization() {
         </div>
       </div>
 
-      {/* Legend */}
+      {/* Legend - Ground truth items commented out */}
       <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground px-1 pt-1">
+        {/*
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-sm bg-blue-500" />
           <span>Ground Truth</span>
@@ -336,6 +338,7 @@ export function TimelineVisualization() {
           <div className="w-2 h-2 rounded-sm bg-gray-500" />
           <span>No GT</span>
         </div>
+        */}
       </div>
     </div>
   );

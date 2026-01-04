@@ -7,7 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Database, FileJson } from "lucide-react";
+import { Database } from "lucide-react";
+// import { FileJson } from "lucide-react"; // Commented out - ground truth feature disabled
 
 export function DatasetSelector() {
   const datasets = useAppStore((state) => state.availableDatasets);
@@ -16,12 +17,13 @@ export function DatasetSelector() {
   );
   const selectedVideo = useAppStore((state) => state.selectedVideoFile);
   const setSelectedVideo = useAppStore((state) => state.setSelectedVideoFile);
-  const selectedAnnotation = useAppStore(
-    (state) => state.selectedAnnotationFile
-  );
-  const setSelectedAnnotation = useAppStore(
-    (state) => state.setSelectedAnnotationFile
-  );
+  // Commented out - ground truth feature disabled
+  // const selectedAnnotation = useAppStore(
+  //   (state) => state.selectedAnnotationFile
+  // );
+  // const setSelectedAnnotation = useAppStore(
+  //   (state) => state.setSelectedAnnotationFile
+  // );
 
   useEffect(() => {
     const fetchDatasets = async () => {
@@ -64,6 +66,7 @@ export function DatasetSelector() {
       </div>
 
       {/* Annotation Selector - Stacked */}
+      {/* COMMENTED OUT: Ground truth annotations
       <div className="space-y-1.5">
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <FileJson className="w-3.5 h-3.5" />
@@ -97,6 +100,7 @@ export function DatasetSelector() {
           </SelectContent>
         </Select>
       </div>
+      */}
     </div>
   );
 }
