@@ -32,38 +32,8 @@ class StartRequest(BaseModel):
     overlap_frames: int = 4
 
 
-class SessionConfig(BaseModel):
-    frames_per_segment: int = 8
-    overlap_frames: int = 4
-    # camera_mode removed - server-only camera selection
-
-
-# Global store for active sessions (Simple in-memory for demo)
-# Map session_id -> {"config": dict, "created_at": float}
-session_store: dict[str, dict] = {}
-
 # Global store for Gemini API key (in-memory, optional alternative to env vars)
 gemini_api_key_store: str | None = None
-
-
-@api_router.post("/session/init")
-async def initialize_session(config: SessionConfig) -> dict[str, Any]:
-    """Initialize a session with configuration before streaming starts."""
-    session_id = str(uuid.uuid4())
-
-    # Store config
-    session_store[session_id] = {
-        "config": config.model_dump(),
-        "created_at": time.time(),
-    }
-
-    # If using SERVER camera, we can start the process here immediately (optional, or kept in /start)
-    # For now, we'll keep /start for server camera logic to minimize disruption,
-    # but strictly speaking, this is where we establish the intent.
-
-    logger.info(f"Initialized session {session_id} with config {config}")
-
-    return {"session_id": session_id, "status": "ready"}
 
 
 @api_router.get("/status")
@@ -137,68 +107,6 @@ async def get_config_defaults() -> dict[str, Any]:
         "video": state.config.video.model_dump(),
         "segment": state.config.segment.model_dump(),
     }
-
-
-@api_router.post("/start")
-async def start_streaming(request: StartRequest | None = None) -> dict[str, Any]:
-    """Start camera and streaming."""
-    state = get_app_state()
-    # Use defaults if no body provided
-    if request is None:
-        request = StartRequest()
-
-    # Start camera
-    if state.camera is None:
-        state.camera = CameraCapture(
-            camera_index=state.config.video.camera_index,
-            width=state.config.video.width,
-            height=state.config.video.height,
-            fps=state.config.video.capture_fps,
-        )
-        if not state.camera.start():
-            return {"status": "error", "message": "Failed to start camera"}
-
-    # Start streaming
-    def store_result(result: dict[str, Any]) -> None:
-        """Callback to store inference results."""
-        state.results_history.append(result)
-        if len(state.results_history) > state.max_results_history:
-            state.results_history.pop(0)
-
-    state.streaming_client = StreamingClient(
-        state.config.server.ws_url,
-        state.camera,
-        result_callback=store_result,
-        session_config={
-            "frames_per_segment": request.frames_per_segment,
-            "overlap_frames": request.overlap_frames,
-        },
-    )
-
-    task = asyncio.create_task(state.streaming_client.stream())
-    state.streaming_task = task
-
-    return {"status": "ok", "message": "Streaming started"}
-
-
-@api_router.post("/stop")
-async def stop_streaming() -> dict[str, str]:
-    """Stop streaming and camera."""
-    state = get_app_state()
-
-    if state.streaming_client:
-        state.streaming_client.stop()
-        state.streaming_client = None
-
-    if state.camera:
-        state.camera.stop()
-        state.camera = None
-
-    # Clear session state
-    state.current_session = None
-    state.session_id = None
-
-    return {"status": "ok", "message": "Stopped"}
 
 
 @api_router.get("/cameras")
@@ -308,20 +216,7 @@ async def get_datasets() -> dict[str, Any]:
         except Exception as e:
             logger.warning(f"Failed to read video metadata for {video_path.name}: {e}")
 
-    annotations = []
-    for jsonl_path in videos_dir.glob("*.jsonl"):
-        try:
-            line_count = sum(1 for _ in jsonl_path.open())
-            annotations.append({
-                "filename": jsonl_path.name,
-                "path": f"/static/videos/{jsonl_path.name}",
-                "size_kb": jsonl_path.stat().st_size / 1024,
-                "line_count": line_count,
-            })
-        except Exception as e:
-            logger.warning(f"Failed to read annotation file {jsonl_path.name}: {e}")
-
-    return {"videos": videos, "annotations": annotations}
+    return {"videos": videos}
 
 
 @api_router.get("/videos/{filename}")
@@ -347,103 +242,15 @@ async def get_video(filename: str) -> FileResponse:
     )
 
 
-def parse_openai_chat_jsonl(jsonl_path: Path) -> list[dict[str, Any]]:
-    r"""Parse OpenAI Chat format JSONL to extract ground truth annotations.
-
-    JSONL format:
-    {
-      "messages": [
-        {
-          "role": "user",
-          "content": [
-            {"type": "image", "image": "/frames/VideoID_58.6_59.6/frame_00.jpg"},
-            ...
-          ]
-        },
-        {
-          "role": "assistant",
-          "content": [{"type": "text", "text": "{\"action\": \"eject\", \"tool\": \"pipette\", ...}"}]
-        }
-      ]
-    }
-
-    Extract start/end from image path regex: _(\d+\.\d+)_(\d+\.\d+)/
-    """
-    annotations = []
-    for line_num, line in enumerate(jsonl_path.open(), start=1):
-        try:
-            entry = json.loads(line)
-            messages = entry.get("messages", [])
-
-            # Find user message with images
-            user_msg = next((m for m in messages if m.get("role") == "user"), None)
-            if not user_msg:
-                continue
-
-            # Extract timestamps from first image path
-            content = user_msg.get("content", [])
-            first_image = next((c for c in content if c.get("type") == "image"), None)
-            if not first_image:
-                continue
-
-            image_path = first_image.get("image", "")
-            # Regex: _(digits.digits)_(digits.digits)/
-            match = re.search(r"_(\d+\.\d+)_(\d+\.\d+)/", image_path)
-            if not match:
-                continue
-
-            start_sec = float(match.group(1))
-            end_sec = float(match.group(2))
-
-            # Find assistant message with labels
-            assistant_msg = next(
-                (m for m in messages if m.get("role") == "assistant"), None
-            )
-            if not assistant_msg:
-                continue
-
-            # Parse JSON from assistant text
-            assistant_content = assistant_msg.get("content", [])
-            text_item = next(
-                (c for c in assistant_content if c.get("type") == "text"), None
-            )
-            if not text_item:
-                continue
-
-            text = text_item.get("text", "{}")
-            labels = json.loads(text)
-
-            # Create standardized annotation
-            annotations.append({
-                "start_ms": int(start_sec * 1000),
-                "end_ms": int(end_sec * 1000),
-                "start_sec": start_sec,
-                "end_sec": end_sec,
-                "action": labels.get("action", "unknown"),
-                "tool": labels.get("tool", "unknown"),
-                "target": labels.get("target", "unknown"),
-                "context": labels.get("context", "unknown"),
-            })
-        except Exception as e:
-            logger.warning(
-                f"Failed to parse annotation line {line_num} in {jsonl_path.name}: {e}"
-            )
-            continue
-
-    return sorted(annotations, key=lambda x: x["start_sec"])
-
-
 @api_router.post("/analysis/start")
 async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     """Start video analysis job.
 
     Request body:
         video_filename: str - Name of video file in static/videos/
-        annotation_filename: str | None - Name of annotation JSONL file
-        segment_time: float - Duration of each segment in seconds (T)
-        frames_per_segment: int - Number of frames per segment (s)
-        overlap_frames: int - Number of frames to overlap between segments
-        simulation_fps: float (deprecated) - Falls back to this if segment params not provided
+        segment_time: float - Duration of each segment in seconds (T) [default: 3.0]
+        frames_per_segment: int - Number of frames per segment (s) [default: 8]
+        overlap_frames: int - Number of frames to overlap between segments [default: 4]
     """
     state = get_app_state()
 
@@ -451,27 +258,13 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     if not video_filename:
         return {"status": "error", "message": "video_filename is required"}
 
-    annotation_filename = request.get("annotation_filename")
+    # Extract segment configuration with defaults
+    segment_time = float(request.get("segment_time", 3.0))
+    frames_per_segment = int(request.get("frames_per_segment", 8))
+    overlap_frames = int(request.get("overlap_frames", 4))
 
-    # Extract segment configuration (new params) or fall back to simulation_fps
-    segment_time = request.get("segment_time")
-    frames_per_segment = request.get("frames_per_segment")
-    overlap_frames = request.get("overlap_frames", 4)
-
-    if segment_time is not None and frames_per_segment is not None:
-        # New segment-based configuration
-        segment_time = float(segment_time)
-        frames_per_segment = int(frames_per_segment)
-        overlap_frames = int(overlap_frames)
-        # Derive FPS from segment config: FPS = s / T
-        simulation_fps = frames_per_segment / segment_time if segment_time > 0 else 5.0
-    else:
-        # Fall back to old simulation_fps parameter
-        simulation_fps = request.get("simulation_fps", 5.0)
-        # Infer segment config from fps (assume T=1s)
-        segment_time = 1.0
-        frames_per_segment = int(simulation_fps)
-        overlap_frames = max(0, frames_per_segment // 2)
+    # Derive FPS from segment config: FPS = s / T
+    simulation_fps = frames_per_segment / segment_time if segment_time > 0 else 2.67
 
     # Validate video file exists
     video_path = Path(__file__).parent / "static" / "videos" / video_filename
@@ -518,22 +311,6 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     if not state.analysis_video_capture.start():
         state.analysis_video_capture = None
         return {"status": "error", "message": "Failed to open video file"}
-
-    # Load and parse annotations if provided (OpenAI Chat format)
-    if annotation_filename:
-        annotation_path = (
-            Path(__file__).parent / "static" / "videos" / annotation_filename
-        )
-        if annotation_path.exists():
-            state.analysis_annotations = parse_openai_chat_jsonl(annotation_path)
-            logger.info(
-                f"Loaded {len(state.analysis_annotations)} annotations from {annotation_filename}"
-            )
-        else:
-            logger.warning(f"Annotation file not found: {annotation_filename}")
-            state.analysis_annotations = []
-    else:
-        state.analysis_annotations = []
 
     # [FIX] Define total_frames (native count)
     total_frames = state.analysis_video_capture.total_frames
