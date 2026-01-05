@@ -378,8 +378,8 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Row 3: Session Metrics (when active) */}
-      {sessionMetrics && isStreaming && (
+      {/* Row 3: Session Metrics (when available) */}
+      {sessionMetrics && (
         <div className="px-4 py-1.5 bg-muted/30 border-t flex items-center gap-6 text-sm">
           <span className="text-muted-foreground">
             Elapsed:{" "}
