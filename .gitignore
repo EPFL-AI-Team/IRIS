@@ -699,3 +699,7 @@ wandb
 scripts/runai-command.sh
 Claude.md
 GEMINI.md
+src/iris/client/web/static/videos/dataset-test-video-shorter-shortest.mp4
+src/iris/client/web/static/videos/iris-full-demo-cut.mp4
+src/iris/client/web/static/videos/iris-full-demo-uncut.mp4
+src/iris/client/web/static/videos/iris-video-demo-with-commentary.mp4
