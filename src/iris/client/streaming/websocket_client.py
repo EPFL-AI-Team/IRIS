@@ -210,6 +210,7 @@ class StreamingClient:
 
                 await ws.send(json.dumps(message))
                 self.frame_count += 1
+                logger.info(f"Sent frame {self.frame_count} to server.")
 
                 # Precise sleep to maintain target FPS
                 # Subtract the time spent capturing and sending

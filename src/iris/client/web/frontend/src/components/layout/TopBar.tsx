@@ -56,15 +56,6 @@ export function TopBar() {
   const { startInference, stopInference, clearQueue, resetSession } =
     useClientWebSocket();
 
-  // Reset session when switching tabs (if not streaming)
-  useEffect(() => {
-    const hasData = results.length > 0 || analysisResults.length > 0;
-    if (hasData && !isStreaming) {
-      console.log("Tab changed, resetting session to clear stale data");
-      resetSession();
-    }
-  }, [activeTab, isStreaming, resetSession, results.length, analysisResults.length]);
-
   // Client-side elapsed timer
   useEffect(() => {
     if (!isStreaming) {
