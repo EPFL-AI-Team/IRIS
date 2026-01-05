@@ -394,15 +394,16 @@ export function useClientWebSocket() {
 
   // Command helpers
   const startInference = useCallback(() => {
-    console.log("startInference called, config:", segmentConfig);
-    send({
+    const message = {
       type: "start",
       config: {
         frames_per_segment: segmentConfig.framesPerSegment,
         overlap_frames: segmentConfig.overlapFrames,
         segment_time: segmentConfig.segmentTime,
       },
-    });
+    };
+    console.log(">>> VERIFYING PAYLOAD:", message);
+    send(message);
   }, [send, segmentConfig]);
 
   const stopInference = useCallback(() => {

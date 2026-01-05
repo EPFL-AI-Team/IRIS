@@ -288,7 +288,7 @@ export function useAnalysisWebSocket() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (wsRef.current) {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.close();
         wsRef.current = null;
       }
