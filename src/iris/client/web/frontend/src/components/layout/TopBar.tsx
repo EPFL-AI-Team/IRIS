@@ -49,8 +49,6 @@ export function TopBar() {
   const serverConfig = useAppStore((state) => state.serverConfig);
   const setServerConfig = useAppStore((state) => state.setServerConfig);
   const reportStatus = useAppStore((state) => state.reportStatus);
-  const results = useAppStore((state) => state.results);
-  const analysisResults = useAppStore((state) => state.analysisResults);
 
   // WebSocket connection for sending commands
   const { startInference, stopInference, clearQueue, resetSession } =
