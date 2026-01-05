@@ -48,6 +48,7 @@ export function useClientWebSocket() {
   const addAnalysisLog = useAppStore((state) => state.addAnalysisLog);
   const setLogs = useAppStore((state) => state.setLogs);
   const setResults = useAppStore((state) => state.setResults);
+  const resetSessionState = useAppStore((state) => state.resetSessionState);
 
   // Store state
   const segmentConfig = useAppStore((state) => state.segmentConfig);
@@ -161,6 +162,10 @@ export function useClientWebSocket() {
         case "session_ack": {
           const sessionId = data.session_id as string;
           const config = data.config as Record<string, unknown> | undefined;
+          
+          // Clear ALL local state before setting new session info
+          resetSessionState();
+          
           setSessionState({
             sessionId,
             config: config
@@ -355,6 +360,7 @@ export function useClientWebSocket() {
       activeTab,
       restoreSessionData,
       results,
+      resetSessionState,
     ]
   );
 
@@ -408,8 +414,9 @@ export function useClientWebSocket() {
   }, [send]);
 
   const resetSession = useCallback(() => {
+    resetSessionState();
     send({ type: "reset_session" });
-  }, [send]);
+  }, [send, resetSessionState]);
 
   const startAnalysis = useCallback(
     (
