@@ -179,7 +179,12 @@ class StreamingClient:
 
     async def _send_loop(self, ws: ClientConnection) -> None:
         """Loop for sending frames."""
+        target_interval = (
+            1.0 / self.capture_fps if self.capture_fps > 0 else 0.01
+        )
+        
         while self.running:
+            loop_start_time = time.time()
             try:
                 frame_jpeg = self.camera.get_frame_jpeg(quality=self.jpeg_quality)
                 if frame_jpeg is None:
@@ -206,11 +211,12 @@ class StreamingClient:
                 await ws.send(json.dumps(message))
                 self.frame_count += 1
 
-                # Throttle to target FPS (e.g., 5 FPS = 0.2s sleep)
-                target_interval = (
-                    1.0 / self.capture_fps if self.capture_fps > 0 else 0.01
-                )
-                await asyncio.sleep(target_interval)
+                # Precise sleep to maintain target FPS
+                # Subtract the time spent capturing and sending
+                processing_time = time.time() - loop_start_time
+                sleep_time = max(0.0, target_interval - processing_time)
+                
+                await asyncio.sleep(sleep_time)
 
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(

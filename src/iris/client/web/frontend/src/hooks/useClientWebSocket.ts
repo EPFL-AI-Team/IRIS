@@ -394,6 +394,7 @@ export function useClientWebSocket() {
       config: {
         frames_per_segment: segmentConfig.framesPerSegment,
         overlap_frames: segmentConfig.overlapFrames,
+        segment_time: segmentConfig.segmentTime,
       },
     });
   }, [send, segmentConfig]);

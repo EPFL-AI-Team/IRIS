@@ -258,6 +258,8 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
     if not video_filename:
         return {"status": "error", "message": "video_filename is required"}
 
+    annotation_filename = request.get("annotation_filename")
+
     # Extract segment configuration with defaults
     segment_time = float(request.get("segment_time", 3.0))
     frames_per_segment = int(request.get("frames_per_segment", 8))
