@@ -156,21 +156,16 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       results: [],
       logs: [],
       // Clear analysis state as well since they are in the same store
-      // @ts-expect-error - reaching into AnalysisSlice
       analysisResults: [],
-      // @ts-expect-error
       analysisLogs: [],
-      // @ts-expect-error
       analysisJobId: null,
-      // @ts-expect-error
       analysisProgress: null,
-      // @ts-expect-error
       analysisMode: "idle",
       // Reset report state
       reportStatus: "idle",
       reportContent: null,
       reportError: null,
-    }),
+    } as unknown as UISlice),
 
   // Session metrics
   sessionMetrics: null,
