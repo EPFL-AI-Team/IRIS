@@ -1,30 +1,35 @@
-"""IRIS Inference Server - receives frames, runs VLM inference."""
+"""WebSocket routes for IRIS Inference Server."""
 
 import asyncio
 import base64
 import json
 import logging
-import os
-import signal
-import sys
-import threading
 import time
 import uuid
-import warnings
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from iris.config import _yaml_config
 from iris.server.config import ServerConfig
 from iris.server.dependencies import get_server_state
 from iris.server.frame_buffer import FrameBuffer
-from iris.server.inference.executor import InferenceExecutor
-from iris.server.jobs.manager import JobManager
 from iris.server.logging_handler import WebSocketLogHandler
+
+logger = logging.getLogger(__name__)
+config = ServerConfig()
+
+# Initialize log streaming handler if enabled
+log_streaming_handler: WebSocketLogHandler | None = None
+if config.enable_log_streaming:
+    log_streaming_handler = WebSocketLogHandler(
+        min_level=config.log_streaming_min_level
+    )
+    # Add to root logger to capture all logs
+    logging.getLogger().addHandler(log_streaming_handler)
+    logger.info("Log streaming enabled (min level: %s)", config.log_streaming_min_level)
+
+router = APIRouter()
 
 
 @dataclass
@@ -96,312 +101,7 @@ class SessionState:
         }
 
 
-# Suppress known warnings
-warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # Suppress tokenizers warning
-
-# Configure logging - reduce noise from transformers/HF
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-logger = logging.getLogger(__name__)
-
-# Reduce verbosity from external libraries
-logging.getLogger("transformers").setLevel(logging.WARNING)
-logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
-
-config = ServerConfig()
-
-# Initialize log streaming handler if enabled
-log_streaming_handler: WebSocketLogHandler | None = None
-if config.enable_log_streaming:
-    log_streaming_handler = WebSocketLogHandler(
-        min_level=config.log_streaming_min_level
-    )
-    # Add to root logger to capture all logs
-    logging.getLogger().addHandler(log_streaming_handler)
-    logger.info("Log streaming enabled (min level: %s)", config.log_streaming_min_level)
-
-# Graceful shutdown management
-shutdown_event = asyncio.Event()
-force_shutdown_event = asyncio.Event()
-shutdown_count = 0
-
-
-def _queue_status_snapshot() -> dict[str, int]:
-    """Return a lightweight snapshot of queue/active job counts.
-
-    Note: This is a utility function used by both HTTP endpoints and the
-    signal handler. Shutdown checks should be done at the endpoint level.
-    """
-    state = get_server_state()
-    queue_depth = state.queue.queue.qsize() if state.queue else 0
-    active_jobs = (
-        len(state.job_manager.active_jobs)
-        if state.job_manager and state.job_manager.active_jobs is not None
-        else 0
-    )
-    pending_results = state.queue.results.qsize() if state.queue else 0
-    return {
-        "queue_depth": queue_depth,
-        "active_jobs": active_jobs,
-        "pending_results": pending_results,
-    }
-
-
-def _wait_for_drain_and_shutdown() -> None:
-    """Background thread that waits for queue drain then triggers shutdown."""
-    while True:
-        time.sleep(0.5)
-        if force_shutdown_event.is_set():
-            return  # Already forcing shutdown
-        status = _queue_status_snapshot()
-        if status["active_jobs"] == 0 and status["queue_depth"] == 0:
-            logger.info("All queued jobs completed - initiating server shutdown")
-            # Send SIGINT to self - default handler will trigger uvicorn shutdown
-            os.kill(os.getpid(), signal.SIGINT)
-            return
-
-
-def handle_shutdown_signal(signum: int, frame: Any) -> None:
-    """Handle SIGINT/SIGTERM for graceful shutdown.
-
-    On first signal: Log status, mark shutdown, wait for ALL queued jobs to complete.
-    On second signal: Force immediate shutdown.
-    """
-    global shutdown_count
-    shutdown_count += 1
-
-    state = get_server_state()
-    state.shutting_down = True
-
-    # Capture quick stats to help the operator decide whether to wait or force-exit
-    status = _queue_status_snapshot()
-
-    if shutdown_count == 1:
-        logger.info(
-            "Received %s. Graceful shutdown initiated; active_jobs=%d, queue_depth=%d, pending_results=%d.",
-            signal.Signals(signum).name,
-            status["active_jobs"],
-            status["queue_depth"],
-            status["pending_results"],
-        )
-
-        shutdown_event.set()
-        total_pending = status["active_jobs"] + status["queue_depth"]
-
-        if total_pending > 0:
-            logger.info(
-                "Waiting for %d queued jobs to complete. Press Ctrl+C again to force shutdown.",
-                total_pending,
-            )
-            # Restore default handlers so second Ctrl+C triggers immediate uvicorn shutdown
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            # Start background thread to monitor queue and auto-shutdown when drained
-            threading.Thread(target=_wait_for_drain_and_shutdown, daemon=True).start()
-        else:
-            # Queue already empty, trigger shutdown immediately
-            logger.info("Queue already empty - shutting down")
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            os.kill(os.getpid(), signum)
-        return
-
-    # shutdown_count >= 2 shouldn't reach here since we restore default handlers
-    # but handle it just in case
-    logger.warning(
-        "Received %s again. Force shutdown.",
-        signal.Signals(signum).name,
-    )
-    force_shutdown_event.set()
-
-
-async def global_result_drainer(state: Any) -> None:
-    """Drain global results queue to prevent memory leaks."""
-    try:
-        while True:
-            _job = await state.queue.results.get()
-            state.queue.results.task_done()
-            # Results are handled by per-job callbacks
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        logger.error(f"Global result drainer error: {e}")
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Manage startup and shutdown."""
-    # Startup
-    state = get_server_state()
-
-    # Register signal handlers
-    signal.signal(signal.SIGINT, handle_shutdown_signal)
-    signal.signal(signal.SIGTERM, handle_shutdown_signal)
-    logger.info("Signal handlers registered for graceful shutdown")
-
-    logger.info("Starting inference executor with per-worker model loading...")
-    state.queue = InferenceExecutor(
-        max_queue_size=config.max_queue_size,
-        num_workers=config.num_workers,
-        model_id=config.model_id,
-        hardware=config.vlm_hardware,
-        model_dtype=config.model_dtype,
-    )
-    await state.queue.start()
-
-    # Start global result drainer
-    result_drainer_task = asyncio.create_task(global_result_drainer(state))
-
-    # Initialize metrics collector if enabled
-    if config.enable_metrics:
-        from iris.server.metrics import MetricsCollector
-
-        state.metrics = MetricsCollector(
-            persist=True,
-            log_dir="logs/metrics",
-            collect_gpu_metrics=True,
-        )
-        logger.info("Metrics collection enabled")
-
-    # Initialize job manager
-    state.job_manager = JobManager(state)
-    logger.info("Job manager initialized")
-
-    state.model_loaded = True
-    logger.info("Server ready!")
-
-    yield
-
-    # Shutdown
-    logger.info("Shutting down...")
-
-    # Stop global result drainer
-    result_drainer_task.cancel()
-    try:
-        await result_drainer_task
-    except asyncio.CancelledError:
-        pass
-
-    # Close metrics collector
-    if state.metrics:
-        state.metrics.close()
-        logger.info("Metrics collector closed")
-
-    if state.queue:
-        status = _queue_status_snapshot()
-        logger.info(
-            "Stopping executor (active_jobs=%d, queue_depth=%d)",
-            status["active_jobs"],
-            status["queue_depth"],
-        )
-        await state.queue.stop()
-    logger.info("Server stopped.")
-
-
-app = FastAPI(title="IRIS Inference Server", lifespan=lifespan)
-
-
-@app.get("/api/config/defaults")
-async def get_config_defaults() -> dict:
-    """Return configuration defaults for frontend initialization.
-
-    Returns:
-        Dictionary with server, video, and segment configuration defaults.
-    """
-    return {
-        "server": {
-            "host": config.host,
-            "port": config.port,
-            "model_id": config.model_id,
-        },
-        "video": {
-            "width": _yaml_config.get("client", {}).get("video", {}).get("width", 640),
-            "height": _yaml_config.get("client", {})
-            .get("video", {})
-            .get("height", 480),
-            "capture_fps": _yaml_config.get("client", {})
-            .get("video", {})
-            .get("capture_fps", 10),
-            "jpeg_quality": _yaml_config.get("client", {})
-            .get("video", {})
-            .get("jpeg_quality", 80),
-            "camera_index": _yaml_config.get("client", {})
-            .get("video", {})
-            .get("camera_index", 0),
-        },
-        "segment": {
-            "segment_time": _yaml_config.get("client", {})
-            .get("segment", {})
-            .get("segment_time", 1.0),
-            "frames_per_segment": _yaml_config.get("client", {})
-            .get("segment", {})
-            .get("frames_per_segment", 8),
-            "overlap_frames": _yaml_config.get("client", {})
-            .get("segment", {})
-            .get("overlap_frames", 4),
-        },
-    }
-
-
-@app.post("/api/queue/clear")
-async def clear_queue() -> dict:
-    """Clear all pending inference jobs and free GPU memory.
-
-    This endpoint clears the inference queue and triggers garbage collection
-    to free any associated GPU memory. Use this when you want to stop
-    processing and start fresh without waiting for queued jobs to complete.
-
-    Returns:
-        Dictionary with cleared count and status.
-    """
-    import gc
-
-    state = get_server_state()
-
-    # Clear the job queue
-    cleared_count = 0
-    if state.queue and state.queue.queue:
-        while not state.queue.queue.empty():
-            try:
-                state.queue.queue.get_nowait()
-                cleared_count += 1
-            except asyncio.QueueEmpty:
-                break
-
-    # Force garbage collection to free memory
-    gc.collect()
-
-    # Clear GPU cache if torch/CUDA is available
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            logger.info("GPU cache cleared")
-    except ImportError:
-        pass  # torch not available
-
-    logger.info(f"Cleared {cleared_count} jobs from queue")
-    return {"cleared": cleared_count, "status": "ok"}
-
-
-@app.get("/health")
-async def health_check() -> dict:
-    """Health check endpoint for monitoring.
-
-    Returns:
-        Dictionary with status and queue depth.
-    """
-    state = get_server_state()
-    queue_depth = state.queue.queue.qsize() if state.queue and state.queue.queue else 0
-    return {
-        "status": "ok",
-        "queue_depth": queue_depth,
-        "model_loaded": state.model_loaded,
-    }
-
-
-@app.websocket("/ws/stream")
+@router.websocket("/ws/stream")
 async def inference_endpoint(websocket: WebSocket) -> None:
     """Receive frames and return inference results.
 
@@ -506,7 +206,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
 
         try:
             # Wait for session_config as first message
-            logger.info(f"Waiting for session_config from client...")
+            logger.info("Waiting for session_config from client...")
 
             while True:
                 # Check if server is shutting down - exit cleanly
@@ -573,7 +273,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         logger.info(f"Promoting {len(frame_buffer)} partial frames to batch accumulator")
                         buffered_frames = frame_buffer.get_batch()
                         buffered_timestamps = frame_buffer.get_metadata()
-                        
+
                         video_time_ms = 0.0
                         if buffered_timestamps and buffered_timestamps[0] is not None:
                             video_time_ms = buffered_timestamps[0] * 1000.0
@@ -597,7 +297,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     if batch_accumulator:
                         from iris.server.inference.jobs.batch_video import BatchVideoJob
                         final_batch_id = f"{connection_job_id}_batch_final"
-                        
+
                         logger.info(f"Flushing {len(batch_accumulator)} segments in final batch")
                         final_batch = BatchVideoJob(
                             job_id=final_batch_id,
@@ -607,7 +307,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         )
                         final_batch.result_callback = sync_result_callback
                         final_batch.log_callback = log_callback
-                        
+
                         await state.queue.submit(final_batch)
                         last_submitted_job = final_batch
                         batch_accumulator.clear()
@@ -616,7 +316,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                     if frame_buffer and len(frame_buffer) > 0:
                         from iris.server.inference.jobs import VideoJob
                         partial_id = f"{connection_job_id}_batch_partial"
-                        
+
                         logger.info(f"Flushing {len(frame_buffer)} partial frames")
                         # Calculate timestamp for partial batch
                         buffered_timestamps = frame_buffer.get_metadata()
@@ -635,7 +335,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                             video_time_ms=video_time_ms,
                         )
                         batch_job.result_callback = sync_result_callback
-                        
+
                         await state.queue.submit(batch_job)
                         last_submitted_job = batch_job
 
@@ -815,7 +515,9 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         # Check if batch ready
                         if len(batch_accumulator) >= batch_cfg.batch_size:
                             # Create BatchVideoJob
-                            from iris.server.inference.jobs.batch_video import BatchVideoJob
+                            from iris.server.inference.jobs.batch_video import (
+                                BatchVideoJob,
+                            )
 
                             batch_job_id = f"{connection_job_id}_batch_{batch_counter}"
                             batch_job = BatchVideoJob(
@@ -943,7 +645,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                 await asyncio.sleep(1.0)
                 if session and connection_state["active"]:
                     queue_depth = state.queue.queue.qsize() if state.queue else 0
-                    
+
                     # Always send metrics to keep timer alive
                     metrics = session.to_metrics(queue_depth)
                     await outgoing_queue.put(metrics)
@@ -983,7 +685,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
         logger.info(f"WebSocket cleanup complete for session {session_id}")
 
 
-@app.websocket("/ws/logs")
+@router.websocket("/ws/logs")
 async def log_streaming_endpoint(websocket: WebSocket) -> None:
     """Stream server logs to connected clients."""
     if not config.enable_log_streaming or log_streaming_handler is None:
@@ -1016,19 +718,3 @@ async def log_streaming_endpoint(websocket: WebSocket) -> None:
             "Log streaming client removed (remaining: %d)",
             log_streaming_handler.get_connection_count(),
         )
-
-
-def main() -> None:
-    """Entry point for server."""
-    import uvicorn
-
-    try:
-        uvicorn.run(app, host=config.host, port=config.port, log_level="info")
-    except KeyboardInterrupt:
-        # Handle Ctrl+C during uvicorn startup
-        logger.info("Server interrupted during startup. Exiting...")
-        sys.exit(0)
-
-
-if __name__ == "__main__":
-    main()

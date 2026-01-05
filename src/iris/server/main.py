@@ -4,7 +4,6 @@ This module provides a clean entry point for the IRIS inference server,
 orchestrating all components including routes, lifecycle management, and state.
 """
 
-import asyncio
 import logging
 import os
 import signal
@@ -21,7 +20,7 @@ from iris.server.inference.executor import InferenceExecutor
 from iris.server.jobs.manager import JobManager
 from iris.server.lifecycle import LifecycleHandler
 from iris.server.logging_handler import WebSocketLogHandler
-from iris.server.routes import jobs, system
+from iris.server.routes import config as config_routes, jobs, system, websocket
 
 # Suppress known warnings
 warnings.filterwarnings("ignore", message=".*torchao.*incompatible torch version.*")
@@ -124,7 +123,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 # Create FastAPI application
 app = FastAPI(title="IRIS Inference Server", lifespan=lifespan)
 
-# Include routers (WebSocket routes are in app.py, the main entry point)
+# Include routers
+app.include_router(websocket.router, tags=["websocket"])
+app.include_router(config_routes.router, tags=["config"])
 app.include_router(jobs.router, tags=["jobs"])
 app.include_router(system.router, tags=["system"])
 

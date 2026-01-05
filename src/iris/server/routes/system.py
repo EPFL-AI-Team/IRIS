@@ -12,11 +12,17 @@ config = ServerConfig()
 router = APIRouter()
 
 @router.get("/health")
-async def health() -> dict[str, str | bool]:
-    """Health check endpoint."""
+async def health() -> dict[str, str | bool | int]:
+    """Health check endpoint for monitoring.
+
+    Returns:
+        Dictionary with status, model_loaded, and queue depth.
+    """
     state = get_server_state()
+    queue_depth = state.queue.queue.qsize() if state.queue and state.queue.queue else 0
     return {
-        "status": "healthy" if state.model_loaded else "loading",
+        "status": "ok",
+        "queue_depth": queue_depth,
         "model_loaded": state.model_loaded,
     }
 

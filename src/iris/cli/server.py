@@ -161,13 +161,13 @@ Examples:
         print(f"Configuration validation failed: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Patch the global config in iris.server.app before starting
-    import iris.server.app
-    iris.server.app.config = new_config
+    # Patch the global config in iris.server.main before starting
+    import iris.server.main
+    iris.server.main.config = new_config
 
     # Start server with proper error handling
     try:
-        from iris.server.app import main
+        from iris.server.main import main
         main()
     except KeyboardInterrupt:
         # Clean exit on Ctrl+C
