@@ -1,6 +1,5 @@
 import type { StateCreator } from "zustand";
 import type {
-  CameraMode,
   ServerConfig,
   ClientVideoConfig,
   PreviewFrame,
@@ -9,10 +8,6 @@ import type {
 } from "../../types";
 
 export interface CameraSlice {
-  // Camera mode
-  cameraMode: CameraMode;
-  setCameraMode: (mode: CameraMode) => void;
-
   // Preview frame from backend USB camera
   previewFrame: PreviewFrame | null;
   setPreviewFrame: (frame: string, timestamp: number) => void;
@@ -78,10 +73,6 @@ export const createCameraSlice: StateCreator<
   [],
   CameraSlice
 > = (set) => ({
-  // Camera mode - default to server (USB camera on backend)
-  cameraMode: "server",
-  setCameraMode: (mode) => set({ cameraMode: mode }),
-
   // Preview frame from backend USB camera
   previewFrame: null,
   setPreviewFrame: (frame, timestamp) =>

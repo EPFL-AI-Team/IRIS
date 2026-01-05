@@ -1,7 +1,5 @@
 // Camera-related types
 
-export type CameraMode = "client" | "server";
-
 export interface ServerConfig {
   host: string;
   port: number;

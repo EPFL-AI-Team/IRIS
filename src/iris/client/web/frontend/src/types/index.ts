@@ -2,7 +2,6 @@
 
 // Camera types
 export type {
-  CameraMode,
   ServerConfig,
   ClientVideoConfig,
   CameraInfo,
