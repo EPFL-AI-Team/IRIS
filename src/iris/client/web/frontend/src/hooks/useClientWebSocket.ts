@@ -40,6 +40,7 @@ export function useClientWebSocket() {
   const setServerAlive = useAppStore((state) => state.setServerAlive);
   const setSessionState = useAppStore((state) => state.setSessionState);
   const setLiveSessionMetrics = useAppStore((state) => state.setLiveSessionMetrics);
+  const setAnalysisSessionMetrics = useAppStore((state) => state.setAnalysisSessionMetrics);
   const setIsStreaming = useAppStore((state) => state.setIsStreaming);
   const setFps = useAppStore((state) => state.setFps);
   const addResult = useAppStore((state) => state.addResult);
@@ -272,7 +273,9 @@ export function useClientWebSocket() {
           const message = data.message as string;
           const jobId = data.job_id as string | undefined;
 
-          if (activeTab === "analysis") {
+          // Route to correct log store based on session mode
+          const sessionMode = useAppStore.getState().sessionState.mode;
+          if (sessionMode === "analysis") {
             const log: AnalysisLog = {
               id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
               timestamp: Date.now(),
@@ -303,7 +306,14 @@ export function useClientWebSocket() {
             segmentsTotal: (data.segments_total as number) ?? null,
             batchSize: data.batch_size as number | undefined,
           };
-          setLiveSessionMetrics(metrics);
+
+          // Route to correct metrics state based on session mode
+          const sessionMode = useAppStore.getState().sessionState.mode;
+          if (sessionMode === "live") {
+            setLiveSessionMetrics(metrics);
+          } else if (sessionMode === "analysis") {
+            setAnalysisSessionMetrics(metrics);
+          }
           break;
         }
 
@@ -378,6 +388,10 @@ export function useClientWebSocket() {
     lastFrameTimeRef.current = 0;
     lastFrameTime = 0;
     smoothedFps = 0; // Reset smoothed FPS
+
+    // Unlock on disconnect
+    const setActiveInferenceMode = useAppStore.getState().setActiveInferenceMode;
+    setActiveInferenceMode(null);
   }, [setConnectionStatus, setFps]);
 
   // Send message helper
@@ -392,6 +406,9 @@ export function useClientWebSocket() {
 
   // Command helpers
   const startInference = useCallback(() => {
+    const setActiveInferenceMode = useAppStore.getState().setActiveInferenceMode;
+    setActiveInferenceMode("live"); // Lock
+
     const message = {
       type: "start",
       config: {
@@ -405,6 +422,8 @@ export function useClientWebSocket() {
   }, [send, segmentConfig]);
 
   const stopInference = useCallback(() => {
+    const setActiveInferenceMode = useAppStore.getState().setActiveInferenceMode;
+    setActiveInferenceMode(null); // Unlock
     send({ type: "stop" });
   }, [send]);
 
@@ -413,7 +432,25 @@ export function useClientWebSocket() {
   }, [send]);
 
   const resetSession = useCallback(() => {
-    resetSessionState();
+    resetSessionState(); // Already clears both modes
+
+    // Explicitly clear analysis state to be sure
+    const {
+      clearAnalysisResults,
+      clearAnalysisLogs,
+      setAnalysisMode,
+      setReportContent,
+      setReportStatus,
+      setActiveInferenceMode,
+    } = useAppStore.getState();
+
+    clearAnalysisResults();
+    clearAnalysisLogs();
+    setAnalysisMode("idle");
+    setReportContent(null);
+    setReportStatus("idle");
+    setActiveInferenceMode(null); // Clear inference lock
+
     send({ type: "reset_session" });
   }, [send, resetSessionState]);
 

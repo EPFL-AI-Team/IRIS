@@ -34,32 +34,58 @@ export function SegmentSettings({ disabled = false }: SegmentSettingsProps) {
       ? segmentConfig.framesPerSegment / segmentConfig.segmentTime
       : 0;
 
+  const persistConfigToBackend = async (config: {
+    segmentTime: number;
+    framesPerSegment: number;
+    overlapFrames: number;
+  }) => {
+    try {
+      await fetch("/api/config/segment/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segment_time: config.segmentTime,
+          frames_per_segment: config.framesPerSegment,
+          overlap_frames: config.overlapFrames,
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to persist config:", error);
+    }
+  };
+
   const handleSegmentTimeChange = (value: number) => {
     const clampedValue = Math.max(0.1, Math.min(10, value));
-    setSegmentConfig({
+    const newConfig = {
       ...segmentConfig,
       segmentTime: clampedValue,
-    });
+    };
+    setSegmentConfig(newConfig);
+    persistConfigToBackend(newConfig);
   };
 
   const handleFramesPerSegmentChange = (value: number) => {
     const clampedValue = Math.max(1, Math.min(32, Math.round(value)));
     // Ensure overlap doesn't exceed frames - 1
     const maxOverlap = Math.max(0, clampedValue - 1);
-    setSegmentConfig({
+    const newConfig = {
       ...segmentConfig,
       framesPerSegment: clampedValue,
       overlapFrames: Math.min(segmentConfig.overlapFrames, maxOverlap),
-    });
+    };
+    setSegmentConfig(newConfig);
+    persistConfigToBackend(newConfig);
   };
 
   const handleOverlapChange = (value: number) => {
     const maxOverlap = Math.max(0, segmentConfig.framesPerSegment - 1);
     const clampedValue = Math.max(0, Math.min(maxOverlap, Math.round(value)));
-    setSegmentConfig({
+    const newConfig = {
       ...segmentConfig,
       overlapFrames: clampedValue,
-    });
+    };
+    setSegmentConfig(newConfig);
+    persistConfigToBackend(newConfig);
   };
 
   return (

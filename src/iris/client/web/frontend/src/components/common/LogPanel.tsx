@@ -129,6 +129,7 @@ export function LogPanel() {
   );
   const segmentConfig = useAppStore((state) => state.segmentConfig);
   const analysisMode = useAppStore((state) => state.analysisMode);
+  const scrollToLogId = useAppStore((state) => state.scrollToLogId);
 
   // Find the active log based on current playback position
   const activeLogIndex = analysisLogs.findIndex((log) => {
@@ -139,6 +140,19 @@ export function LogPanel() {
       log.video_time_ms + threshold > currentPlaybackPosition
     );
   });
+
+  // Handle scroll to specific log (from timeline click)
+  useEffect(() => {
+    if (scrollToLogId && scrollRef.current) {
+      const element = scrollRef.current.querySelector(
+        `[data-log-job-id="${scrollToLogId}"]`
+      );
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        setAutoScroll(false); // Stop auto-scroll when manually navigating
+      }
+    }
+  }, [scrollToLogId]);
 
   // Auto-scroll only during running mode with new logs
   useEffect(() => {
@@ -213,7 +227,11 @@ export function LogPanel() {
           ) : (
             <div className="space-y-2">
               {analysisLogs.map((log, index) => (
-                <div key={log.id} data-log-entry>
+                <div
+                  key={log.id}
+                  data-log-entry
+                  data-log-job-id={log.job_id}
+                >
                   <LogEntry
                     log={log}
                     isActive={index === activeLogIndex}

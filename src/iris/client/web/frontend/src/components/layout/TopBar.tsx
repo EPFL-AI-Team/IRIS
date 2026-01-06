@@ -48,6 +48,7 @@ export function TopBar() {
   const serverConfig = useAppStore((state) => state.serverConfig);
   const setServerConfig = useAppStore((state) => state.setServerConfig);
   const reportStatus = useAppStore((state) => state.reportStatus);
+  const activeInferenceMode = useAppStore((state) => state.activeInferenceMode);
 
   // WebSocket connection for sending commands
   const { startInference, stopInference, clearQueue, resetSession } =
@@ -329,12 +330,21 @@ export function TopBar() {
             <>
               <Button
                 onClick={handleStart}
-                disabled={isStreaming || connectionStatus !== "connected"}
+                disabled={
+                  isStreaming ||
+                  connectionStatus !== "connected" ||
+                  (activeInferenceMode && activeInferenceMode !== "live")
+                }
                 size="sm"
               >
                 <Play className="w-4 h-4 mr-1" />
                 Start
               </Button>
+              {activeInferenceMode === "analysis" && (
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  Analysis running
+                </span>
+              )}
               <Button
                 variant="destructive"
                 onClick={handleStop}

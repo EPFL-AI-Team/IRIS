@@ -178,6 +178,48 @@ async def clear_results_history() -> dict[str, str]:
     return {"status": "ok", "message": "Results history cleared"}
 
 
+@api_router.post("/config/segment/update")
+async def update_segment_config(
+    request: dict[str, Any],
+) -> dict[str, str]:
+    """Update segment config for both live and analysis sessions.
+
+    Request body:
+        segment_time: float
+        frames_per_segment: int
+        overlap_frames: int
+    """
+    from iris.client.web.repositories import session_repo
+
+    state = get_app_state()
+
+    segment_time = request.get("segment_time")
+    frames_per_segment = request.get("frames_per_segment")
+    overlap_frames = request.get("overlap_frames")
+
+    if segment_time is None or frames_per_segment is None or overlap_frames is None:
+        return {"status": "error", "message": "Missing required config parameters"}
+
+    config = {
+        "segment_time": float(segment_time),
+        "frames_per_segment": int(frames_per_segment),
+        "overlap_frames": int(overlap_frames),
+    }
+
+    # Update both sessions
+    try:
+        session_repo.update_config(state.live_session_id, config)
+        session_repo.update_config(state.analysis_session_id, config)
+
+        # Update in-memory session config as well
+        state.session_config.update(config)
+
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Failed to update session config: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 # ============================================================================
 # Analysis & Benchmark Endpoints
 # ============================================================================

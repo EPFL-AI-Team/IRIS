@@ -25,6 +25,10 @@ export function AnalysisControls() {
   const analysisSessionMetrics = useAppStore(
     (state) => state.analysisSessionMetrics
   );
+  const activeInferenceMode = useAppStore((state) => state.activeInferenceMode);
+  const setActiveInferenceMode = useAppStore(
+    (state) => state.setActiveInferenceMode
+  );
   const { connect, disconnect } = useAnalysisWebSocket();
 
   const handleStart = async () => {
@@ -32,6 +36,9 @@ export function AnalysisControls() {
       toast.error("Please select a video file");
       return;
     }
+
+    setActiveInferenceMode("analysis"); // Lock
+
     try {
       const response = await fetch("/api/analysis/start", {
         method: "POST",
@@ -53,10 +60,12 @@ export function AnalysisControls() {
         connect();
       } else {
         toast.error(data.message || "Failed to start analysis");
+        setActiveInferenceMode(null); // Unlock on error
       }
     } catch (error) {
       console.error("Failed to start analysis:", error);
       toast.error("Failed to start analysis");
+      setActiveInferenceMode(null); // Unlock on error
     }
   };
 
@@ -65,8 +74,10 @@ export function AnalysisControls() {
       disconnect();
       await fetch("/api/analysis/stop", { method: "POST" });
       toast.info("Analysis stopped");
+      setActiveInferenceMode(null); // Unlock
     } catch (error) {
       console.error("Failed to stop analysis:", error);
+      setActiveInferenceMode(null); // Unlock even on error
     }
   };
 
@@ -78,15 +89,25 @@ export function AnalysisControls() {
       {/* Row 1: Action Buttons */}
       <div className="flex items-center gap-2">
         {!isRunning ? (
-          <Button
-            onClick={handleStart}
-            disabled={!selectedVideo}
-            size="sm"
-            className="flex-1 h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
-          >
-            <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
-            {isComplete ? "Run Again" : "Start Analysis"}
-          </Button>
+          <>
+            <Button
+              onClick={handleStart}
+              disabled={
+                !selectedVideo ||
+                (activeInferenceMode && activeInferenceMode !== "analysis")
+              }
+              size="sm"
+              className="flex-1 h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
+              {isComplete ? "Run Again" : "Start Analysis"}
+            </Button>
+            {activeInferenceMode === "live" && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                Live running
+              </span>
+            )}
+          </>
         ) : (
           <Button
             onClick={handleStop}

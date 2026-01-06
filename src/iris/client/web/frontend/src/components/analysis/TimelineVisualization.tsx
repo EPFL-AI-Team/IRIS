@@ -3,6 +3,7 @@ import { useAppStore } from "../../store/useAppStore";
 
 interface TimelineCard {
   id: string;
+  job_id?: string; // Added job_id for log navigation
   startMs: number;
   endMs: number;
   xPercent: number;
@@ -61,6 +62,7 @@ export function TimelineVisualization() {
   const setCurrentPlaybackPosition = useAppStore(
     (state) => state.setCurrentPlaybackPosition
   );
+  const setScrollToLogId = useAppStore((state) => state.setScrollToLogId);
   const segmentConfig = useAppStore((state) => state.segmentConfig);
 
   // Get video duration in milliseconds
@@ -132,6 +134,7 @@ export function TimelineVisualization() {
       }
 
       return {
+        job_id: result.job_id,
         startMs,
         endMs,
         xPercent: timestampToX(startMs),
@@ -193,9 +196,12 @@ export function TimelineVisualization() {
     return Math.max(0, ...inferenceCards.map((c) => c.overlapDepth));
   }, [inferenceCards]);
 
-  const handleSegmentClick = (event: React.MouseEvent, startMs: number) => {
+  const handleSegmentClick = (event: React.MouseEvent, startMs: number, jobId?: string) => {
     event.stopPropagation();
     setCurrentPlaybackPosition(startMs);
+    if (jobId) {
+      setScrollToLogId(jobId);
+    }
   };
 
   const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -301,7 +307,7 @@ export function TimelineVisualization() {
                   opacity: 0.9,
                   zIndex: card.overlapDepth,
                 }}
-                onClick={(e) => handleSegmentClick(e, card.startMs)}
+                onClick={(e) => handleSegmentClick(e, card.startMs, card.job_id)}
                 title={`${card.label} (${card.details.frames})`}
               >
                 {card.widthPercent > 3 && (

@@ -105,10 +105,28 @@ export function useAnalysisWebSocket() {
               inference_time: data.inference_time as number,
             };
             addAnalysisResult(resultItem);
-            addAnalysisLog(
-              `Result received for frames ${data.frame_range[0]}-${data.frame_range[1]}`,
-              "INFO"
-            );
+
+            // Create rich log entry for inference result
+            let inferenceResult: Record<string, unknown> | undefined;
+            try {
+              if (typeof data.result === "string") {
+                inferenceResult = JSON.parse(data.result);
+              } else {
+                inferenceResult = data.result as Record<string, unknown>;
+              }
+            } catch {
+              // Keep undefined if not valid JSON
+            }
+
+            const analysisLog: Partial<import("../types").AnalysisLog> = {
+              video_time_ms: data.timestamp_range_ms ? data.timestamp_range_ms[0] : null,
+              type: "inference",
+              message: `Result for frames ${data.frame_range[0]}-${data.frame_range[1]}`,
+              inference_result: inferenceResult,
+              inference_time_ms: data.inference_time ? data.inference_time * 1000 : undefined,
+              job_id: data.job_id as string,
+            };
+            addAnalysisLog(analysisLog);
             break;
           }
 

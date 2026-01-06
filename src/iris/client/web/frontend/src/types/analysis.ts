@@ -45,6 +45,7 @@ export interface SegmentConfig {
  */
 export interface AnalysisLog {
   id: string;
+  job_id?: string; // Optional job ID to link with results
   timestamp: number; // Unix timestamp ms
   video_time_ms: number | null; // Video position when log occurred
   type: "inference" | "system" | "error";

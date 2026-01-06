@@ -23,15 +23,19 @@ export function ReportModal({
   open,
   onOpenChange,
 }: ReportModalProps) {
+  const [activeReportTab, setActiveReportTab] = useState<"live" | "analysis">(
+    "live"
+  );
+  const [reportAlreadyGenerated, setReportAlreadyGenerated] = useState(false);
   const [copied, setCopied] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const analysisJobId = useAppStore((s) => s.analysisJobId);
-
-  // ALWAYS use analysisJobId from store - it has the correct analysis_ prefix
-  // The sessionId prop can have stale values due to React render timing
-  const effectiveSessionId = analysisJobId || sessionId;
+  // Hardcoded session IDs for persistent contexts
+  const liveSessionId = "sess_live_default";
+  const analysisSessionId = "sess_analysis_default";
+  const effectiveSessionId =
+    activeReportTab === "live" ? liveSessionId : analysisSessionId;
 
   // Use store state for report status
   const reportStatus = useAppStore((s) => s.reportStatus);
@@ -42,6 +46,39 @@ export function ReportModal({
   const setReportError = useAppStore((s) => s.setReportError);
 
   const isGenerating = reportStatus === "generating";
+
+  // Check for existing report on tab switch
+  useEffect(() => {
+    const checkExistingReport = async () => {
+      try {
+        const res = await fetch(`/api/report/${effectiveSessionId}`);
+        if (!res.ok) {
+          setReportAlreadyGenerated(false);
+          setReportContent(null);
+          setReportStatus("idle"); // Reset status if no report
+          return;
+        }
+        const data = await res.json();
+        if (data.report && data.report.content) {
+          setReportContent(data.report.content);
+          setReportStatus("ready");
+          setReportAlreadyGenerated(true);
+        } else {
+          setReportAlreadyGenerated(false);
+          setReportContent(null);
+          setReportStatus("idle");
+        }
+      } catch (error) {
+        console.error("Failed to check for existing report:", error);
+        setReportAlreadyGenerated(false);
+        setReportStatus("idle");
+      }
+    };
+
+    if (open) {
+      checkExistingReport();
+    }
+  }, [activeReportTab, open, effectiveSessionId, setReportContent, setReportStatus]);
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
@@ -59,80 +96,87 @@ export function ReportModal({
     };
   }, []);
 
-  const generateReport = useCallback(async () => {
-    if (!effectiveSessionId) {
-      setReportError("No session ID available. Run analysis first.");
-      setReportStatus("error");
-      return;
-    }
-
-    setReportStatus("generating");
-    setReportContent("");
-    setReportError(null);
-
-    abortControllerRef.current = new AbortController();
-
-    try {
-      const response = await fetch("/api/report/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: effectiveSessionId }),
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
-      }
-
-      // Check content type - handle both JSON and streaming responses
-      const contentType = response.headers.get("content-type") || "";
-
-      if (contentType.includes("application/json")) {
-        // JSON response (fallback report)
-        const data = await response.json();
-        if (data.report) {
-          setReportContent(data.report);
-        } else if (data.error) {
-          throw new Error(data.error);
-        }
-        setReportStatus("ready");
-      } else {
-        // Streaming response (Gemini)
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error("Streaming not supported");
-        }
-
-        const decoder = new TextDecoder();
-        let done = false;
-        let accumulated = "";
-
-        while (!done) {
-          const { value, done: readerDone } = await reader.read();
-          done = readerDone;
-          if (value) {
-            const text = decoder.decode(value, { stream: true });
-            accumulated += text;
-            setReportContent(accumulated);
-          }
-        }
-
-        setReportStatus("ready");
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        setReportStatus("idle");
+  const generateReport = useCallback(
+    async (forceRegenerate = false) => {
+      if (!effectiveSessionId) {
+        setReportError("No session ID available. Run analysis first.");
+        setReportStatus("error");
         return;
       }
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to generate report";
-      setReportError(errorMsg);
-      setReportStatus("error");
-    } finally {
-      abortControllerRef.current = null;
-    }
-  }, [effectiveSessionId, setReportStatus, setReportContent, setReportError]);
+
+      setReportStatus("generating");
+      setReportContent("");
+      setReportError(null);
+      setReportAlreadyGenerated(false); // Reset this flag when generating new
+
+      abortControllerRef.current = new AbortController();
+
+      try {
+        const response = await fetch("/api/report/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: effectiveSessionId,
+            force_regenerate: forceRegenerate,
+          }),
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        // Check content type - handle both JSON and streaming responses
+        const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+          // JSON response (fallback report)
+          const data = await response.json();
+          if (data.report) {
+            setReportContent(data.report);
+          } else if (data.error) {
+            throw new Error(data.error);
+          }
+          setReportStatus("ready");
+        } else {
+          // Streaming response (Gemini)
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error("Streaming not supported");
+          }
+
+          const decoder = new TextDecoder();
+          let done = false;
+          let accumulated = "";
+
+          while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            if (value) {
+              const text = decoder.decode(value, { stream: true });
+              accumulated += text;
+              setReportContent(accumulated);
+            }
+          }
+
+          setReportStatus("ready");
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          setReportStatus("idle");
+          return;
+        }
+        const errorMsg =
+          err instanceof Error ? err.message : "Failed to generate report";
+        setReportError(errorMsg);
+        setReportStatus("error");
+      } finally {
+        abortControllerRef.current = null;
+      }
+    },
+    [effectiveSessionId, setReportStatus, setReportContent, setReportError]
+  );
 
   const generateFallbackReport = useCallback(async () => {
     if (!effectiveSessionId) {
@@ -208,23 +252,50 @@ export function ReportModal({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Tab Switcher */}
+        <div className="flex gap-1 bg-muted p-1 rounded-lg mb-2">
+          <button
+            onClick={() => setActiveReportTab("live")}
+            className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
+              activeReportTab === "live"
+                ? "bg-background text-foreground shadow"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Live Mode
+          </button>
+          <button
+            onClick={() => setActiveReportTab("analysis")}
+            className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
+              activeReportTab === "analysis"
+                ? "bg-background text-foreground shadow"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Analysis Mode
+          </button>
+        </div>
+
         <div className="flex items-center gap-4 py-2">
           <div className="flex gap-2">
             {isGenerating ? (
               <Button variant="destructive" onClick={handleCancel}>
                 Cancel
               </Button>
+            ) : reportAlreadyGenerated ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">Already Generated</Badge>
+                <Button
+                  variant="outline"
+                  onClick={() => generateReport(true)} // Force regenerate
+                >
+                  Regenerate
+                </Button>
+              </div>
             ) : (
               <>
-                <Button onClick={generateReport}>
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    "Generate Report"
-                  )}
+                <Button onClick={() => generateReport(false)}>
+                  Generate Report
                 </Button>
                 <Button variant="outline" onClick={generateFallbackReport}>
                   Basic Stats

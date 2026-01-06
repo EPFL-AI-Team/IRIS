@@ -4,6 +4,7 @@ import { TopBar } from "../components/layout/TopBar";
 import { LiveView } from "../components/pages/LiveView";
 import { AnalysisView } from "../components/pages/AnalysisView";
 import { useClientWebSocket } from "../hooks/useClientWebSocket";
+import { useSessionRestoration } from "../hooks/useSessionRestoration";
 import { useAppStore } from "../store/useAppStore";
 
 function App() {
@@ -18,6 +19,9 @@ function App() {
   // Connect to unified client WebSocket
   // Handles: session info, preview frames, results, metrics, server status
   useClientWebSocket();
+
+  // Restore session data (live & analysis) on mount
+  useSessionRestoration();
 
   // Load config defaults from backend on mount
   useEffect(() => {

@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Database } from "lucide-react";
+import { Database, Loader2 } from "lucide-react";
 // import { FileJson } from "lucide-react"; // Commented out - ground truth feature disabled
 
 export function DatasetSelector() {
@@ -17,6 +17,11 @@ export function DatasetSelector() {
   );
   const selectedVideo = useAppStore((state) => state.selectedVideoFile);
   const setSelectedVideo = useAppStore((state) => state.setSelectedVideoFile);
+  const analysisMode = useAppStore((state) => state.analysisMode);
+  const analysisSessionMetrics = useAppStore(
+    (state) => state.analysisSessionMetrics
+  );
+
   // Commented out - ground truth feature disabled
   // const selectedAnnotation = useAppStore(
   //   (state) => state.selectedAnnotationFile
@@ -101,6 +106,37 @@ export function DatasetSelector() {
         </Select>
       </div>
       */}
+
+      {/* Analysis Metrics */}
+      {analysisMode === "running" && analysisSessionMetrics && (
+        <div className="bg-muted/30 border rounded-md p-3 space-y-2 mt-2">
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="text-xs font-medium">Analyzing...</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div className="text-muted-foreground">
+              Elapsed:{" "}
+              <span className="text-foreground">
+                {analysisSessionMetrics.elapsedSeconds}s
+              </span>
+            </div>
+            <div className="text-muted-foreground">
+              Segments:{" "}
+              <span className="text-foreground">
+                {analysisSessionMetrics.segmentsProcessed}/
+                {analysisSessionMetrics.segmentsTotal ?? "?"}
+              </span>
+            </div>
+            {analysisSessionMetrics.batchSize &&
+              analysisSessionMetrics.batchSize > 1 && (
+                <div className="col-span-2 text-blue-400">
+                  Batch Mode: {analysisSessionMetrics.batchSize} segments/batch
+                </div>
+              )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
