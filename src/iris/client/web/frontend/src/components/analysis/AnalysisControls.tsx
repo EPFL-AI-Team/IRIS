@@ -21,7 +21,7 @@ export function AnalysisControls() {
     (state) => state.clearAnalysisResults
   );
   const clearAnalysisLogs = useAppStore((state) => state.clearAnalysisLogs);
-  const analysisJobId = useAppStore((state) => state.analysisJobId);
+  // const analysisJobId = useAppStore((state) => state.analysisJobId);
   const analysisSessionMetrics = useAppStore(
     (state) => state.analysisSessionMetrics
   );
@@ -211,10 +211,7 @@ export function AnalysisControls() {
           })()}
       </div>
 
-      <ReportModal
-        open={reportModalOpen}
-        onOpenChange={setReportModalOpen}
-      />
+      <ReportModal open={reportModalOpen} onOpenChange={setReportModalOpen} />
     </div>
   );
 }
