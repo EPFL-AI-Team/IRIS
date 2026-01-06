@@ -333,7 +333,7 @@ export function TopBar() {
                 disabled={
                   isStreaming ||
                   connectionStatus !== "connected" ||
-                  (activeInferenceMode && activeInferenceMode !== "live")
+                  (!!activeInferenceMode && activeInferenceMode !== "live")
                 }
                 size="sm"
               >
@@ -380,7 +380,6 @@ export function TopBar() {
       </div>
 
       <ReportModal
-        sessionId={sessionState.sessionId || analysisJobId || undefined}
         open={reportModalOpen}
         onOpenChange={setReportModalOpen}
       />

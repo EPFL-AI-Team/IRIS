@@ -9,17 +9,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { FileText, Loader2, Download, Copy, Check } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 
 interface ReportModalProps {
-  sessionId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function ReportModal({
-  sessionId,
   open,
   onOpenChange,
 }: ReportModalProps) {

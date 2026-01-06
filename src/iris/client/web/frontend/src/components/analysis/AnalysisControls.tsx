@@ -94,7 +94,7 @@ export function AnalysisControls() {
               onClick={handleStart}
               disabled={
                 !selectedVideo ||
-                (activeInferenceMode && activeInferenceMode !== "analysis")
+                (!!activeInferenceMode && activeInferenceMode !== "analysis")
               }
               size="sm"
               className="flex-1 h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -212,7 +212,6 @@ export function AnalysisControls() {
       </div>
 
       <ReportModal
-        sessionId={analysisJobId || undefined}
         open={reportModalOpen}
         onOpenChange={setReportModalOpen}
       />
