@@ -14,6 +14,8 @@ export interface ResultItem {
   job_id: string;
   timestamp: Date; // Wall clock time
   videoTimeMs?: number; // Position in video
+  timestamp_range_ms?: [number, number]; // Start/End time in video
+  frame_range?: [number, number]; // Start/End frame indices
   batchSize?: number; // Size of the batch this result belongs to
   status: "pending" | "processing" | "completed";
   result?: string;

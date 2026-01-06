@@ -4,9 +4,10 @@ import type {
   VideoInfo,
   AnnotationInfo,
   GroundTruthAnnotation,
-  AnalysisResult,
   AnalysisProgress,
+  ResultItem,
   AnalysisLog,
+  LogLevel,
 } from "../../types";
 
 const MAX_ANALYSIS_RESULTS = 200;
@@ -41,10 +42,16 @@ export interface AnalysisSlice {
   analysisProgress: AnalysisProgress | null;
   setAnalysisProgress: (progress: AnalysisProgress | null) => void;
 
-  // Analysis results
-  analysisResults: AnalysisResult[];
-  addAnalysisResult: (result: AnalysisResult) => void;
+  // Analysis Results & Logs
+  analysisResults: ResultItem[];
+  addAnalysisResult: (result: ResultItem) => void;
+  setAnalysisResults: (results: ResultItem[]) => void;
   clearAnalysisResults: () => void;
+
+  analysisLogs: AnalysisLog[];
+  addAnalysisLog: (log: string | Partial<AnalysisLog>, level?: LogLevel) => void;
+  setAnalysisLogs: (logs: AnalysisLog[]) => void;
+  clearAnalysisLogs: () => void;
 
   // Ground truth annotations
   groundTruthAnnotations: GroundTruthAnnotation[];
@@ -53,11 +60,6 @@ export interface AnalysisSlice {
   // Playback position
   currentPlaybackPosition: number; // milliseconds
   setCurrentPlaybackPosition: (ms: number) => void;
-
-  // Analysis logs
-  analysisLogs: AnalysisLog[];
-  addAnalysisLog: (log: AnalysisLog) => void;
-  clearAnalysisLogs: () => void;
 
   // Auto-generate report
   autoGenerateReport: boolean;
@@ -93,7 +95,7 @@ export const createAnalysisSlice: StateCreator<
   analysisProgress: null,
   setAnalysisProgress: (progress) => set({ analysisProgress: progress }),
 
-  // Analysis results
+  // Analysis Results & Logs
   analysisResults: [],
   addAnalysisResult: (result) =>
     set((state) => {
@@ -103,7 +105,46 @@ export const createAnalysisSlice: StateCreator<
       }
       return { analysisResults: newResults };
     }),
+  setAnalysisResults: (results) => set({ analysisResults: results }),
   clearAnalysisResults: () => set({ analysisResults: [] }),
+
+  analysisLogs: [],
+  addAnalysisLog: (logInput, level = "INFO") =>
+    set((state) => {
+      let newLog: AnalysisLog;
+      const timestamp = Date.now();
+      const id = `log-analysis-${timestamp}-${Math.random().toString(36).slice(2, 9)}`;
+
+      if (typeof logInput === "string") {
+        // Create system/error log from string
+        const type = level === "ERROR" ? "error" : "system";
+        newLog = {
+          id,
+          timestamp,
+          video_time_ms: null,
+          type,
+          message: logInput,
+        };
+      } else {
+        // Use provided object, fill defaults
+        newLog = {
+          id,
+          timestamp,
+          video_time_ms: null,
+          type: "system",
+          message: "",
+          ...logInput,
+        };
+      }
+
+      const newLogs = [...state.analysisLogs, newLog];
+      if (newLogs.length > MAX_ANALYSIS_LOGS) {
+        newLogs.shift();
+      }
+      return { analysisLogs: newLogs };
+    }),
+  setAnalysisLogs: (logs) => set({ analysisLogs: logs }),
+  clearAnalysisLogs: () => set({ analysisLogs: [] }),
 
   // Ground truth annotations
   groundTruthAnnotations: [],
@@ -113,18 +154,6 @@ export const createAnalysisSlice: StateCreator<
   // Playback position
   currentPlaybackPosition: 0,
   setCurrentPlaybackPosition: (ms) => set({ currentPlaybackPosition: ms }),
-
-  // Analysis logs
-  analysisLogs: [],
-  addAnalysisLog: (log) =>
-    set((state) => {
-      const newLogs = [...state.analysisLogs, log];
-      if (newLogs.length > MAX_ANALYSIS_LOGS) {
-        newLogs.shift();
-      }
-      return { analysisLogs: newLogs };
-    }),
-  clearAnalysisLogs: () => set({ analysisLogs: [] }),
 
   // Auto-generate report
   autoGenerateReport: false,

@@ -48,8 +48,20 @@ export interface UISlice {
   setSessionState: (state: Partial<SessionState>) => void;
   resetSessionState: () => void;
 
-  sessionMetrics: SessionMetrics | null;
-  setSessionMetrics: (metrics: SessionMetrics | null) => void;
+  // Cross-mode protection - prevents concurrent live and analysis inference
+  activeInferenceMode: "live" | "analysis" | null;
+  setActiveInferenceMode: (mode: "live" | "analysis" | null) => void;
+
+  // Timeline/log sync - scroll to specific log entry
+  scrollToLogId: string | null;
+  setScrollToLogId: (id: string | null) => void;
+
+  // Session metrics - separated by mode
+  liveSessionMetrics: SessionMetrics | null;
+  setLiveSessionMetrics: (metrics: SessionMetrics | null) => void;
+
+  analysisSessionMetrics: SessionMetrics | null;
+  setAnalysisSessionMetrics: (metrics: SessionMetrics | null) => void;
 
   // Report generation status
   reportStatus: "idle" | "generating" | "ready" | "error";
@@ -152,7 +164,8 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
         mode: null,
         config: null,
       },
-      sessionMetrics: null,
+      liveSessionMetrics: null,
+      analysisSessionMetrics: null,
       results: [],
       logs: [],
       // Clear analysis state as well since they are in the same store
@@ -165,11 +178,25 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       reportStatus: "idle",
       reportContent: null,
       reportError: null,
+      // Reset cross-mode protection
+      activeInferenceMode: null,
+      scrollToLogId: null,
     } as unknown as UISlice),
 
-  // Session metrics
-  sessionMetrics: null,
-  setSessionMetrics: (metrics) => set({ sessionMetrics: metrics }),
+  // Cross-mode protection
+  activeInferenceMode: null,
+  setActiveInferenceMode: (mode) => set({ activeInferenceMode: mode }),
+
+  // Timeline/log sync
+  scrollToLogId: null,
+  setScrollToLogId: (id) => set({ scrollToLogId: id }),
+
+  // Session metrics - separated by mode
+  liveSessionMetrics: null,
+  setLiveSessionMetrics: (metrics) => set({ liveSessionMetrics: metrics }),
+
+  analysisSessionMetrics: null,
+  setAnalysisSessionMetrics: (metrics) => set({ analysisSessionMetrics: metrics }),
 
   // Report generation status
   reportStatus: "idle",

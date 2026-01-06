@@ -112,10 +112,7 @@ export interface SessionMetricsMessage {
   elapsed_seconds: number;
   segments_processed: number;
   segments_total: number | null; // null for live mode
-  queue_depth: number;
-  processing_rate: number; // segments per second
-  frames_received: number;
-  batch_size?: number;
+  batch_size?: number; // Only present for analysis mode
 }
 
 /**
@@ -137,9 +134,6 @@ export interface SessionState {
 export interface SessionMetrics {
   elapsedSeconds: number;
   segmentsProcessed: number;
-  segmentsTotal: number | null;
-  queueDepth: number;
-  processingRate: number;
-  framesReceived: number;
-  batchSize?: number;
+  segmentsTotal: number | null; // null for live mode
+  batchSize?: number; // Only present for analysis mode
 }
