@@ -22,9 +22,10 @@ class AppState:
         self.results_history: list[dict] = []
         self.max_results_history: int = 100  # Keep last 100 results
 
-        # Persistent session ID - created on startup, reset only by user action
-        # This groups all logs/results for persistence across inference runs
-        self.session_id: str = f"sess_{uuid.uuid4().hex[:8]}"
+        # Persistent session IDs - fixed for local user to ensure persistence across refreshes
+        # We separate Live and Analysis contexts so one doesn't wipe the other
+        self.live_session_id: str = "sess_live_default"
+        self.analysis_session_id: str = "sess_analysis_default"
 
         # Session configuration (segment settings)
         self.session_config: dict = {}
@@ -46,12 +47,15 @@ class AppState:
         self.analysis_annotations: list[dict] = []
         self.analysis_results: list[dict] = []
 
-    def reset_session(self) -> str:
-        """Reset session - generate new ID and clear history."""
-        self.session_id = f"sess_{uuid.uuid4().hex[:8]}"
+    def clear_live_session(self) -> None:
+        """Clear live session history."""
         self.results_history.clear()
         self.session_config = {}
-        return self.session_id
+
+    def clear_analysis_session(self) -> None:
+        """Clear analysis session state."""
+        self.analysis_results.clear()
+        self.active_analysis_job = None
 
 
 # Singleton instance

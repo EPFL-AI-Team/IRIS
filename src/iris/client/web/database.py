@@ -20,6 +20,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 status TEXT NOT NULL DEFAULT 'idle',
+                mode TEXT NOT NULL DEFAULT 'live',
                 created_at REAL NOT NULL,
                 started_at REAL,
                 completed_at REAL,

@@ -19,6 +19,7 @@ class SessionRepository:
         self,
         session_id: str,
         config: dict[str, Any],
+        mode: str = "live",
         video_file: str | None = None,
         annotation_file: str | None = None,
     ) -> dict[str, Any]:
@@ -27,6 +28,7 @@ class SessionRepository:
         Args:
             session_id: Unique session identifier.
             config: Session configuration dict.
+            mode: Session mode ('live' or 'analysis').
             video_file: Optional video filename.
             annotation_file: Optional JSONL annotation filename.
 
@@ -37,10 +39,10 @@ class SessionRepository:
         with get_db() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions (id, status, created_at, config, video_file, annotation_file)
-                VALUES (?, 'idle', ?, ?, ?, ?)
+                INSERT INTO sessions (id, status, mode, created_at, config, video_file, annotation_file)
+                VALUES (?, 'idle', ?, ?, ?, ?, ?)
                 """,
-                (session_id, now, serialize_json(config), video_file, annotation_file),
+                (session_id, mode, now, serialize_json(config), video_file, annotation_file),
             )
         return self.get(session_id)
 
@@ -116,6 +118,19 @@ class SessionRepository:
                 conn.execute(
                     "UPDATE sessions SET status = ? WHERE id = ?", (status, session_id)
                 )
+
+    def update_config(self, session_id: str, config: dict[str, Any]) -> None:
+        """Update session config.
+
+        Args:
+            session_id: Session identifier.
+            config: Configuration dictionary to store.
+        """
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE sessions SET config = ? WHERE id = ?",
+                (serialize_json(config), session_id),
+            )
 
     def delete(self, session_id: str) -> bool:
         """Delete a session and all related data.

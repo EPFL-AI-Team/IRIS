@@ -331,33 +331,42 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
 
     # Create job metadata
     job_id = f"analysis_{uuid.uuid4().hex[:8]}"
+    session_id = state.analysis_session_id  # Use the analysis-specific persistent session ID
 
-    # Create persistent session in DB for report generation
-    from iris.client.web.repositories import session_repo
+    # Clear previous analysis data (results and logs) for this session context
+    # This ensures "Reset First" behavior for analysis mode
+    from iris.client.web.repositories import logs_repo, results_repo, session_repo
+
+    # Ensure session exists in DB
+    if not session_repo.get(session_id):
+        session_repo.create(session_id, {}, mode="analysis", video_file=video_filename)
+
+    logs_repo.clear_session(session_id)
+    results_repo.clear_session(session_id)
+
+    # Persist segment config (T, s, k) to database
+    session_repo.update_config(
+        session_id=session_id,
+        config={
+            "segment_time": segment_time,
+            "frames_per_segment": frames_per_segment,
+            "overlap_frames": overlap_frames,
+        }
+    )
+
+    # Log the start of this analysis job
     try:
-        session_repo.create(
-            session_id=job_id,
-            config={
-                "frames_per_segment": frames_per_segment,
-                "overlap_frames": overlap_frames,
-                "segment_time": segment_time,
-                "simulation_fps": simulation_fps,
-            },
-            video_file=video_filename,
-            annotation_file=annotation_filename,
+        logs_repo.append(
+            session_id=session_id,
+            level="INFO",
+            message=f"Starting analysis job {job_id} for video {video_filename}",
         )
-        # Update session to running with started_at timestamp
-        session_repo.update_status(
-            session_id=job_id,
-            status="running",
-            started_at=time.time(),
-        )
-        logger.info(f"Created analysis session {job_id} in DB")
     except Exception as e:
-        logger.error(f"Failed to create session in DB: {e}")
+        logger.error(f"Failed to log analysis start to DB: {e}")
 
     state.active_analysis_job = {
         "job_id": job_id,
+        "session_id": session_id,
         "video_file": video_filename,
         "annotation_file": annotation_filename,
         "start_time": time.time(),
@@ -388,7 +397,7 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
             video_time_ms = int(result.get("video_time_ms", 0))
 
             results_repo.store(
-                session_id=job_id,
+                session_id=session_id,
                 job_id=job_id,
                 video_time_ms=video_time_ms,
                 inference_start_ms=video_time_ms,  # Approximate
@@ -402,7 +411,7 @@ async def start_analysis(request: dict[str, Any]) -> dict[str, Any]:
             frame_range = result.get("frame_range", [0, 0])
             inference_time_sec = result.get("inference_time", 0)
             logs_repo.append(
-                session_id=job_id,
+                session_id=session_id,
                 level="INFO",
                 message=f"Inference result: frames {frame_range[0]}-{frame_range[1]}, time: {inference_time_sec:.2f}s",
             )
@@ -495,6 +504,7 @@ async def analysis_websocket(websocket: WebSocket) -> None:
     duration_sec = duration_ms / 1000.0
     simulation_fps = state.active_analysis_job["simulation_fps"]
     job_id = state.active_analysis_job["job_id"]
+    session_id = state.active_analysis_job["session_id"]
 
     # Define result storage callback for this analysis session
     def store_analysis_result(result: dict[str, Any]) -> None:
@@ -507,7 +517,7 @@ async def analysis_websocket(websocket: WebSocket) -> None:
             video_time_ms = int(result.get("video_time_ms", 0))
 
             results_repo.store(
-                session_id=job_id,
+                session_id=session_id,
                 job_id=job_id,
                 video_time_ms=video_time_ms,
                 inference_start_ms=video_time_ms,
@@ -521,7 +531,7 @@ async def analysis_websocket(websocket: WebSocket) -> None:
             frame_range = result.get("frame_range", [0, 0])
             inference_time_sec = result.get("inference_time", 0)
             logs_repo.append(
-                session_id=job_id,
+                session_id=session_id,
                 level="INFO",
                 message=f"Inference result: frames {frame_range[0]}-{frame_range[1]}, time: {inference_time_sec:.2f}s",
             )
@@ -1152,6 +1162,71 @@ async def get_session_data(session_id: str) -> dict[str, Any]:
     }
 
 
+@api_router.get("/session/live/data")
+async def get_live_session_data() -> dict[str, Any]:
+    """Get live session data for restoration.
+
+    Returns:
+        Dictionary with live session info, logs, and results.
+    """
+    from iris.client.web.repositories import (
+        logs_repo,
+        results_repo,
+        session_repo,
+    )
+
+    state = get_app_state()
+    session = session_repo.get(state.live_session_id)
+
+    if not session:
+        return {"exists": False}
+
+    logs = logs_repo.get_by_session(state.live_session_id)
+    results = results_repo.get_by_session(state.live_session_id)
+
+    return {
+        "exists": True,
+        "session_id": state.live_session_id,
+        "session": session,
+        "logs": logs,
+        "results": results,
+    }
+
+
+@api_router.get("/session/analysis/data")
+async def get_analysis_session_data() -> dict[str, Any]:
+    """Get analysis session data for restoration.
+
+    Returns:
+        Dictionary with analysis session info, logs, results, and report.
+    """
+    from iris.client.web.repositories import (
+        logs_repo,
+        reports_repo,
+        results_repo,
+        session_repo,
+    )
+
+    state = get_app_state()
+    session = session_repo.get(state.analysis_session_id)
+
+    if not session:
+        return {"exists": False}
+
+    logs = logs_repo.get_by_session(state.analysis_session_id)
+    results = results_repo.get_by_session(state.analysis_session_id)
+    report = reports_repo.get_latest_by_session(state.analysis_session_id)
+
+    return {
+        "exists": True,
+        "session_id": state.analysis_session_id,
+        "session": session,
+        "logs": logs,
+        "results": results,
+        "report": report,
+    }
+
+
 # ============================================================================
 # Simplified Communication Endpoints (New Architecture)
 # ============================================================================
@@ -1165,21 +1240,24 @@ async def reset_session() -> dict[str, Any]:
 
     state = get_app_state()
 
-    # Step 1: Generate new session_id and clear local state
-    old_session_id = state.session_id
-    new_session_id = state.reset_session()
+    # Clear local in-memory state
+    state.clear_live_session()
+    state.clear_analysis_session()
 
-    # Clear database logs and results for old session
+    # Clear database logs and results for BOTH sessions
     try:
-        if logs_repo:
-            logs_repo.clear_logs(old_session_id)
-        if results_repo:
-            results_repo.clear_results(old_session_id)
+        # Clear Live Session Data
+        logs_repo.clear_session(state.live_session_id)
+        results_repo.clear_session(state.live_session_id)
+
+        # Clear Analysis Session Data
+        logs_repo.clear_session(state.analysis_session_id)
+        results_repo.clear_session(state.analysis_session_id)
+        
     except Exception as e:
-        logger.warning(f"Failed to clear old session data from database: {e}")
+        logger.warning(f"Failed to clear session data from database: {e}")
 
     # Step 2 (CRITICAL): Clear inference server queue to prevent ghost results
-    # This prevents buffered results from previous session from arriving
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -1191,24 +1269,23 @@ async def reset_session() -> dict[str, Any]:
         logger.warning(f"Failed to clear inference server queue: {e}")
         # Don't fail reset if server unreachable - allow client reset to proceed
 
-    # Create new session in database
+    # Ensure sessions exist in DB (in case they were deleted)
     try:
-        session_repo.create(
-            session_id=new_session_id,
-            config=state.session_config,
-        )
-        logger.info(f"Created new session in DB after reset: {new_session_id}")
-    except Exception as e:
-        logger.error(f"Failed to create session in DB after reset: {e}")
+        if not session_repo.get(state.live_session_id):
+            session_repo.create(state.live_session_id, state.session_config, mode="live")
+        
+        if not session_repo.get(state.analysis_session_id):
+            session_repo.create(state.analysis_session_id, {}, mode="analysis")
 
-    logger.info(
-        f"Session reset complete: {old_session_id} → {new_session_id} "
-        f"(client state cleared + server queue flushed)"
-    )
+    except Exception as e:
+        logger.error(f"Failed to recreate sessions in DB after reset: {e}")
+
+    logger.info("Global session reset complete (Live + Analysis data cleared)")
 
     return {
         "status": "success",
-        "session_id": new_session_id,
+        "live_session_id": state.live_session_id,
+        "analysis_session_id": state.analysis_session_id,
         "message": "Session reset (client state + server queue cleared)"
     }
 
@@ -1265,30 +1342,31 @@ async def client_websocket(websocket: WebSocket) -> None:
 
     state = get_app_state()
     await websocket.accept()
-    logger.info(f"Client WebSocket connected, session_id={state.session_id}")
+    logger.info(f"Client WebSocket connected, session_id={state.live_session_id}")
 
     # Create or restore session in database
     from iris.client.web.repositories import logs_repo, session_repo
 
-    db_session = session_repo.get(state.session_id)
+    db_session = session_repo.get(state.live_session_id)
     if not db_session:
         # Create new session in database
         session_repo.create(
-            session_id=state.session_id,
+            session_id=state.live_session_id,
             config=state.session_config,
+            mode="live",
         )
-        logger.info(f"Created new session in DB: {state.session_id}")
+        logger.info(f"Created new session in DB: {state.live_session_id}")
     else:
         # Session exists - restored from database
-        logger.info(f"Restored existing session from DB: {state.session_id}")
+        logger.info(f"Restored existing session from DB: {state.live_session_id}")
 
     # Helper function to persist logs to database
     def persist_log(level: str, message: str) -> None:
         """Persist log to database if session exists."""
-        if state.session_id:
+        if state.live_session_id:
             try:
                 logs_repo.append(
-                    session_id=state.session_id,
+                    session_id=state.live_session_id,
                     level=level,
                     message=message,
                 )
@@ -1296,11 +1374,11 @@ async def client_websocket(websocket: WebSocket) -> None:
                 logger.error(f"Failed to persist log: {e}")
 
     # Log session connection
-    persist_log("INFO", f"Session {state.session_id} connected")
+    persist_log("INFO", f"Session {state.live_session_id} connected")
 
     # Send session info immediately on connect
     session_info = SessionInfoMessage(
-        session_id=state.session_id,
+        session_id=state.live_session_id,
         config=state.session_config,
     ).model_dump()
     logger.info(f"Sending to frontend: type=session_info")
@@ -1403,11 +1481,27 @@ async def client_websocket(websocket: WebSocket) -> None:
                 state.is_streaming = True
                 logger.info(f"Starting inference with config: {config}")
 
+                # [FIX] Clear previous LIVE session data (auto-reset on start)
+                from iris.client.web.repositories import results_repo, logs_repo
+                logs_repo.clear_session(state.live_session_id)
+                results_repo.clear_session(state.live_session_id)
+                state.results_history.clear()
+
                 # Update session status in database
                 session_repo.update_status(
-                    session_id=state.session_id,
+                    session_id=state.live_session_id,
                     status="running",
                     started_at=time.time(),
+                )
+
+                # Persist segment config (T, s, k) to database
+                session_repo.update_config(
+                    session_id=state.live_session_id,
+                    config={
+                        "segment_time": config.get("segment_time"),
+                        "frames_per_segment": config.get("frames_per_segment"),
+                        "overlap_frames": config.get("overlap_frames"),
+                    }
                 )
 
                 # Log inference start
@@ -1441,11 +1535,11 @@ async def client_websocket(websocket: WebSocket) -> None:
                             state.results_history.pop(0)
 
                         # Persist result to database
-                        if msg_type == "result" and state.session_id:
+                        if msg_type == "result" and state.live_session_id:
                             try:
                                 from iris.client.web.repositories import results_repo
                                 results_repo.store(
-                                    session_id=state.session_id,
+                                    session_id=state.live_session_id,
                                     job_id=result.get("job_id", "unknown"),
                                     video_time_ms=int(result.get("timestamp", 0) * 1000),  # Convert to ms
                                     inference_start_ms=result.get("timestamp", 0) * 1000,
@@ -1503,7 +1597,7 @@ async def client_websocket(websocket: WebSocket) -> None:
 
                 # Update session status in database
                 session_repo.update_status(
-                    session_id=state.session_id,
+                    session_id=state.live_session_id,
                     status="paused",
                     completed_at=time.time(),
                 )
@@ -1522,28 +1616,27 @@ async def client_websocket(websocket: WebSocket) -> None:
                 await websocket.send_json(response)
 
             elif msg_type == "reset_session":
-                # Reset session
-                logger.info("Resetting session")
-                new_session_id = state.reset_session()
+                # Reset session (clear data)
+                logger.info("Resetting session (clearing data)")
+                state.clear_live_session()
+                state.clear_analysis_session()
+                
+                # Clear DB
+                from iris.client.web.repositories import logs_repo, results_repo
+                logs_repo.clear_session(state.live_session_id)
+                results_repo.clear_session(state.live_session_id)
+                logs_repo.clear_session(state.analysis_session_id)
+                results_repo.clear_session(state.analysis_session_id)
 
-                # Create new session in database immediately
-                try:
-                    session_repo.create(
-                        session_id=new_session_id,
-                        config=state.session_config,
-                    )
-                    logger.info(f"Created new session in DB after reset: {new_session_id}")
-                    persist_log("INFO", f"Session reset: new session {new_session_id}")
-                except Exception as e:
-                    logger.error(f"Failed to create session in DB after reset: {e}")
+                persist_log("INFO", f"Session reset (data cleared)")
 
                 session_msg = SessionInfoMessage(
-                    session_id=new_session_id,
+                    session_id=state.live_session_id,
                     config=state.session_config,
                 ).model_dump()
-                logger.info(f"Sending to frontend: type=session_info, new_session_id={new_session_id}")
+                logger.info(f"Sending to frontend: type=session_info, session_id={state.live_session_id}")
                 await websocket.send_json(session_msg)
-                logger.info(f"Session reset to: {new_session_id}")
+                logger.info(f"Session reset complete")
 
             elif msg_type == "start_analysis":
                 # Handle analysis start

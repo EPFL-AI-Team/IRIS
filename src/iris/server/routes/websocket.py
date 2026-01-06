@@ -58,16 +58,16 @@ class SessionState:
         """Generate metrics snapshot for broadcast.
 
         Args:
-            queue_depth: Current number of jobs in queue.
+            queue_depth: Current number of jobs in queue (internal use, not sent to client).
 
         Returns:
             Dictionary with session metrics.
         """
         elapsed = time.time() - self.start_time
-        rate = self.segments_processed / elapsed if elapsed > 0 else 0.0
 
         # Calculate segments_total for analysis mode using logical FPS
         segments_total = None
+        batch_size = None
         if self.mode == "analysis" and self.duration_sec:
             frames_per_segment = self.config.get("frames_per_segment", 8)
             overlap_frames = self.config.get("overlap_frames", 4)
@@ -88,16 +88,16 @@ class SessionState:
                     1, (effective_total_frames + frames_per_chunk - 1) // frames_per_chunk
                 )
 
+            # Include batch size only for analysis mode
+            batch_size = config.batch_inference.batch_size if config.batch_inference.enabled else 1
+
         return {
             "type": "session_metrics",
             "session_id": self.session_id,
             "elapsed_seconds": round(elapsed, 1),
             "segments_processed": self.segments_processed,
             "segments_total": segments_total,
-            "queue_depth": queue_depth,
-            "processing_rate": round(rate, 2),
-            "frames_received": self.frames_received,
-            "batch_size": config.batch_inference.batch_size if config.batch_inference.enabled else 1,
+            "batch_size": batch_size,
         }
 
 
