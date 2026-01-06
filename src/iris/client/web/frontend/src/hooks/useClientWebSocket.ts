@@ -39,7 +39,7 @@ export function useClientWebSocket() {
   const setPreviewFrame = useAppStore((state) => state.setPreviewFrame);
   const setServerAlive = useAppStore((state) => state.setServerAlive);
   const setSessionState = useAppStore((state) => state.setSessionState);
-  const setSessionMetrics = useAppStore((state) => state.setSessionMetrics);
+  const setLiveSessionMetrics = useAppStore((state) => state.setLiveSessionMetrics);
   const setIsStreaming = useAppStore((state) => state.setIsStreaming);
   const setFps = useAppStore((state) => state.setFps);
   const addResult = useAppStore((state) => state.addResult);
@@ -301,11 +301,9 @@ export function useClientWebSocket() {
             elapsedSeconds: (data.elapsed_seconds as number) || 0,
             segmentsProcessed: (data.segments_processed as number) || 0,
             segmentsTotal: (data.segments_total as number) ?? null,
-            queueDepth: (data.queue_depth as number) || 0,
-            processingRate: (data.processing_rate as number) || 0,
-            framesReceived: (data.frames_received as number) || 0,
+            batchSize: data.batch_size as number | undefined,
           };
-          setSessionMetrics(metrics);
+          setLiveSessionMetrics(metrics);
           break;
         }
 
@@ -350,7 +348,7 @@ export function useClientWebSocket() {
       setSessionState,
       setPreviewFrame,
       setServerAlive,
-      setSessionMetrics,
+      setLiveSessionMetrics,
       setIsStreaming,
       setFps,
       addResult,

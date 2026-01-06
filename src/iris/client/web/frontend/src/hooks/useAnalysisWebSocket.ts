@@ -1,14 +1,7 @@
 import { useCallback, useRef, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
-import type { AnalysisResult, AnalysisLog, SessionAckMessage, SessionMetricsMessage } from "../types";
+import type { SessionAckMessage, SessionMetricsMessage, ResultItem } from "../types";
 import { toast } from "sonner";
-
-/**
- * Generate unique ID for analysis logs.
- */
-function generateLogId(): string {
-  return `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 /**
  * Hook to manage WebSocket connection for video analysis.
@@ -21,11 +14,9 @@ export function useAnalysisWebSocket() {
   const setAnalysisMode = useAppStore((state) => state.setAnalysisMode);
   const addAnalysisResult = useAppStore((state) => state.addAnalysisResult);
   const setAnalysisProgress = useAppStore((state) => state.setAnalysisProgress);
-  const addLog = useAppStore((state) => state.addLog);
   const addAnalysisLog = useAppStore((state) => state.addAnalysisLog);
-  const setAnalysisJobId = useAppStore((state) => state.setAnalysisJobId);
   const setSessionState = useAppStore((state) => state.setSessionState);
-  const setSessionMetrics = useAppStore((state) => state.setSessionMetrics);
+  const setAnalysisSessionMetrics = useAppStore((state) => state.setAnalysisSessionMetrics);
   const resetSessionState = useAppStore((state) => state.resetSessionState);
 
   const connect = useCallback(() => {
@@ -44,13 +35,13 @@ export function useAnalysisWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws/analysis`;
 
-    addLog("Connecting to analysis WebSocket...", "INFO");
+    addAnalysisLog("Connecting to analysis WebSocket...", "INFO");
     setAnalysisMode("running");
 
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      addLog("Analysis WebSocket connected", "INFO");
+      addAnalysisLog("Analysis WebSocket connected", "INFO");
     };
 
     ws.onmessage = (event) => {
@@ -70,20 +61,17 @@ export function useAnalysisWebSocket() {
                 overlap_frames: ack.config.overlap_frames,
               },
             });
-            addLog(`Session established: ${ack.session_id}`, "INFO");
+            addAnalysisLog(`Session established: ${ack.session_id}`, "INFO");
             break;
           }
 
           case "session_metrics": {
             // Live metrics update from inference server
             const metrics = data as SessionMetricsMessage;
-            setSessionMetrics({
+            setAnalysisSessionMetrics({
               elapsedSeconds: metrics.elapsed_seconds,
               segmentsProcessed: metrics.segments_processed,
               segmentsTotal: metrics.segments_total,
-              queueDepth: metrics.queue_depth,
-              processingRate: metrics.processing_rate,
-              framesReceived: metrics.frames_received,
               batchSize: metrics.batch_size,
             });
 
@@ -97,47 +85,30 @@ export function useAnalysisWebSocket() {
                 total_frames: metrics.segments_total,       // Total segments to process
                 progress_percent: inferenceProgress,         // Percentage for progress bar
                 position_ms: 0,
-                processing_rate: metrics.processing_rate,
               });
             }
             break;
           }
 
           case "result": {
-            // Inference result received
-            addAnalysisResult(data as AnalysisResult);
-            addLog(
+            // Inference result received - adapt to unified ResultItem
+            const resultItem: ResultItem = {
+              id: `result-${data.job_id}`,
+              job_id: data.job_id as string,
+              timestamp: new Date(data.timestamp_range_ms[0]),
+              videoTimeMs: data.timestamp_range_ms[0],
+              timestamp_range_ms: data.timestamp_range_ms, // Pass through range
+              frame_range: data.frame_range, // Pass through frame range
+              status: "completed",
+              result: data.result as string,
+              frames_processed: data.frames_processed as number,
+              inference_time: data.inference_time as number,
+            };
+            addAnalysisResult(resultItem);
+            addAnalysisLog(
               `Result received for frames ${data.frame_range[0]}-${data.frame_range[1]}`,
               "INFO"
             );
-
-            // Add to analysis logs (synced with video timeline)
-            const videoTimeMs = data.timestamp_range_ms
-              ? data.timestamp_range_ms[0]
-              : null;
-
-            // Parse result string to object if possible
-            let inferenceResult: Record<string, unknown> | undefined;
-            try {
-              if (typeof data.result === "string") {
-                inferenceResult = JSON.parse(data.result);
-              } else {
-                inferenceResult = data.result;
-              }
-            } catch {
-              // Keep as string if not valid JSON
-            }
-
-            const analysisLog: AnalysisLog = {
-              id: generateLogId(),
-              timestamp: Date.now(),
-              video_time_ms: videoTimeMs,
-              type: "inference",
-              message: `Frames ${data.frame_range[0]}-${data.frame_range[1]}`,
-              inference_result: inferenceResult,
-              inference_time_ms: data.inference_time ? data.inference_time * 1000 : undefined,
-            };
-            addAnalysisLog(analysisLog);
             break;
           }
 
@@ -158,20 +129,10 @@ export function useAnalysisWebSocket() {
             // Analysis complete
             setAnalysisMode("complete");
             setAnalysisProgress(null);
-            addLog(
+            addAnalysisLog(
               `Analysis complete: ${data.total_frames} frames, ${data.total_results} results`,
               "INFO"
             );
-
-            // Add completion log to analysis logs
-            const completeLog: AnalysisLog = {
-              id: generateLogId(),
-              timestamp: Date.now(),
-              video_time_ms: null,
-              type: "system",
-              message: `Analysis complete: ${data.total_frames} frames processed, ${data.total_results} results in ${data.duration_sec?.toFixed(1) || "?"}s`,
-            };
-            addAnalysisLog(completeLog);
 
             // Show completion notification
             toast.success("Analysis Complete", {
@@ -186,17 +147,7 @@ export function useAnalysisWebSocket() {
           case "error": {
             // Error occurred
             setAnalysisMode("error");
-            addLog(`Analysis error: ${data.message}`, "ERROR");
-
-            // Add error to analysis logs
-            const errorLog: AnalysisLog = {
-              id: generateLogId(),
-              timestamp: Date.now(),
-              video_time_ms: null,
-              type: "error",
-              message: data.message,
-            };
-            addAnalysisLog(errorLog);
+            addAnalysisLog(`Analysis error: ${data.message}`, "ERROR");
 
             ws.close();
             break;
@@ -204,23 +155,13 @@ export function useAnalysisWebSocket() {
 
           case "log": {
             // Log message from server
-            addLog(data.message, data.level || "INFO");
-
-            // Add system log to analysis logs
-            const sysLog: AnalysisLog = {
-              id: generateLogId(),
-              timestamp: Date.now(),
-              video_time_ms: null,
-              type: "system",
-              message: data.message,
-            };
-            addAnalysisLog(sysLog);
+            addAnalysisLog(data.message, data.level || "INFO");
             break;
           }
 
           case "upload_complete": {
             // Video upload to server completed
-            addLog(
+            addAnalysisLog(
               `Upload complete: ${data.total_frames} frames uploaded in ${data.duration_sec?.toFixed(1) || "?"}s`,
               "INFO"
             );
@@ -232,23 +173,23 @@ export function useAnalysisWebSocket() {
         }
       } catch (error) {
         console.error("Failed to parse analysis WebSocket message:", error);
-        addLog("Failed to parse analysis message", "ERROR");
+        addAnalysisLog("Failed to parse analysis message", "ERROR");
       }
     };
 
     ws.onerror = (error) => {
       console.error("Analysis WebSocket error:", error);
-      addLog("Analysis WebSocket error", "ERROR");
+      addAnalysisLog("Analysis WebSocket error", "ERROR");
       setAnalysisMode("error");
     };
 
     ws.onclose = (event) => {
       if (event.code === 1000) {
         // Normal closure
-        addLog("Analysis WebSocket closed", "INFO");
+        addAnalysisLog("Analysis WebSocket closed", "INFO");
       } else {
         // Abnormal closure
-        addLog(
+        addAnalysisLog(
           `Analysis WebSocket closed unexpectedly (code: ${event.code})`,
           "WARNING"
         );
@@ -263,9 +204,9 @@ export function useAnalysisWebSocket() {
     setAnalysisMode,
     addAnalysisResult,
     setAnalysisProgress,
-    addLog,
     addAnalysisLog,
-    setAnalysisJobId,
+    setSessionState,
+    setAnalysisSessionMetrics,
   ]);
 
   const disconnect = useCallback(() => {
@@ -275,7 +216,7 @@ export function useAnalysisWebSocket() {
     }
 
     if (wsRef.current) {
-      addLog("Closing analysis WebSocket...", "INFO");
+      addAnalysisLog("Closing analysis WebSocket...", "INFO");
       wsRef.current.close();
       wsRef.current = null;
     }
@@ -283,7 +224,7 @@ export function useAnalysisWebSocket() {
     setAnalysisMode("idle");
     setAnalysisProgress(null);
     resetSessionState();
-  }, [setAnalysisMode, setAnalysisProgress, addLog, resetSessionState]);
+  }, [setAnalysisMode, setAnalysisProgress, addAnalysisLog, resetSessionState]);
 
   // Cleanup on unmount
   useEffect(() => {
