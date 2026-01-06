@@ -41,15 +41,6 @@ function App() {
             setClientVideoConfig(defaults.video);
           }
 
-          // Set segment config (T, s, k)
-          if (defaults.segment) {
-            setSegmentConfig({
-              segmentTime: defaults.segment.segment_time,
-              framesPerSegment: defaults.segment.frames_per_segment,
-              overlapFrames: defaults.segment.overlap_frames,
-            });
-          }
-
           addLog("Loaded configuration from server", "INFO");
         }
       } catch (error) {

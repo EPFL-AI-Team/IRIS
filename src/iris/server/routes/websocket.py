@@ -486,6 +486,8 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                         stride = buffer_size - overlap_frames
                         if stride > 0 and client_fps > 0:
                             video_time_ms = (batch_segment_counter * stride / client_fps) * 1000.0
+                    
+                    logger.debug(f"Segment video_time_ms: {video_time_ms} (timestamp={buffered_timestamps[0] if buffered_timestamps else 'None'}, batch_seg={batch_segment_counter})")
 
                     # Check if batch inference enabled for analysis mode
                     batch_cfg = config.batch_inference
@@ -581,6 +583,7 @@ async def inference_endpoint(websocket: WebSocket) -> None:
                             )
 
                         batch_counter += 1
+                        batch_segment_counter += 1
                         frame_buffer.slide_window()
 
         except WebSocketDisconnect as e:

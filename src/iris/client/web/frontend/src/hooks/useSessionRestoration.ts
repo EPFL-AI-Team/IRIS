@@ -63,12 +63,46 @@ export function useSessionRestoration() {
                 overlapFrames: config.overlap_frames || 0,
               });
             }
+          } else {
+            // No session config? Try loading server defaults as fallback
+            try {
+              const defaultsRes = await fetch("/api/config/defaults");
+              if (defaultsRes.ok) {
+                const defaults = await defaultsRes.json();
+                if (defaults.segment) {
+                  setSegmentConfig({
+                    segmentTime: defaults.segment.segment_time,
+                    framesPerSegment: defaults.segment.frames_per_segment,
+                    overlapFrames: defaults.segment.overlap_frames,
+                  });
+                }
+              }
+            } catch (e) {
+              console.warn("Failed to load default config:", e);
+            }
           }
 
           console.log("Live session restored:", {
             logs: liveData.logs?.length || 0,
             results: liveData.results?.length || 0,
           });
+        } else {
+          // Session doesn't exist? Load server defaults
+          try {
+            const defaultsRes = await fetch("/api/config/defaults");
+            if (defaultsRes.ok) {
+              const defaults = await defaultsRes.json();
+              if (defaults.segment) {
+                setSegmentConfig({
+                  segmentTime: defaults.segment.segment_time,
+                  framesPerSegment: defaults.segment.frames_per_segment,
+                  overlapFrames: defaults.segment.overlap_frames,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to load default config:", e);
+          }
         }
       } catch (err) {
         console.error("Failed to restore live session:", err);
