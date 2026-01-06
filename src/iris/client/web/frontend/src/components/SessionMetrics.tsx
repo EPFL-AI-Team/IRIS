@@ -16,7 +16,7 @@ function formatTime(seconds: number): string {
  */
 export function SessionMetrics() {
   const sessionState = useAppStore((state) => state.sessionState);
-  const sessionMetrics = useAppStore((state) => state.sessionMetrics);
+  const liveSessionMetrics = useAppStore((state) => state.liveSessionMetrics);
 
   // Don't render if no session configured
   if (!sessionState.configured || !sessionState.sessionId) {
@@ -36,13 +36,13 @@ export function SessionMetrics() {
       </Badge>
 
       {/* Metrics - only show if available */}
-      {sessionMetrics && (
+      {liveSessionMetrics && (
         <>
           {/* Elapsed Time */}
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <span className="text-[10px] uppercase tracking-wide">Time</span>
             <span className="font-mono font-medium text-foreground">
-              {formatTime(sessionMetrics.elapsedSeconds)}
+              {formatTime(liveSessionMetrics.elapsedSeconds)}
             </span>
           </div>
 
@@ -50,43 +50,12 @@ export function SessionMetrics() {
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <span className="text-[10px] uppercase tracking-wide">Segments</span>
             <span className="font-mono font-medium text-foreground">
-              {sessionMetrics.segmentsProcessed}
-              {sessionMetrics.segmentsTotal !== null && (
+              {liveSessionMetrics.segmentsProcessed}
+              {liveSessionMetrics.segmentsTotal !== null && (
                 <span className="text-muted-foreground">
-                  /{sessionMetrics.segmentsTotal}
+                  /{liveSessionMetrics.segmentsTotal}
                 </span>
               )}
-            </span>
-          </div>
-
-          {/* Queue Depth */}
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Queue</span>
-            <span
-              className={`font-mono font-medium ${
-                sessionMetrics.queueDepth > 5
-                  ? "text-yellow-500"
-                  : "text-foreground"
-              }`}
-            >
-              {sessionMetrics.queueDepth}
-            </span>
-          </div>
-
-          {/* Processing Rate */}
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Rate</span>
-            <span className="font-mono font-medium text-foreground">
-              {sessionMetrics.processingRate.toFixed(1)}
-              <span className="text-muted-foreground">/s</span>
-            </span>
-          </div>
-
-          {/* Frames Received */}
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Frames</span>
-            <span className="font-mono font-medium text-foreground">
-              {sessionMetrics.framesReceived}
             </span>
           </div>
         </>

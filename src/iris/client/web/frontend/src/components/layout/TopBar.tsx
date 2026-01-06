@@ -42,7 +42,6 @@ export function TopBar() {
   const isStreaming = useAppStore((state) => state.isStreaming);
   const setIsStreaming = useAppStore((state) => state.setIsStreaming);
   const sessionState = useAppStore((state) => state.sessionState);
-  const sessionMetrics = useAppStore((state) => state.sessionMetrics);
   // const segmentConfig = useAppStore((state) => state.segmentConfig);
   const addLog = useAppStore((state) => state.addLog);
   const analysisJobId = useAppStore((state) => state.analysisJobId);
@@ -68,7 +67,9 @@ export function TopBar() {
     // Update elapsed time every second
     const interval = setInterval(() => {
       if (streamingStartTimeRef.current) {
-        const elapsed = Math.floor((Date.now() - streamingStartTimeRef.current) / 1000);
+        const elapsed = Math.floor(
+          (Date.now() - streamingStartTimeRef.current) / 1000
+        );
         setClientElapsedSeconds(elapsed);
       }
     }, 1000);
@@ -90,8 +91,8 @@ export function TopBar() {
   // Check if Gemini API key is configured on mount
   useEffect(() => {
     fetch("/api/config/gemini-key")
-      .then(res => res.json())
-      .then(data => setGeminiKeyConfigured(data.configured))
+      .then((res) => res.json())
+      .then((data) => setGeminiKeyConfigured(data.configured))
       .catch(() => setGeminiKeyConfigured(false));
   }, []);
 
@@ -218,8 +219,8 @@ export function TopBar() {
                 reportStatus === "ready"
                   ? "default"
                   : reportStatus === "generating"
-                    ? "secondary"
-                    : "destructive"
+                  ? "secondary"
+                  : "destructive"
               }
               className="gap-1"
             >
@@ -227,7 +228,8 @@ export function TopBar() {
                 <Loader2 className="w-3 h-3 animate-spin" />
               )}
               {reportStatus === "ready" && <FileText className="w-3 h-3" />}
-              Report: {reportStatus.charAt(0).toUpperCase() + reportStatus.slice(1)}
+              Report:{" "}
+              {reportStatus.charAt(0).toUpperCase() + reportStatus.slice(1)}
             </Badge>
           )}
 
@@ -367,38 +369,6 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Row 3: Session Metrics (when available) */}
-      {sessionMetrics && (
-        <div className="px-4 py-1.5 bg-muted/30 border-t flex items-center gap-6 text-sm">
-          <span className="text-muted-foreground">
-            Elapsed:{" "}
-            <span className="font-mono text-foreground">
-              {formatDuration(sessionMetrics.elapsedSeconds)}
-            </span>
-          </span>
-          <span className="text-muted-foreground">
-            Segments:{" "}
-            <span className="font-mono text-foreground">
-              {sessionMetrics.segmentsProcessed}
-              {sessionMetrics.segmentsTotal &&
-                `/${sessionMetrics.segmentsTotal}`}
-            </span>
-          </span>
-          <span className="text-muted-foreground">
-            Queue:{" "}
-            <span className="font-mono text-foreground">
-              {sessionMetrics.queueDepth}
-            </span>
-          </span>
-          <span className="text-muted-foreground">
-            Rate:{" "}
-            <span className="font-mono text-foreground">
-              {sessionMetrics.processingRate.toFixed(1)}/s
-            </span>
-          </span>
-        </div>
-      )}
-
       <ReportModal
         sessionId={sessionState.sessionId || analysisJobId || undefined}
         open={reportModalOpen}
@@ -432,13 +402,4 @@ function TabButton({
       {children}
     </button>
   );
-}
-
-/**
- * Format duration in seconds to MM:SS format.
- */
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }

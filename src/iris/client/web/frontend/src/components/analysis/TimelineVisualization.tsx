@@ -88,6 +88,7 @@ export function TimelineVisualization() {
     (
       result: (typeof results)[0]
     ): { color: string; status: "match" | "mismatch" | "no_gt" } => {
+      if (!result.timestamp_range_ms) return { color: "bg-gray-500", status: "no_gt" };
       const [startMs, endMs] = result.timestamp_range_ms;
       const centerMs = (startMs + endMs) / 2;
 
@@ -98,7 +99,7 @@ export function TimelineVisualization() {
       if (!gt) return { color: "bg-gray-500", status: "no_gt" };
 
       try {
-        const inference = JSON.parse(result.result);
+        const inference = result.result ? JSON.parse(result.result) : {};
         // Simple equality check - customize as needed
         const matches =
           inference.action === gt.action &&
@@ -117,13 +118,15 @@ export function TimelineVisualization() {
 
   // Build inference cards with overlap detection
   const inferenceCards = useMemo((): TimelineCard[] => {
-    const baseCards = results.map((result) => {
-      const [startMs, endMs] = result.timestamp_range_ms;
-      const { color, status } = getSegmentColor(result);
+    const baseCards = results
+      .filter(result => result.timestamp_range_ms)
+      .map((result) => {
+      const [startMs, endMs] = result.timestamp_range_ms!;
+      const { color, status} = getSegmentColor(result);
 
       let parsedResult: Record<string, unknown> = {};
       try {
-        parsedResult = JSON.parse(result.result);
+        parsedResult = result.result ? JSON.parse(result.result) : {};
       } catch {
         parsedResult = { action: "error", tool: "?", target: "?" };
       }
@@ -145,8 +148,8 @@ export function TimelineVisualization() {
           time: `${(startMs / 1000).toFixed(1)}s - ${(endMs / 1000).toFixed(
             1
           )}s`,
-          frames: `${result.frame_range[0]}-${result.frame_range[1]}`,
-          inference_time: `${(result.inference_time * 1000).toFixed(0)}ms`,
+          frames: result.frame_range ? `${result.frame_range[0]}-${result.frame_range[1]}` : 'N/A',
+          inference_time: result.inference_time ? `${(result.inference_time * 1000).toFixed(0)}ms` : 'N/A',
         },
       };
     });

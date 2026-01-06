@@ -4,7 +4,7 @@ import { useAnalysisWebSocket } from "../../hooks/useAnalysisWebSocket";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ReportModal } from "../ReportModal";
-import { Play, Square, FileText, Loader2 } from "lucide-react";
+import { Play, Square, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 export function AnalysisControls() {
@@ -22,7 +22,9 @@ export function AnalysisControls() {
   );
   const clearAnalysisLogs = useAppStore((state) => state.clearAnalysisLogs);
   const analysisJobId = useAppStore((state) => state.analysisJobId);
-  const sessionMetrics = useAppStore((state) => state.sessionMetrics);
+  const analysisSessionMetrics = useAppStore(
+    (state) => state.analysisSessionMetrics
+  );
   const { connect, disconnect } = useAnalysisWebSocket();
 
   const handleStart = async () => {
@@ -119,8 +121,14 @@ export function AnalysisControls() {
                 {progress.current_frame} / {progress.total_frames} segments
               </span>
               <span>
-                {progress.processing_rate && progress.processing_rate > 0 && progress.total_frames
-                  ? `ETA: ${((progress.total_frames - progress.current_frame) / progress.processing_rate / 60).toFixed(1)} min`
+                {progress.processing_rate &&
+                progress.processing_rate > 0 &&
+                progress.total_frames
+                  ? `ETA: ${(
+                      (progress.total_frames - progress.current_frame) /
+                      progress.processing_rate /
+                      60
+                    ).toFixed(1)} min`
                   : `${progress.progress_percent.toFixed(0)}%`}
               </span>
             </div>
@@ -134,48 +142,52 @@ export function AnalysisControls() {
         )}
 
         {/* Detailed Session Metrics */}
-        {isRunning && sessionMetrics && (() => {
-          const batchSize = sessionMetrics.batchSize || 1;
-          const segmentsProcessed = sessionMetrics.segmentsProcessed;
-          const segmentsTotal = sessionMetrics.segmentsTotal || 0;
-          const batchesCompleted = Math.floor(segmentsProcessed / batchSize);
-          const totalBatches = Math.ceil(segmentsTotal / batchSize);
-          const segmentsInCurrentBatch = segmentsProcessed % batchSize;
-          const showBatches = batchSize > 1 && segmentsTotal > 0 && batchesCompleted >= 1;
+        {isRunning &&
+          analysisSessionMetrics &&
+          (() => {
+            const batchSize = analysisSessionMetrics.batchSize || 1;
+            const segmentsProcessed = analysisSessionMetrics.segmentsProcessed;
+            const segmentsTotal = analysisSessionMetrics.segmentsTotal || 0;
+            const batchesCompleted = Math.floor(segmentsProcessed / batchSize);
+            const totalBatches = Math.ceil(segmentsTotal / batchSize);
+            const segmentsInCurrentBatch = segmentsProcessed % batchSize;
+            const showBatches =
+              batchSize > 1 && segmentsTotal > 0 && batchesCompleted >= 1;
 
-          return (
-            <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono bg-muted/20 p-2 rounded border border-border/50">
-              <div>Elapsed: {sessionMetrics.elapsedSeconds.toFixed(1)}s</div>
-              <div>Rate: {sessionMetrics.processingRate.toFixed(1)} seg/s</div>
-              <div className="flex items-center gap-1">
-                <span>Queue:</span>
-                {sessionMetrics.queueDepth > 0 && (
-                  <Loader2 className="w-3 h-3 animate-spin inline" />
-                )}
-                <span>{sessionMetrics.queueDepth}</span>
-                {segmentsInCurrentBatch > 0 && batchSize > 1 && (
-                  <span className="text-blue-400">
-                    ({segmentsInCurrentBatch}/{batchSize} in batch)
+            return (
+              <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-mono bg-muted/20 p-2 rounded border border-border/50">
+                <div>
+                  Elapsed: {analysisSessionMetrics.elapsedSeconds.toFixed(1)}s
+                </div>
+                <div className="flex items-center gap-1">
+                  <span>
+                    Segments: {segmentsProcessed}/{segmentsTotal}
                   </span>
-                )}
-              </div>
-              <div>
-                Segments: {segmentsProcessed}
-                {segmentsTotal ? ` / ${segmentsTotal}` : ""}
-              </div>
-              {showBatches && (
-                <div className="col-span-2 text-blue-400 flex items-center gap-1">
-                  <span>Batches: {batchesCompleted} / {totalBatches}</span>
-                  {segmentsInCurrentBatch > 0 && (
-                    <span className="text-muted-foreground">
-                      (processing {segmentsInCurrentBatch}/{batchSize})
+                  {segmentsInCurrentBatch > 0 && batchSize > 1 && (
+                    <span className="text-blue-400">
+                      ({segmentsInCurrentBatch}/{batchSize} in batch)
                     </span>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })()}
+                <div>
+                  Segments: {segmentsProcessed}
+                  {segmentsTotal ? ` / ${segmentsTotal}` : ""}
+                </div>
+                {showBatches && (
+                  <div className="col-span-2 text-blue-400 flex items-center gap-1">
+                    <span>
+                      Batches: {batchesCompleted} / {totalBatches}
+                    </span>
+                    {segmentsInCurrentBatch > 0 && (
+                      <span className="text-muted-foreground">
+                        (processing {segmentsInCurrentBatch}/{batchSize})
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
       </div>
 
       <ReportModal
