@@ -26,7 +26,9 @@ def load_hardware_profile(hardware: str) -> dict:
             "quantization": {"load_in_8bit": False}
         }
     """
-    profile_path = Path(f"configs/vlm/hardware/{hardware}.yaml")
+    # Navigate from this file to repo root (4 levels up: vlm -> iris -> src -> root)
+    repo_root = Path(__file__).parent.parent.parent.parent
+    profile_path = repo_root / "configs" / "vlm" / "hardware" / f"{hardware}.yaml"
 
     if not profile_path.exists():
         logger.warning(f"Hardware profile not found: {hardware}, using defaults")

@@ -34,7 +34,7 @@ class VideoJobConfig(JobConfig):
     job_type: Literal[JobType.VIDEO] = JobType.VIDEO
 
     # Load defaults from project root config.yaml (YAML-only, no env overrides)
-    _jobs_video_cfg = _yaml_config.get("jobs", {}).get("video", {})
+    _jobs_video_cfg = _yaml_config.get("server", {}).get("jobs", {}).get("video", {})
 
     trigger_mode: TriggerMode = Field(
         default=_jobs_video_cfg.get("trigger_mode", TriggerMode.PERIODIC),

@@ -16,3 +16,4 @@ class JobType(str, Enum):
 
     SINGLE_FRAME = "single_frame"
     VIDEO = "video"
+    BATCH_VIDEO = "batch_video"  # Batch processing of multiple video segments

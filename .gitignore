@@ -493,6 +493,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!src/iris/client/web/frontend/src/lib/
 lib64/
 parts/
 sdist/
@@ -537,6 +538,9 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# Database files (runtime artifacts)
+*.db
 
 # Flask stuff:
 instance/
@@ -692,3 +696,10 @@ tags
 notebooks/vlm/Qwen2_5_VL_(7B)_Vision.ipynb
 SCITAS-checkpoints
 wandb
+scripts/runai-command.sh
+Claude.md
+GEMINI.md
+src/iris/client/web/static/videos/dataset-test-video-shorter-shortest.mp4
+src/iris/client/web/static/videos/iris-full-demo-cut.mp4
+src/iris/client/web/static/videos/iris-full-demo-uncut.mp4
+src/iris/client/web/static/videos/iris-video-demo-with-commentary.mp4

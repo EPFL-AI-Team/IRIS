@@ -5,6 +5,8 @@ description = "IRIS - Video understanding ML system"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "torch>=2.5.1",
+    "torch>=2.5.1",
     "jupyter>=1.1.1",
     "numpy>=2.3.3",
     "pandas>=2.3.3",
@@ -26,7 +28,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["google-generativeai>=0.8.5", "ipykernel>=6.29.0"]
+dev = [
+    "google-generativeai>=0.8.5",
+    "ipykernel>=6.29.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=7.0.0",
+]
 
 # Server-only dependencies (V100 + Mac dev)
 server = [
@@ -34,13 +42,14 @@ server = [
     "torch>=2.3.0,<2.6.0",
     "torchvision>=0.20.1,<0.21.0",
     "torchaudio>=2.5.1,<2.6.0",
-    "transformers>=4.49.0,<4.54.0", # Qwen2.5-VL support, avoid 4.54+ regression
-    "peft>=0.14.0",                 # VLM support with bitsandbytes
-    "trl<=0.26.1",                  # Native VLM support in SFTTrainer
-    "bitsandbytes>=0.46.0",         # 4-bit quantization
-    "accelerate>=0.21.0",           # Distributed training
-    "qwen-vl-utils>=0.0.8",         # Qwen utilities
-    "datasets>=2.19.0",             # Data loading
+    "transformers>=4.49.0,<4.54.0",                   # Qwen2.5-VL support, avoid 4.54+ regression
+    "peft>=0.14.0",                                   # VLM support with bitsandbytes
+    "trl<=0.26.1",                                    # Native VLM support in SFTTrainer
+    "bitsandbytes>=0.46.0 ; sys_platform == 'linux'", # 4-bit quantization
+    "accelerate>=0.21.0",                             # Distributed training
+    "qwen-vl-utils>=0.0.8",                           # Qwen utilities
+    "datasets>=2.19.0",                               # Data loading
+
     "num2words>=0.5.14",
     # Platform-specific
     "nvidia-ml-py>=11.5.0 ; platform_system == 'Linux'",
@@ -54,10 +63,9 @@ server = [
 
 [project.scripts]
 iris-train = "iris.cli.finetune.train:main"
-iris-client = "iris.client.web.app:main"
-iris-server = "iris.server.app:main"
-iris-test = "iris.cli.local_test:cli"
-iris = "iris.cli.local_test:cli"
+# iris-client-dev = "iris.client.web.run_dev:main"
+iris-client = "iris.cli.client:main_cli"
+iris-server = "iris.cli.server:run"
 iris-benchmark = "iris.cli.benchmark:run"
 iris-vis = "iris.dataset.visualize_sampling:main"
 

@@ -102,31 +102,32 @@ class WebConfig(BaseModel):
         return self.cert_path / "cert.pem"
 
 
-class SSHTunnelConfig(BaseModel):
-    """SSH tunnel configuration for HPC cluster access."""
+class SegmentConfig(BaseModel):
+    """Segment configuration for inference (T, s, k parameters)."""
 
-    enabled: bool = Field(
+    segment_time: float = Field(
         default=_yaml_config.get("client", {})
-        .get("ssh_tunnel", {})
-        .get("enabled", False)
+        .get("segment", {})
+        .get("segment_time", 1.0),
+        ge=0.1,
+        le=10.0,
+        description="T: Duration of each segment in seconds",
     )
-    ssh_host: str = Field(
+    frames_per_segment: int = Field(
         default=_yaml_config.get("client", {})
-        .get("ssh_tunnel", {})
-        .get("ssh_host", "izar.hpc.epfl.ch")
+        .get("segment", {})
+        .get("frames_per_segment", 8),
+        ge=1,
+        le=32,
+        description="s: Number of frames per segment",
     )
-    ssh_user: str = Field(
-        default=_yaml_config.get("client", {}).get("ssh_tunnel", {}).get("ssh_user", "")
-    )
-    ssh_key_path: str = Field(
+    overlap_frames: int = Field(
         default=_yaml_config.get("client", {})
-        .get("ssh_tunnel", {})
-        .get("ssh_key_path", "~/.ssh/id_rsa")
-    )
-    remote_host: str = Field(
-        default=_yaml_config.get("client", {})
-        .get("ssh_tunnel", {})
-        .get("remote_host", "")
+        .get("segment", {})
+        .get("overlap_frames", 4),
+        ge=0,
+        le=31,
+        description="k: Number of overlap frames between segments",
     )
 
 
@@ -136,4 +137,4 @@ class ClientConfig(BaseModel):
     video: VideoConfig = Field(default_factory=VideoConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     web: WebConfig = Field(default_factory=WebConfig)
-    ssh_tunnel: SSHTunnelConfig = Field(default_factory=SSHTunnelConfig)
+    segment: SegmentConfig = Field(default_factory=SegmentConfig)

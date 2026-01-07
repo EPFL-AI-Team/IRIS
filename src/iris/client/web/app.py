@@ -1,18 +1,48 @@
 """Module for webserver hosted on the client"""
 
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from iris.client.web import routes
+from iris.client.web.database import init_db
+from iris.client.web.routes import api_router, ws_router
 
-app = FastAPI(title="IRIS Streaming client")
+logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan handler for startup/shutdown."""
+    # Startup
+    logger.info("Initializing SQLite database...")
+    init_db()
+    logger.info("Database initialized")
+
+    yield
+
+    # Shutdown
+    logger.info("Client web server shutting down")
+
+
+app = FastAPI(title="IRIS Streaming client", lifespan=lifespan)
+
+app.include_router(api_router)
+app.include_router(ws_router)
+
+# Mount static files directory (for videos)
 static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)  # Ensure directory exists
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-app.include_router(routes.router)
+# Mount frontend files (must be last to catch all other routes)
+frontend_dist = Path(__file__).parent / "frontend" / "dist"
+app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+
+
 
 
 def main() -> None:
@@ -36,7 +66,7 @@ def main() -> None:
             host=web_config.host,
             port=web_config.port,
             reload=True,
-            log_level="warning",
+            log_level="info",
             ssl_keyfile=str(web_config.ssl_keyfile),
             ssl_certfile=str(web_config.ssl_certfile),
         )
@@ -50,7 +80,7 @@ def main() -> None:
             host=web_config.host,
             port=web_config.port,
             reload=True,
-            log_level="warning",
+            log_level="info",
         )
         print(f"Started HTTP server on {web_config.host}:{web_config.port}")
 

@@ -1,0 +1,61 @@
+server:
+  # model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+  # model_id: "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"
+  model_id: "/scratch/iris/checkpoints/qwen3b_finebio_finetune_iris/"
+  live_queue_threshold: 15
+  max_queue_size: 15
+  vlm_hardware: "v100"    # Options: "a100" (80GB+), "v100" (32GB)
+
+  num_workers: 1
+  port: 8005
+  graceful_shutdown_timeout: 30.0
+  enable_log_streaming: true
+  log_streaming_min_level: "INFO"
+  enable_metrics: true
+  jobs:
+    video:
+      buffer_size: 4
+      overlap_frames: 0
+      default_fps: 5
+      max_new_tokens: 128
+      prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
+
+  # ============================================================================
+  # Batch Inference Configuration (Analysis Mode Only)
+  # ============================================================================
+  # Batch inference processes multiple video segments in a single GPU call
+  # for significantly faster analysis throughput (9-10x speedup expected).
+  #
+  # enabled: Set to true to enable batch inference for analysis mode
+  # batch_size: Number of segments to process per GPU batch
+  #   - Recommended for A100 80GB: 16-32
+  #
+  # Note: Only applies to analysis mode. Live mode always processes segments individually.
+  # ============================================================================
+  batch_inference:
+    enabled: true
+    batch_size: 16
+
+client:
+  video:
+    width: 640
+    height: 480
+    capture_fps: 5
+    jpeg_quality: 80
+    camera_index: 0
+  server:
+    host: "localhost"
+    port: 8005
+    use_ssl: false
+  web:
+    host: "0.0.0.0"
+    port: 8006
+    use_ssl: true
+    cert_dir: "~/iris-certs"  # Directory containing key.pem and cert.pem
+
+  # Segment configuration defaults (T, s, k)
+  # IMPORTANT: These are sent by client and override server buffer_size/overlap_frames!
+  segment:
+    segment_time: 2.0        # T: Duration of each segment in seconds
+    frames_per_segment: 4    # s: Number of frames per segment (reduced for Mac - was 8)
+    overlap_frames: 0        # k: Number of overlap frames (disabled for Mac - was 4)

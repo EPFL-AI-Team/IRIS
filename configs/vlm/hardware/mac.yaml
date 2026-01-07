@@ -1,0 +1,18 @@
+# Mac Hardware Profile
+# Optimized for Apple Silicon with Metal Performance Shaders (MPS)
+#
+# Key optimizations:
+# - float32 dtype (MPS doesn't handle float16 well)
+# - eager attention (more stable than sdpa on MPS)
+# - Explicit device handling in models.py (device_map disabled for MPS)
+# - Lower batch sizes in config.yaml (buffer_size: 2, overlap: 0)
+
+device: "auto"  # Will be overridden by explicit MPS detection in models.py
+
+model:
+  dtype: "float32"                    # MPS works best with float32
+  attn_implementation: "eager"        # More stable than sdpa on MPS
+  low_cpu_mem_usage: true            # Reduce CPU memory during model loading
+
+# No quantization for Mac (MPS doesn't support BitsAndBytes)
+quantization: {}

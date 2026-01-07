@@ -38,9 +38,12 @@ uv sync --group server
 Run `uv run iris-server` to start a server instance.
 
 
-## VLM Training & Evaluation
+## Documentation
 
-For training and evaluation on RCP, see [docs/rcp-guide.md](docs/rcp-guide.md).
+- **[Cluster Setup & Demo](docs/cluster-setup.md)** - Running IRIS on EPFL's Izar and RCP clusters
+- **[RCP Training & Evaluation Guide](docs/rcp-guide.md)** - Complete guide for VLM training and evaluation
+
+## VLM Training & Evaluation
 
 **Quick CLI reference:**
 

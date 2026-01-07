@@ -1,13 +1,14 @@
 import asyncio
 import logging
+import time
 from typing import NoReturn
 
 import cv2
 from PIL import Image
 
+from iris.server.inference.executor import InferenceExecutor
+from iris.server.inference.jobs import Job, JobStatus, SingleFrameJob
 from iris.vlm.models import load_model_and_processor
-from iris.vlm.inference.queue.jobs import Job, JobStatus, SingleFrameJob
-from iris.vlm.inference.queue.queue import InferenceQueue
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +34,7 @@ def load_camera_source(device_id: int = 1) -> cv2.VideoCapture:
     return cap
 
 
-async def result_consumer(queue: InferenceQueue) -> NoReturn:
+async def result_consumer(queue: InferenceExecutor) -> NoReturn:
     """
     A separate, concurrent task that just waits for results and logs them.
     It also inspects the job object to provide formatted logging.
@@ -74,8 +75,8 @@ async def main() -> None:
     logger.info("Loading model...")
     model, processor = load_model_and_processor(CURRENT_MODEL_KEY)
 
-    # Queue initializing
-    queue: InferenceQueue = InferenceQueue(max_queue_size=10, num_workers=1)
+    # Executor initializing
+    queue: InferenceExecutor = InferenceExecutor(max_queue_size=10, num_workers=1)
     await queue.start()
 
     # Start result consumer
@@ -125,6 +126,7 @@ Otherwise, describe normally.
                     processor=processor,
                     prompt=PROMPT,
                     executor=queue.executor,
+                    received_at=time.time(),
                 )
 
                 # Non-blocking, it returns immediately
