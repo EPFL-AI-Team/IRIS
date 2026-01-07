@@ -13,6 +13,7 @@ Can be used as CLI or imported as module.
 
 import argparse
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -316,7 +317,7 @@ def run_inference(
             # Decode outputs
             generated_ids_trimmed = [
                 out_ids[len(in_ids) :]
-                for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+                for in_ids, out_ids in zip(inputs.input_ids, generated_ids, strict=True)
             ]
             outputs = processor.batch_decode(
                 generated_ids_trimmed,
@@ -339,9 +340,6 @@ def run_inference(
                 })
 
     return predictions
-
-
-import re
 
 
 def parse_predictions(predictions: list[dict]) -> list[dict]:
@@ -525,8 +523,7 @@ def compute_metrics(
 
     # Per-verb accuracy
     per_verb = (
-        df
-        .groupby("gt_verb")
+        df.groupby("gt_verb")
         .agg({"verb_correct": "mean", "gt_verb": "count"})
         .rename(columns={"verb_correct": "accuracy", "gt_verb": "count"})
     )
@@ -534,8 +531,7 @@ def compute_metrics(
 
     # Per-tool accuracy (top 10)
     per_tool = (
-        df
-        .groupby("gt_tool")
+        df.groupby("gt_tool")
         .agg({"tool_correct": "mean", "gt_tool": "count"})
         .rename(columns={"tool_correct": "accuracy", "gt_tool": "count"})
     )
@@ -575,7 +571,7 @@ def create_visualizations(
     viz_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Per-field accuracy bar plot
-    fig, ax = plt.subplots(figsize=(8, 5))
+    _, ax = plt.subplots(figsize=(8, 5))
     field_accuracies = {
         "Verb": df["verb_correct"].mean(),
         "Tool": df["tool_correct"].mean(),
@@ -610,14 +606,13 @@ def create_visualizations(
 
     # 2. Per-verb accuracy (top 15 by frequency)
     verb_stats = (
-        df
-        .groupby("gt_verb")
+        df.groupby("gt_verb")
         .agg({"verb_correct": "mean", "gt_verb": "count"})
         .rename(columns={"verb_correct": "accuracy", "gt_verb": "count"})
     )
     verb_stats = verb_stats.nlargest(15, "count").sort_values("accuracy")
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(10, 6))
     bars = ax.barh(
         verb_stats.index, verb_stats["accuracy"], color=sns.color_palette("muted")
     )
@@ -626,7 +621,7 @@ def create_visualizations(
     ax.set_xlim(0, 1)
 
     # Add count labels
-    for i, (verb, row) in enumerate(verb_stats.iterrows()):
+    for i, (_, row) in enumerate(verb_stats.iterrows()):
         ax.text(
             row["accuracy"],
             i,
@@ -649,7 +644,7 @@ def create_visualizations(
         # Normalize by row (ground truth)
         cm_norm = cm.astype("float") / cm.sum(axis=1, keepdims=True)
 
-        fig, ax = plt.subplots(figsize=(12, 10))
+        _, ax = plt.subplots(figsize=(12, 10))
         sns.heatmap(
             cm_norm,
             annot=True,
@@ -771,10 +766,18 @@ def save_outputs(
         if "visual_triplet_accuracy" in metrics:
             f.write("\nVISUAL TRIPLET METRICS (perception only)\n")
             f.write("-" * 80 + "\n")
-            f.write(f"Exact match (verb+tool+target): {metrics['visual_triplet_accuracy']:.1%}\n")
-            f.write(f"Partial match (0-3 scale):      {metrics['visual_triplet_partial']:.2f}\n")
-            f.write(f"Token F1:                       {metrics['visual_triplet_f1']:.3f}\n")
-            f.write("\nNote: Context excluded - requires temporal reasoning beyond single clip.\n")
+            f.write(
+                f"Exact match (verb+tool+target): {metrics['visual_triplet_accuracy']:.1%}\n"
+            )
+            f.write(
+                f"Partial match (0-3 scale):      {metrics['visual_triplet_partial']:.2f}\n"
+            )
+            f.write(
+                f"Token F1:                       {metrics['visual_triplet_f1']:.3f}\n"
+            )
+            f.write(
+                "\nNote: Context excluded - requires temporal reasoning beyond single clip.\n"
+            )
 
     # 5. Example comparisons file
     with open(eval_dir / "examples.txt", "w") as f:
@@ -789,7 +792,9 @@ def save_outputs(
         for _, row in samples.iterrows():
             status = "CORRECT" if row["exact_match"] else "INCORRECT"
             f.write(f"[{row['id']}] - {status}\n")
-            f.write(f"{'Field':<10} {'Ground Truth':<30} {'Prediction':<30} {'F1':>6}\n")
+            f.write(
+                f"{'Field':<10} {'Ground Truth':<30} {'Prediction':<30} {'F1':>6}\n"
+            )
             f.write("-" * 80 + "\n")
             for field in ["verb", "tool", "target", "context"]:
                 gt = str(row[f"gt_{field}"])[:28]
@@ -1065,7 +1070,9 @@ def run_evaluation(config: EvaluationConfig) -> dict[str, Any]:
             k: dict(v) for k, v in prompt_comparison.items()
         }
 
-    save_outputs(metrics_to_save, ft_df, ft_predictions, config.checkpoint_dir, config.eval_name)
+    save_outputs(
+        metrics_to_save, ft_df, ft_predictions, config.checkpoint_dir, config.eval_name
+    )
 
     logger.info("Evaluation complete!")
     eval_path = config.checkpoint_dir / "evaluation"
