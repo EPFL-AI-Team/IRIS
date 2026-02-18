@@ -1,5 +1,6 @@
 data/**/*
 models/**/*.pth
+models/**/*
 !**/.gitkeep
 uv.lock
 logs/**/*
@@ -11,6 +12,11 @@ sbatch_scripts/*.sbatch
 SCITAS-outputs
 
 .claude/
+
+src/iris/client/web/static/hidden/
+
+# Video files (too large for git)
+src/iris/client/web/static/videos/*.mp4
 
 # Created by https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
