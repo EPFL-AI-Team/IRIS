@@ -45,14 +45,14 @@ uv run iris-client  # Terminal 2 (local/RPi)
 
 Knowledge distillation and fusion MLP architecture for egocentric video action recognition.
 
-**→ Report**: [PDF](reports/Annaelle-Benlamri-Action-Recognition-Report.pdf) | **Details**: [action-recognition/](action-recognition/)
+**- Report**: [PDF](reports/Annaelle-Benlamri-Action-Recognition-Report.pdf) | **Details**: [action-recognition/](action-recognition/)
 
 ### VLM Fine-tuning & Pipeline (Marcus Hamelink)
 
 Fine-tuned Qwen2.5-VL (3B) on FineBio dataset. Built end-to-end system (client, server, inference).
 
-**→ Code**: [`src/iris/`](src/iris/) | **Model**: HuggingFace *(coming soon)* | **Report**: [PDF](reports/Marcus-Hamelink-IRIS-VLM-Report.pdf)  
-**→ Training guide**: [vlm-finetuning/](vlm-finetuning/) | [docs/rcp-guide.md](docs/rcp-guide.md)
+**- Code**: [`src/iris/`](src/iris/) | **Model**: [HuggingFace](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio) | **Report**: [PDF](reports/Marcus-Hamelink-IRIS-VLM-Report.pdf)  
+**- Training guide**: [vlm-finetuning/](vlm-finetuning/) | [docs/rcp-guide.md](docs/rcp-guide.md)
 
 ---
 

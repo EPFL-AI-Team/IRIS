@@ -8,7 +8,7 @@ Fine-tuned Qwen2.5-VL (3B) on FineBio dataset for laboratory action recognition.
 - **Method**: LoRA fine-tuning (r=16, α=32)
 - **Output**: Structured JSON with `{verb, tool, target, context}`
 
-**Model**: [HuggingFace Hub](#) *(coming soon)*
+**Model**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
 
 ---
 
