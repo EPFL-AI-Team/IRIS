@@ -4,6 +4,8 @@ models/**/*
 !**/.gitkeep
 uv.lock
 logs/**/*
+# Notebooks output
+notebooks/**/*.ipynb_checkpoints/
 
 benchmark*.json
 
