@@ -1,28 +1,21 @@
 # VLM Fine-tuning
 
-Fine-tuned Qwen2.5-VL (3B) on FineBio dataset for laboratory action recognition.
+Fine-tuned Qwen2.5-VL (3B) on the FineBio dataset for laboratory action recognition.
 
-## What was done by Marcus
+**Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
 
-- **Dataset**: FineBio (9K train samples from 50K total, stratified)
-- **Method**: LoRA fine-tuning (r=16, α=32)
-- **Output**: Structured JSON with `{verb, tool, target, context}`
+## Approach
 
-**Model**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
-
----
+- **Dataset**: FineBio — 9K stratified train samples drawn from 50K total atomic operations, split at participant level to avoid visual leakage
+- **Method**: LoRA (r=16, alpha=32) on Qwen2.5-VL (3B)
+- **Output format**: Structured JSON `{verb, tool, target, context}`
 
 ## Code
 
-All training/evaluation code is in [`src/iris/cli/finetune/`](../src/iris/cli/finetune/):
-- `train.py` - Training script
-- `evaluate.py` - Test set evaluation
-- `inference.py` - Inference on videos
+Training and evaluation live in [`src/iris/vlm/`](../src/iris/vlm/) and [`src/iris/dataset/`](../src/iris/dataset/). CLI entry points are in [`src/iris/cli/finetune/`](../src/iris/cli/finetune/).
 
-See [training guide](../docs/rcp-guide.md) for detailed usage.
-
----
+See the [training guide](../docs/rcp-guide.md) for how to run fine-tuning on EPFL clusters.
 
 ## Results
 
-See [full technical report](../reports/IRIS-report-IN-BA5-Marcus-Hamelink.pdf) for evaluation details, confusion matrices, and analysis.
+The fine-tuned model improved substantially on in-distribution FineBio test samples compared to the base model, but showed vocabulary overfitting when tested on out-of-distribution colony counting videos. The base model's generalization proved more robust in that setting. See the [technical report](../reports/Marcus-Hamelink-IRIS-VLM-Report.pdf) for full evaluation and confusion matrices.

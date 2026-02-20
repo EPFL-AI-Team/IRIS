@@ -157,11 +157,7 @@ The client sends frames at `capture_fps`. The server handles:
 ## Running the Client
 
 ```bash
-# Development mode (with hot reload)
-uv run python -m iris.client.web.run_dev
-
-# Production mode
-uv run python -m iris.client.web.app
+uv run iris-client
 ```
 
 Frontend development:

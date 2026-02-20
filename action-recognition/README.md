@@ -1,17 +1,12 @@
-# Action Recognition Methods
+# Action Recognition
 
-> Work by Annaelle Myriam Benlamri (MSc Data Science)
+VideoMAE V2-based action recognition and multimodal fusion with Qwen2.5-VL, developed by Annaelle Myriam Benlamri.
 
-Specialized methods for egocentric video action recognition in laboratory settings using knowledge distillation and fusion MLP architecture.
+**Report**: [`reports/Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf`](../reports/Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf)
 
-## Overview
+## Approach
 
-This component explored advanced techniques for recognizing fine-grained laboratory actions from first-person video, complementing the VLM-based approach.
+Two strategies were explored for integrating a specialized video action recognizer with Qwen2.5-VL:
 
-[Details to be added by Annaelle]
-
----
-
-## Report
-
-See [technical report](../reports/Annaelle-Benlamri-Action-Recognition-Report.pdf) for full methodology and results.
+- **Prompt injection**: top-k predictions from VideoMAE V2 are formatted as structured context and added to the VLM prompt
+- **Deep latent fusion**: spatiotemporal tokens from VideoMAE V2 are compressed via a Perceiver Resampler and projected into Qwen2.5-VL's embedding space via a trainable MLP
