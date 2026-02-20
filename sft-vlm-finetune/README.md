@@ -3,7 +3,7 @@
 LoRA fine-tuning of Qwen2.5-VL (3B) on the FineBio dataset for laboratory action recognition.
 
 **Model**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
-**Report**: [`reports/Marcus-Hamelink-IRIS-VLM-Report.pdf`](../reports/Marcus-Hamelink-IRIS-VLM-Report.pdf)
+**Report**: [`IRIS-report-IN-BA5-Marcus-Hamelink.pdf`](../IRIS-report-IN-BA5-Marcus-Hamelink.pdf)
 
 ## Structure
 

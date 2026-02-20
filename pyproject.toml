@@ -65,7 +65,6 @@ server = [
 # iris-client-dev = "iris.client.web.run_dev:main"
 iris-client = "iris.cli.client:main_cli"
 iris-server = "iris.cli.server:run"
-iris-benchmark = "iris.cli.benchmark:run"
 
 [build-system]
 requires = ["hatchling"]

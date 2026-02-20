@@ -15,6 +15,8 @@ Manual documentation in academic laboratories is error-prone and slow, especiall
 
 The project was developed in two parallel research tracks, both using Qwen2.5-VL as a foundation but exploring different strategies for making it understand laboratory actions. The system was demonstrated on colony counting workflows at CHUV (Lausanne University Hospital), a procedure where researchers typically process over 30 petri dishes at a time, counting and manually transcribing results across hours of repetitive work.
 
+The code for each track lives in [`sft-vlm-finetune/`](sft-vlm-finetune/) (Marcus) and [`deep_fusion_strategy/`](deep_fusion_strategy/) (Annaelle), with the shared real-time pipeline in [`src/iris/`](src/iris/).
+
 <p align="center">
   <img src="img/system-architecture-sketch.jpg" alt="System overview" width="600">
 </p>
@@ -31,8 +33,8 @@ Investigated specialized video action recognition models and two strategies for 
 - **Fusion strategy 1, Prompt injection**: Top-k predicted actions from VideoMAE V2 are formatted as structured context and injected into Qwen2.5-VL's prompt
 - **Fusion strategy 2, Deep latent fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
 
-**Report**: [`Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf`](Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf)  
-**Code**: [`action-recognition/`](action-recognition/)
+**Report**: [`Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf`](Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf)
+**Code**: [`deep_fusion_strategy/`](deep_fusion_strategy/)
 
 ---
 
@@ -48,13 +50,11 @@ Built the full streaming pipeline from hardware to inference server, and fine-tu
   <img src="img/system-architecture-diagram.jpg" alt="System architecture diagram" width="280">
 </p>
 
-**Report**: [`Marcus-Hamelink-IRIS-VLM-Report.pdf`](Marcus-Hamelink-IRIS-VLM-Report.pdf)  
-**Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)  
-**Inference server**: [`src/iris/server/`](src/iris/server/)  
-**Client backend and frontend**: [`src/iris/client/`](src/iris/client/)  
-**VLM training**: [`src/iris/vlm/`](src/iris/vlm/) and [`src/iris/cli/finetune/`](src/iris/cli/finetune/)  
-**Dataset preparation**: [`src/iris/dataset/`](src/iris/dataset/)  
-**Fine-tuning guide**: [`vlm-finetuning/`](vlm-finetuning/)
+**Report**: [`Marcus-Hamelink-IRIS-VLM-Report.pdf`](Marcus-Hamelink-IRIS-VLM-Report.pdf)
+**Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
+**Inference server**: [`src/iris/server/`](src/iris/server/)
+**Client backend and frontend**: [`src/iris/client/`](src/iris/client/)
+**VLM fine-tuning**: [`sft-vlm-finetune/`](sft-vlm-finetune/) — dataset prep, training scripts, evaluation
 
 ---
 
@@ -101,8 +101,8 @@ Web interface available at `http://localhost:8006`. For full setup, configuratio
 | [docs/cluster-setup.md](docs/cluster-setup.md) | Running on EPFL Izar and RCP clusters                 |
 | [docs/rcp-guide.md](docs/rcp-guide.md)         | VLM training, evaluation, and inference CLI reference |
 | [docs/API.md](docs/API.md)                     | REST and WebSocket API reference                      |
-| [vlm-finetuning/](vlm-finetuning/)             | Fine-tuning approach, results, and model details      |
-| [action-recognition/](action-recognition/)     | Action recognition and fusion architecture            |
+| [sft-vlm-finetune/](sft-vlm-finetune/)         | VLM fine-tuning — dataset prep, training, evaluation  |
+| [deep_fusion_strategy/](deep_fusion_strategy/) | Action recognition and deep fusion architecture       |
 
 ---
 
