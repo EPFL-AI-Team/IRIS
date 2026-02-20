@@ -14,6 +14,7 @@ sbatch_scripts/*.sbatch
 SCITAS-outputs
 
 .claude/
+configs/vlm/train_mini.yaml
 
 src/iris/client/web/static/hidden/
 

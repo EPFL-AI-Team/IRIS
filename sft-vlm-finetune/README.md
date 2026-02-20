@@ -2,8 +2,8 @@
 
 LoRA fine-tuning of Qwen2.5-VL (3B) on the FineBio dataset for laboratory action recognition.
 
-**Model**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
-**Report**: [`IRIS-report-IN-BA5-Marcus-Hamelink.pdf`](../IRIS-report-IN-BA5-Marcus-Hamelink.pdf)
+- **Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
+- **Report**: [`IRIS-report-Marcus-Hamelink-IN-BA5.pdf`](../IRIS-report-Marcus-Hamelink-IN-BA5.pdf)
 
 ## Structure
 
@@ -12,6 +12,17 @@ dataset/    Dataset preparation — FineBio annotations → JSONL training split
 vlm/        Model utilities — config, trainer, data collator, LoRA setup
 scripts/    CLI scripts — training, evaluation, inference
 ```
+
+## Setup
+
+Dependencies are managed from the repo root:
+```bash
+cd ..                  # repo root
+uv sync
+source .venv/bin/activate
+```
+
+Then return here and run commands with `python -m ...` as shown below.
 
 ## Quick start
 
