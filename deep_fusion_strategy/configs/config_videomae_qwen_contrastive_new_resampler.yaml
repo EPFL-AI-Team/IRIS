@@ -1,0 +1,75 @@
+# Model Configuration
+model:
+  # Path to my fine-tuned VideoMAEv2 checkpoint on Hugging Face
+  videomae_model_path: "AnnaelleMyriam/videomaev2-finetuned-finebio"
+
+  # Qwen2.5-VL model path
+  qwen_model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+  # Perceiver Resampler configuration (compresses 1568 tokens -> num_query_tokens)
+  num_query_tokens: 64        
+  resampler_num_heads: 8      
+  resampler_num_layers: 2     
+
+  # MLP Projector configuration
+  mlp_hidden_dim: 4096        
+  mlp_num_layers: 3          
+  mlp_dropout: 0.1            
+
+
+# Data Configuration
+data:
+  train_annotation_file: "./data/train_annotations.json"
+  val_annotation_file: "./data/val_annotations.json"
+
+  # Video processing parameters
+  num_frames: 16              
+  max_text_length: 256       
+
+  # Instruction prompt for video documentation generation
+  instruction_prompt: "Document the experimental protocol observed in this video, including the actions performed and materials used."
+
+
+# Training Configuration
+training:
+  epochs: 20
+  batch_size: 1
+  learning_rate: 1e-4
+  warmup_steps: 500
+  weight_decay: 0.01
+  gradient_accumulation_steps: 32
+  val_check_interval: 1.0
+
+  # Loss configuration
+  gradient_clip_val: 1.0      
+  contrastive_alpha: 0.1     
+
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 5
+
+
+# Output Configuration
+output:
+  checkpoint_dir: "/scratch/izar/benlamri/qwen_fusion/checkpoints3"
+  log_dir: "/scratch/izar/benlamri/qwen_fusion/logs3"
+  best_model_dir: "/scratch/izar/benlamri/qwen_fusion/best_model3"
+
+
+# Logging Configuration
+logging:
+  use_wandb: false
+  wandb_project: "videomae-qwen-fusion-resampler"
+  wandb_entity: null
+  experiment_name: "lab-video-protocol-resampler"
+  log_every_n_steps: 10
+
+
+# System Configuration
+system:
+  accelerator: "gpu"
+  devices: 1
+  precision: "bf16-mixed"
+  num_workers: 4
+  seed: 42

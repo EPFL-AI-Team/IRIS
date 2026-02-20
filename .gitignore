@@ -1,8 +1,11 @@
 data/**/*
 models/**/*.pth
+models/**/*
 !**/.gitkeep
 uv.lock
 logs/**/*
+# Notebooks output
+notebooks/**/*.ipynb_checkpoints/
 
 benchmark*.json
 
@@ -11,6 +14,22 @@ sbatch_scripts/*.sbatch
 SCITAS-outputs
 
 .claude/
+
+src/iris/client/web/static/hidden/
+
+# Video files (too large for git)
+src/iris/client/web/static/videos/*.mp4
+
+notebooks/vlm/Qwen2_5_VL_(7B)_Vision.ipynb
+SCITAS-checkpoints
+wandb
+scripts/runai-command.sh
+Claude.md
+GEMINI.md
+src/iris/client/web/static/videos/dataset-test-video-shorter-shortest.mp4
+src/iris/client/web/static/videos/iris-full-demo-cut.mp4
+src/iris/client/web/static/videos/iris-full-demo-uncut.mp4
+src/iris/client/web/static/videos/iris-video-demo-with-commentary.mp4
 
 # Created by https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
@@ -693,13 +712,3 @@ tags
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,latex,linux,macos,synology,jetbrains+all,visualstudiocode,python,jupyternotebooks
-notebooks/vlm/Qwen2_5_VL_(7B)_Vision.ipynb
-SCITAS-checkpoints
-wandb
-scripts/runai-command.sh
-Claude.md
-GEMINI.md
-src/iris/client/web/static/videos/dataset-test-video-shorter-shortest.mp4
-src/iris/client/web/static/videos/iris-full-demo-cut.mp4
-src/iris/client/web/static/videos/iris-full-demo-uncut.mp4
-src/iris/client/web/static/videos/iris-video-demo-with-commentary.mp4
