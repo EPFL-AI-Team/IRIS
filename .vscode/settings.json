@@ -6,34 +6,6 @@
         "**/*.pth": true,
         "**/*.ckpt": true
     },
-    // Python Analysis - Package Indexing
-    "python.analysis.packageIndexDepths": [
-        {
-            "name": "transformers",
-            "depth": 4,
-            "includeAllSymbols": true
-        },
-        {
-            "name": "torch",
-            "depth": 3,
-            "includeAllSymbols": false
-        }
-    ],
-    "python.analysis.indexing": true,
-    "python.analysis.typeCheckingMode": "basic",
-    // Pylance Diagnostic Overrides - Reduce ML library noise
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportCallIssue": "none",
-        "reportGeneralTypeIssues": "none",
-        "reportOptionalMemberAccess": "none",
-        "reportAttributeAccessIssue": "none",
-        "reportMissingTypeStubs": "none",
-        "reportUndefinedVariable": "error",
-        "reportMissingImports": "warning"
-    },
-    // Disable old linting system
-    "python.linting.enabled": false,
-    "python.linting.pylintEnabled": false,
     // Python Formatting with Ruff
     "[python]": {
         "editor.formatOnSave": true,
@@ -47,7 +19,4 @@
     "ruff.nativeServer": "on",
     // Other Extensions
     "evenBetterToml.schema.enabled": false,
-    "python.analysis.extraPaths": [
-        "scripts"
-    ]
 }

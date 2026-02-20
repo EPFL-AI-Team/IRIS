@@ -1,73 +1,108 @@
 # IRIS: Intelligent Recognition and Interpretation System
 
-> Automated laboratory documentation using wearable cameras and vision-language models  
+> Vision-language models for automated laboratory workflow documentation  
 > Semester Project | EPFL AI Team | Fall 2025
 
-A research collaboration between Annaelle Myriam Benlamri (MSc Data Science) and Marcus Hamelink (BSc Computer Science).
+A research collaboration between [Annaelle Myriam Benlamri](https://github.com/AnnaelleMyriam) (MSc Data Science) and [Marcus Hamelink](https://github.com/animarcus) (BSc Computer Science), supervised by Prof. Andrea Cavallaro.
 
 **Presented at**: [AMLD 2026](https://appliedmldays.org/) | **Project Page**: [epflaiteam.ch/projects/iris](https://epflaiteam.ch/projects/iris)
 
 ---
 
-## What We Built
+## Overview
 
-Manual lab documentation is error-prone. What if both your hands are busy? What if you forget to write down critical details?
+Manual documentation in academic laboratories is error-prone and slow, especially when both hands are occupied. IRIS addresses this by equipping researchers with a wearable camera that streams first-person video to a remote server, where a vision-language model generates structured logs of the procedure in near real-time.
 
-IRIS solves this by automatically documenting laboratory procedures in real-time:
-
-1) **End-to-end pipeline:** Camera on glasses → Raspberry Pi → WebSocket → GPU server
-
-![Sketch of how the pipeline works](img/system-architecture-sketch.jpg)
-
-2) **Fine-tune and model training:** Different Qwen2.5-VL (3B) models to generate documentation from video frames. This went from standard SFT, to a custom action-recognition vision encoder fused with a Qwen model.
-
-**Demo use case**: Colony counting workflows at CHUV (Lausanne University Hospital)
-
----
-
-## Project Components
-
-### Action Recognition (Annaelle Myriam Benlamri)
-
-Knowledge distillation and fusion MLP architecture for egocentric video action recognition.
-
-**- Report**: [PDF](reports/Annaelle-Benlamri-Action-Recognition-Report.pdf) | **Details**: [action-recognition/](action-recognition/)
-
-### VLM Fine-tuning & Pipeline (Marcus Hamelink)
-
-Fine-tuned Qwen2.5-VL (3B) on FineBio dataset and built an end-to-end streaming system spanning client capture, network transport, and GPU-accelerated inference. The architecture diagram below illustrates the complete pipeline from camera to inference results.
+The project was developed in two parallel research tracks, both using Qwen2.5-VL as a foundation but exploring different strategies for making it understand laboratory actions. The system was demonstrated on colony counting workflows at CHUV (Lausanne University Hospital), a procedure where researchers typically process over 30 petri dishes at a time, counting and manually transcribing results across hours of repetitive work.
 
 <p align="center">
-  <img src="img/system-architecture-diagram.jpg" alt="System architecture diagram" width="300">
+  <img src="img/system-architecture-sketch.jpg" alt="System overview" width="600">
 </p>
-
-**- Code**: [`src/iris/`](src/iris/) | **Model**: [HuggingFace](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio) | **Report**: [PDF](reports/Marcus-Hamelink-IRIS-VLM-Report.pdf)  
-**- Training guide**: [vlm-finetuning/](vlm-finetuning/) | [docs/rcp-guide.md](docs/rcp-guide.md)
 
 ---
 
-## Getting Started (demo)
+## Research Contributions
+
+### Action Recognition and Multimodal Fusion - Annaelle Myriam Benlamri
+
+Investigated specialized video action recognition models and two strategies for integrating them with a VLM, evaluated on LabActionMotion and FineBio (32 action classes).
+
+- **Backbone**: VideoMAE V2 (ViT-Base distilled from ViT-Giant), pretrained on 1.35M unlabeled clips and fine-tuned on laboratory datasets
+- **Fusion strategy 1, Prompt injection**: Top-k predicted actions from VideoMAE V2 are formatted as structured context and injected into Qwen2.5-VL's prompt
+- **Fusion strategy 2, Deep latent fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
+
+**Report**: [`Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf`](Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf)  
+**Code**: [`action-recognition/`](action-recognition/)
+
+---
+
+### VLM Fine-tuning and End-to-End Pipeline - Marcus Hamelink
+
+Built the full streaming pipeline from hardware to inference server, and fine-tuned Qwen2.5-VL (3B) via supervised fine-tuning on the FineBio dataset for structured laboratory action description.
+
+- **Pipeline**: Raspberry Pi 5 client (camera capture and WebSocket streaming) to a FastAPI inference server (async producer-consumer queue) with a React frontend showing live results and session management
+- **Fine-tuning**: LoRA (r=16, alpha=32) on 9K stratified FineBio samples, trained to output structured JSON descriptions of laboratory actions
+- **Two operational modes**: live streaming with a few seconds of inference latency, and batch analysis of pre-recorded video with automated report generation
+
+<p align="center">
+  <img src="img/system-architecture-diagram.jpg" alt="System architecture diagram" width="280">
+</p>
+
+**Report**: [`Marcus-Hamelink-IRIS-VLM-Report.pdf`](Marcus-Hamelink-IRIS-VLM-Report.pdf)  
+**Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)  
+**Inference server**: [`src/iris/server/`](src/iris/server/)  
+**Client backend and frontend**: [`src/iris/client/`](src/iris/client/)  
+**VLM training**: [`src/iris/vlm/`](src/iris/vlm/) and [`src/iris/cli/finetune/`](src/iris/cli/finetune/)  
+**Dataset preparation**: [`src/iris/dataset/`](src/iris/dataset/)  
+**Fine-tuning guide**: [`vlm-finetuning/`](vlm-finetuning/)
+
+---
+
+## Application Demo
+
+Live mode streams from the camera in real-time, with results appearing as inference completes. Analysis mode runs on a pre-recorded video, producing a timeline visualization and a generated report of the procedure.
+
+<p align="center">
+  <img src="img/iris-live-demo.gif" alt="Live mode" width="48%">
+  &nbsp;
+  <img src="img/iris-analysis-demo.gif" alt="Analysis mode" width="48%">
+</p>
+<p align="center">
+  <em>Left: live documentation mode. Right: analysis mode with timeline and report generation.</em>
+</p>
+
+---
+
+## Quick Start
+
+The system is designed to run with the inference server on a GPU machine (the project used EPFL's Izar and RCP clusters) and the client on a local machine or Raspberry Pi. It can be run fully locally if the machine has sufficient GPU memory to load the model.
+
 ```bash
-git clone https://github.com/your-username/IRIS-semester-project
-cd IRIS-semester-project
+git clone https://github.com/EPFL-AI-Team/IRIS
+cd IRIS
 uv sync
 
-# Run server + client (see setup guide for details)
-uv run iris-server  # Terminal 1 (GPU machine)
-uv run iris-client  # Terminal 2 (local/RPi)
+# Terminal 1 - inference server (GPU required)
+uv run iris-server
+
+# Terminal 2 - client and web interface
+uv run iris-client
 ```
 
-**→ Full setup instructions**: [docs/setup.md](docs/setup.md)  
-**→ Cluster deployment**: [docs/cluster-setup.md](docs/cluster-setup.md)
+Web interface available at `http://localhost:8006`. For full setup, configuration options, and Raspberry Pi instructions, see [docs/setup.md](docs/setup.md).
 
 ---
 
 ## Documentation
 
-- [Setup Guide](docs/setup.md) - Local development and deployment
-- [API Reference](docs/API.md) - REST/WebSocket endpoints
-- [Training Guide](docs/rcp-guide.md) - VLM fine-tuning and evaluation
-- [Cluster Deployment](docs/cluster-setup.md) - EPFL Izar/RCP clusters
+| Document                                       | Description                                           |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| [docs/setup.md](docs/setup.md)                 | Local setup and Raspberry Pi configuration            |
+| [docs/cluster-setup.md](docs/cluster-setup.md) | Running on EPFL Izar and RCP clusters                 |
+| [docs/rcp-guide.md](docs/rcp-guide.md)         | VLM training, evaluation, and inference CLI reference |
+| [docs/API.md](docs/API.md)                     | REST and WebSocket API reference                      |
+| [vlm-finetuning/](vlm-finetuning/)             | Fine-tuning approach, results, and model details      |
+| [action-recognition/](action-recognition/)     | Action recognition and fusion architecture            |
 
 ---
 
@@ -75,7 +110,7 @@ uv run iris-client  # Terminal 2 (local/RPi)
 
 **Supervisor**: Prof. Andrea Cavallaro (EPFL AI Team)  
 **Track Lead**: Louis Vasseur (EPFL AI Team)  
-**Collaboration**: CHUV (Lausanne University Hospital)
+**Domain expertise and videos**: CHUV (Lausanne University Hospital)
 
 ---
 
