@@ -65,10 +65,10 @@ Connect via `https://<raspberry-pi-ip>:8006`
 
 ## Configuration
 
-Two config files are provided:
+Two config files are provided in the `configs/` directory:
 
-- `config.yaml` - Local/Mac development
-- `config.rcp.yaml` - EPFL cluster deployment
+- `configs/config.yaml` - Local/Mac development
+- `configs/config.rcp.yaml` - EPFL cluster deployment
 
 **Key settings:**
 - `server.model_id` - Model checkpoint path
@@ -80,20 +80,3 @@ See [Configuration Reference](API.md#configuration) for all options.
 ## Cluster Deployment
 
 For running on EPFL clusters (Izar/RCP), see [Cluster Setup Guide](cluster-setup.md).
-
-## Troubleshooting
-
-**Port already in use:**
-```bash
-# Change ports in config.yaml
-server:
-  port: 8001  # Change this
-client:
-  web:
-    port: 8002  # Change this
-```
-
-**GPU out of memory:**
-- Reduce `batch_size` in config
-- Use smaller model variant
-- Enable gradient checkpointing
