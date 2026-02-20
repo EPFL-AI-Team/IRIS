@@ -11,19 +11,42 @@ A research collaboration between Annaelle Myriam Benlamri (MSc Data Science) and
 
 ## What We Built
 
-Manual lab documentation is error-prone - what if both your hands are busy? What if you forget to write down critical details?
+Manual lab documentation is error-prone. What if both your hands are busy? What if you forget to write down critical details?
 
 IRIS solves this by automatically documenting laboratory procedures in real-time:
 
-- **Hardware**: Camera on glasses → Raspberry Pi → WebSocket → GPU server
-- **AI**: Fine-tuned Qwen2.5-VL (3B) generates structured JSON logs
-- **Latency**: 3-4 seconds on A100 GPU for real-time feedback
+1) **End-to-end pipeline:** Camera on glasses → Raspberry Pi → WebSocket → GPU server
+
+![Sketch of how the pipeline works](img/System-architecture-sketch.jpg)
+
+2) **Fine-tune and model training:** Different Qwen2.5-VL (3B) models to generate documentation from video frames. This went from standard SFT, to a custom action-recognition vision encoder fused with a Qwen model.
 
 **Demo use case**: Colony counting workflows at CHUV (Lausanne University Hospital)
 
 ---
 
-## Getting Started
+## Project Components
+
+### Action Recognition (Annaelle Myriam Benlamri)
+
+Knowledge distillation and fusion MLP architecture for egocentric video action recognition.
+
+**- Report**: [PDF](reports/Annaelle-Benlamri-Action-Recognition-Report.pdf) | **Details**: [action-recognition/](action-recognition/)
+
+### VLM Fine-tuning & Pipeline (Marcus Hamelink)
+
+Fine-tuned Qwen2.5-VL (3B) on FineBio dataset and built an end-to-end streaming system spanning client capture, network transport, and GPU-accelerated inference. The architecture diagram below illustrates the complete pipeline from camera to inference results.
+
+<p align="center">
+  <img src="img/system-architecture.jpg" alt="System architecture diagram" width="650">
+</p>
+
+**- Code**: [`src/iris/`](src/iris/) | **Model**: [HuggingFace](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio) | **Report**: [PDF](reports/Marcus-Hamelink-IRIS-VLM-Report.pdf)  
+**- Training guide**: [vlm-finetuning/](vlm-finetuning/) | [docs/rcp-guide.md](docs/rcp-guide.md)
+
+---
+
+## Getting Started (demo)
 ```bash
 git clone https://github.com/your-username/IRIS-semester-project
 cd IRIS-semester-project
@@ -39,30 +62,12 @@ uv run iris-client  # Terminal 2 (local/RPi)
 
 ---
 
-## Project Components
-
-### Action Recognition (Annaelle Myriam Benlamri)
-
-Knowledge distillation and fusion MLP architecture for egocentric video action recognition.
-
-**- Report**: [PDF](reports/Annaelle-Benlamri-Action-Recognition-Report.pdf) | **Details**: [action-recognition/](action-recognition/)
-
-### VLM Fine-tuning & Pipeline (Marcus Hamelink)
-
-Fine-tuned Qwen2.5-VL (3B) on FineBio dataset. Built end-to-end system (client, server, inference).
-
-**- Code**: [`src/iris/`](src/iris/) | **Model**: [HuggingFace](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio) | **Report**: [PDF](reports/Marcus-Hamelink-IRIS-VLM-Report.pdf)  
-**- Training guide**: [vlm-finetuning/](vlm-finetuning/) | [docs/rcp-guide.md](docs/rcp-guide.md)
-
----
-
 ## Documentation
 
 - [Setup Guide](docs/setup.md) - Local development and deployment
 - [API Reference](docs/API.md) - REST/WebSocket endpoints
 - [Training Guide](docs/rcp-guide.md) - VLM fine-tuning and evaluation
 - [Cluster Deployment](docs/cluster-setup.md) - EPFL Izar/RCP clusters
-- [Architecture Notes](docs/architecture.md) - System design decisions
 
 ---
 
