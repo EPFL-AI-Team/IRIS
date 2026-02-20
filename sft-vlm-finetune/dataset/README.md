@@ -74,6 +74,3 @@ CPU-only check that images load correctly, the data collator tokenizes as expect
 ## Other scripts
 
 - `visualize_sampling.py` — debug visualization of frame sampling strategies across segment durations
-- `debug/verify_masking.py` — low-level attention mask inspection
-- `cleanup_frames.py` — removes unused frame files to reclaim disk space; **has hardcoded paths** (`/scratch/iris/finebio_processed`), edit `BASE_DIR` before use
-- `finebio_processing_tests.py` — deprecated; superseded by `logic.py`
