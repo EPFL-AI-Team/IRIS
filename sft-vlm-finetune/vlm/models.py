@@ -14,9 +14,9 @@ from transformers import (
     # Qwen3VLForConditionalGeneration, (needed to remove because the transformers version on RCP is older)
 )
 
-from iris.utils.logging import setup_logger
+import logging
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ModelConfig(BaseModel):
@@ -75,7 +75,7 @@ def load_model_and_processor(
     # Load hardware profile if specified
     hw_config: dict[str, Any] = {}
     if hardware:
-        from iris.vlm.config import load_hardware_profile
+        from .config import load_hardware_profile
 
         hw_config = load_hardware_profile(hardware)
         logger.info(f"Using hardware profile: {hardware}")

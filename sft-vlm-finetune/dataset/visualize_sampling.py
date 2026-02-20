@@ -10,13 +10,13 @@ from PIL import Image
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-from iris.dataset.dataset_config import load_dataset_config, resolve_paths
+from .dataset_config import load_dataset_config, resolve_paths
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Visualize sampling + VLM Inference")
     parser.add_argument(
-        "--config", type=Path, default=Path("src/iris/dataset/dataset_config.yaml")
+        "--config", type=Path, default=Path(__file__).with_name("dataset_config.yaml")
     )
     parser.add_argument("--profile", type=str, default=None)
     parser.add_argument(

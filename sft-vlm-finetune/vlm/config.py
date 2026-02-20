@@ -6,9 +6,9 @@ from pathlib import Path
 
 import yaml
 
-from iris.utils.logging import setup_logger
+import logging
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def load_hardware_profile(hardware: str) -> dict:
@@ -27,7 +27,7 @@ def load_hardware_profile(hardware: str) -> dict:
         }
     """
     # Navigate from this file to repo root (4 levels up: vlm -> iris -> src -> root)
-    repo_root = Path(__file__).parent.parent.parent.parent
+    repo_root = Path(__file__).parent.parent.parent
     profile_path = repo_root / "configs" / "vlm" / "hardware" / f"{hardware}.yaml"
 
     if not profile_path.exists():
@@ -59,7 +59,7 @@ def load_config(config_name: str, hardware: str | None = None) -> dict:
     else:
         # Resolve relative to project structure
         base_path = (
-            Path(__file__).parent.parent.parent.parent
+            Path(__file__).parent.parent.parent
             / "configs"
             / "vlm"
             / f"{config_name}.yaml"

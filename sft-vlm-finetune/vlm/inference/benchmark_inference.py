@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from iris.vlm.models import load_model_and_processor
+from ..models import load_model_and_processor
 
 os.environ["TRANSFORMERS_VIDEO_BACKEND"] = "torchvision"
 

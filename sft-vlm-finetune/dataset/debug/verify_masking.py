@@ -1,6 +1,6 @@
 import torch
 from transformers import AutoProcessor
-from iris.vlm.data import QwenDataCollator
+from vlm.data import QwenDataCollator
 
 # Use the same model as your config
 MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"

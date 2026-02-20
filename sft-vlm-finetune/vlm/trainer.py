@@ -13,11 +13,12 @@ from transformers import (
     TrainingArguments,  # type: ignore[reportPrivateImportUsage]
 )
 
-from iris.utils.logging import setup_logger
-from iris.vlm.config import load_config
-from iris.vlm.data import QwenDataCollator
+import logging
 
-logger = setup_logger(__name__)
+from .config import load_config
+from .data import QwenDataCollator
+
+logger = logging.getLogger(__name__)
 
 
 class VLMTrainer:
@@ -54,7 +55,7 @@ class VLMTrainer:
     def _get_project_root(self) -> Path:
         """Get project root directory."""
         current = Path(__file__).resolve()
-        return current.parent.parent.parent.parent  # src/iris/vlm/trainer.py -> root
+        return current.parent.parent.parent  # sft-vlm-finetune/vlm/trainer.py -> root
 
     def _resolve_paths(self) -> None:
         """Resolve paths. Relative paths are relative to project root. Absolute paths are kept as is."""

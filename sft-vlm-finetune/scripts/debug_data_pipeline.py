@@ -1,10 +1,6 @@
 """Test script to verify data loading and collation on CPU."""
 
-import sys
 from pathlib import Path
-
-# Add src to path so we can import iris modules
-sys.path.append(str(Path(__file__).parent / "src"))
 
 import json
 
@@ -12,8 +8,8 @@ import torch
 from datasets import load_dataset
 from transformers import AutoProcessor
 
-from iris.vlm.config import load_config
-from iris.vlm.data import QwenDataCollator
+from vlm.config import load_config
+from vlm.data import QwenDataCollator
 
 
 def main():

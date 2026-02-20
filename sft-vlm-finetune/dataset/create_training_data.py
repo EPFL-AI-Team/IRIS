@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
-from dataset_config import (
+from .dataset_config import (
     configure_logging,
     ensure_output_dirs,
     load_dataset_config,
@@ -15,8 +15,8 @@ from dataset_config import (
 from PIL import Image
 from tqdm import tqdm
 
-from iris.dataset.logic import _target_frame_slots, is_valid_action
-from iris.dataset.training_format import (
+from .logic import _target_frame_slots, is_valid_action
+from .training_format import (
     chat_jsonl_entry,
     expected_output_json,
     pick_prompt,

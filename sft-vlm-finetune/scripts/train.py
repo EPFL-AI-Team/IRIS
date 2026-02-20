@@ -5,10 +5,11 @@ import os
 
 import wandb
 
-from iris.utils.logging import setup_logger
-from iris.vlm.trainer import VLMTrainer
+import logging
 
-logger = setup_logger(__name__)
+from vlm.trainer import VLMTrainer
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:

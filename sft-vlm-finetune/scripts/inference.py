@@ -20,9 +20,9 @@ from PIL import Image
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-from iris.utils.logging import setup_logger
+import logging
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # --- DEFAULTS ---
 BASE_MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"

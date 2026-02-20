@@ -62,12 +62,10 @@ server = [
 ]
 
 [project.scripts]
-iris-train = "iris.cli.finetune.train:main"
 # iris-client-dev = "iris.client.web.run_dev:main"
 iris-client = "iris.cli.client:main_cli"
 iris-server = "iris.cli.server:run"
 iris-benchmark = "iris.cli.benchmark:run"
-iris-vis = "iris.dataset.visualize_sampling:main"
 
 [build-system]
 requires = ["hatchling"]

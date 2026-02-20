@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from dataset_config import (
+from .dataset_config import (
     DatasetPaths,
     configure_logging,
     ensure_output_dirs,
@@ -17,7 +17,7 @@ from dataset_config import (
 )
 from tqdm import tqdm
 
-from iris.dataset.logic import _target_frame_slots, fill_task_column, is_valid_action
+from .logic import _target_frame_slots, fill_task_column, is_valid_action
 
 logger = logging.getLogger(__name__)
 

@@ -26,9 +26,9 @@ from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-from iris.utils.logging import setup_logger
+import logging
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Set visualization style
 sns.set_theme(style="whitegrid", palette="muted")
