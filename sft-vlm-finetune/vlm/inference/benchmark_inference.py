@@ -273,7 +273,7 @@ def benchmark_model(
 
 def main():
     # Configuration
-    VIDEO_DIR = Path("src/iris/client/web/static/videos")
+    VIDEO_DIR = Path(__file__).parents[3] / "src/iris/client/web/static/videos"
     OUTPUT_DIR = Path("benchmarks")
     
     videos = [

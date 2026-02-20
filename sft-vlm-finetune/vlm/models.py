@@ -2,6 +2,7 @@
 Model loading utilities + MODEL_CONFIGS registry. Shared by train + inference.
 """
 
+import logging
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,8 +14,6 @@ from transformers import (
     Qwen2_5_VLForConditionalGeneration,
     # Qwen3VLForConditionalGeneration, (needed to remove because the transformers version on RCP is older)
 )
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
     ),
     "smolvlm": ModelConfig(
         id="HuggingFaceTB/SmolVLM-500M-Instruct",
-        loader=AutoModelForImageTextToText,  # type: ignore[arg-type]
+        loader=AutoModelForImageTextToText,
     ),
     "smolvlm2": ModelConfig(
         id="HuggingFaceTB/SmolVLM2-2.2B-Instruct", loader=AutoModelForImageTextToText
@@ -75,7 +74,7 @@ def load_model_and_processor(
     # Load hardware profile if specified
     hw_config: dict[str, Any] = {}
     if hardware:
-        from .config import load_hardware_profile
+        from .config import load_hardware_profile  # ty:ignore[unresolved-import]
 
         hw_config = load_hardware_profile(hardware)
         logger.info(f"Using hardware profile: {hardware}")
@@ -196,7 +195,7 @@ def _build_quantization_config(quant_cfg: dict) -> Any | None:
 def _log_model_info(model: PreTrainedModel) -> None:
     """Log model information after loading."""
     logger.info("Model loaded!")
-    logger.debug(f"Device: {model.device}")
-    logger.debug(f"Dtype: {model.dtype}")
+    logger.debug(f"Device: {model.device}")  # ty:ignore[possibly-missing-attribute]
+    logger.debug(f"Dtype: {model.dtype}")  # ty:ignore[possibly-missing-attribute]
     if hasattr(model, "hf_device_map"):
         logger.debug(f"Device map: {model.hf_device_map}")
