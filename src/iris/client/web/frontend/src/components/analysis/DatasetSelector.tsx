@@ -68,6 +68,12 @@ export function DatasetSelector() {
             ))}
           </SelectContent>
         </Select>
+        {datasets && datasets.videos.length === 0 && (
+          <p className="text-xs text-muted-foreground/60 mt-0.5">
+            No videos found — place <code className="font-mono">.mp4</code> files in{" "}
+            <code className="font-mono">static/videos/</code>
+          </p>
+        )}
       </div>
 
       {/* Annotation Selector - Stacked */}

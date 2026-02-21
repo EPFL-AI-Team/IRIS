@@ -10,8 +10,8 @@ Complete setup instructions for running IRIS locally or on a cluster.
 
 ## Installation
 ```bash
-git clone https://github.com/your-username/IRIS-semester-project
-cd IRIS-semester-project
+git clone https://github.com/EPFL-AI-Team/IRIS
+cd IRIS
 uv sync
 ```
 
@@ -35,7 +35,9 @@ Web interface available at `http://localhost:8006`
 
 ## Raspberry Pi Setup
 
-### Generate SSL Certificate (First Time Only)
+The idea of this setup is to ensure the Pi can communicate to the cluster, if the server script is running there.
+
+### Generate SSL Certificate (First Time Only, for SCITAS or RCP usage)
 
 For HTTPS streaming from Raspberry Pi:
 ```bash
@@ -69,6 +71,8 @@ Two config files are provided in the `configs/` directory:
 
 - `configs/config.yaml` - Local/Mac development
 - `configs/config.rcp.yaml` - EPFL cluster deployment
+
+Using arguments with the scripts you're running, you can specify which config you want to use. By default, the usual `configs/config.yaml` is used.
 
 **Key settings:**
 - `server.model_id` - Model checkpoint path
