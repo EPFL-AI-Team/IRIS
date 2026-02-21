@@ -43,7 +43,7 @@ server:
       overlap_frames: 0
       default_fps: 5
       max_new_tokens: 64      # Reduced from 128 for Mac (shorter responses, faster generation)
-      prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
+      prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only-no markdown, no prose, no code fences."
 
   # ============================================================================
   # Batch Inference Configuration (Analysis Mode Only)

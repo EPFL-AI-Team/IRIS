@@ -8,9 +8,9 @@ LoRA fine-tuning of Qwen2.5-VL (3B) on the FineBio dataset for laboratory action
 ## Structure
 
 ```
-dataset/    Dataset preparation — FineBio annotations → JSONL training splits
-vlm/        Model utilities — config, trainer, data collator, LoRA setup
-scripts/    CLI scripts — training, evaluation, inference
+dataset/    Dataset preparation - FineBio annotations → JSONL training splits
+vlm/        Model utilities - config, trainer, data collator, LoRA setup
+scripts/    CLI scripts - training, evaluation, inference
 ```
 
 ## Setup

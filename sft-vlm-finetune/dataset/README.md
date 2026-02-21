@@ -30,17 +30,17 @@ profiles:
 
 Run all commands from the `sft-vlm-finetune/` directory.
 
-### Step 1 — Process annotations
+### Step 1 - Process annotations
 
 ```bash
 python -m dataset.process_dataset
 ```
 
 Reads raw FineBio `.txt` annotation files, filters by duration (0.5–3.0s) and valid verb/object pairs, fills task context, and outputs:
-- `{output_dir}/csv_annotations/{video_id}.csv` — per-video filtered annotations
-- `{output_dir}/all_annotations.csv` — consolidated annotation table
+- `{output_dir}/csv_annotations/{video_id}.csv` - per-video filtered annotations
+- `{output_dir}/all_annotations.csv` - consolidated annotation table
 
-### Step 2 — Extract frames and generate splits
+### Step 2 - Extract frames and generate splits
 
 ```bash
 python -m dataset.create_training_data
@@ -63,7 +63,7 @@ Each JSONL entry follows the Qwen chat format:
 }
 ```
 
-### Step 3 — Validate (recommended before training)
+### Step 3 - Validate (recommended before training)
 
 ```bash
 python -m scripts.debug_data_pipeline
@@ -73,4 +73,4 @@ CPU-only check that images load correctly, the data collator tokenizes as expect
 
 ## Other scripts
 
-- `visualize_sampling.py` — debug visualization of frame sampling strategies across segment durations
+- `visualize_sampling.py` - debug visualization of frame sampling strategies across segment durations

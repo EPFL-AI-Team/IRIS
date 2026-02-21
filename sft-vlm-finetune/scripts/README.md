@@ -26,8 +26,8 @@ python -m scripts.evaluate \
 `--max_samples 0` evaluates all samples. `--compare-base` also runs the untuned base model for comparison.
 
 Outputs to `evaluation/{eval-name}/`:
-- `metrics.json` — exact match, per-field accuracy, token F1
-- `predictions.csv` — per-sample results
+- `metrics.json` - exact match, per-field accuracy, token F1
+- `predictions.csv` - per-sample results
 - `summary.txt`, `errors.txt`, `examples.txt`
 - Confusion matrix and accuracy plots
 

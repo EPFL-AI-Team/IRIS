@@ -77,7 +77,6 @@ RUN chown -R ${LDAP_USERNAME}:${LDAP_GROUPNAME} /home/${LDAP_USERNAME}
 #####################################
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} src/ ./src/
 COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} configs/ ./configs/
-COPY --chown=${LDAP_USERNAME}:${LDAP_GROUPNAME} config.yaml ./
 
 USER ${LDAP_USERNAME}
 

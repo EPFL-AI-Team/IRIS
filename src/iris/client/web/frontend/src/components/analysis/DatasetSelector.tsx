@@ -13,13 +13,13 @@ import { Database, Loader2 } from "lucide-react";
 export function DatasetSelector() {
   const datasets = useAppStore((state) => state.availableDatasets);
   const setAvailableDatasets = useAppStore(
-    (state) => state.setAvailableDatasets
+    (state) => state.setAvailableDatasets,
   );
   const selectedVideo = useAppStore((state) => state.selectedVideoFile);
   const setSelectedVideo = useAppStore((state) => state.setSelectedVideoFile);
   const analysisMode = useAppStore((state) => state.analysisMode);
   const analysisSessionMetrics = useAppStore(
-    (state) => state.analysisSessionMetrics
+    (state) => state.analysisSessionMetrics,
   );
 
   // Commented out - ground truth feature disabled
@@ -68,6 +68,12 @@ export function DatasetSelector() {
             ))}
           </SelectContent>
         </Select>
+        {datasets && datasets.videos.length === 0 && (
+          <p className="text-xs text-muted-foreground/60 mt-0.5">
+            No videos found - place <code className="font-mono">.mp4</code>{" "}
+            files in <code className="font-mono">static/videos/</code>
+          </p>
+        )}
       </div>
 
       {/* Annotation Selector - Stacked */}

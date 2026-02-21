@@ -10,6 +10,7 @@ Can be used as CLI or imported as module.
 
 import argparse
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -20,9 +21,29 @@ from PIL import Image
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-import logging
-
 logger = logging.getLogger(__name__)
+
+
+def _resolve_attn_implementation(attn_impl: str) -> str:
+    """Upgrade sdpa -> flash_attention_2 if hardware and package support it."""
+    if attn_impl != "sdpa":
+        return attn_impl
+    if not torch.cuda.is_available():
+        return attn_impl
+    try:
+        major, _ = torch.cuda.get_device_capability()
+    except Exception:
+        return attn_impl
+    if major < 8:  # Flash Attention 2 requires Ampere (sm80) or newer
+        return attn_impl
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        logger.debug("flash-attn not installed; staying with sdpa")
+        return attn_impl
+    logger.info("Flash Attention 2 supported - upgrading from sdpa")
+    return "flash_attention_2"
+
 
 # --- DEFAULTS ---
 BASE_MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
@@ -81,7 +102,7 @@ def load_model(
         model_path,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        attn_implementation="flash_attention_2",
+        attn_implementation=_resolve_attn_implementation("sdpa"),
     )
     processor = AutoProcessor.from_pretrained(model_path)
     model.eval()
@@ -282,7 +303,9 @@ def infer_video(
 
     results = []
     for i, seg in enumerate(segments):
-        logger.info(f"Processing segment {i + 1}/{len(segments)} at {seg['start_sec']:.2f}s")
+        logger.info(
+            f"Processing segment {i + 1}/{len(segments)} at {seg['start_sec']:.2f}s"
+        )
 
         try:
             response = infer_segment(
