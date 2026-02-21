@@ -11,11 +11,11 @@ A research collaboration between [Annaelle Myriam Benlamri](https://github.com/A
 
 ## Overview
 
-Manual documentation in academic laboratories is error-prone and slow, especially when both hands are occupied. IRIS addresses this by equipping researchers with a wearable camera that streams first-person video to a remote server, where a vision-language model generates structured logs of the procedure in near real-time.
+Manual documentation in laboratories is a tedious and error-prone task. IRIS addresses this by equipping researchers with a wearable camera that streams first-person video to a remote server, where a vision-language model generates structured logs of the procedure in near real-time.
 
 The project was developed in two parallel research tracks, both using Qwen2.5-VL as a foundation but exploring different strategies for making it understand laboratory actions. The system was demonstrated on colony counting workflows at CHUV (Lausanne University Hospital), a procedure where researchers typically process over 30 petri dishes at a time, counting and manually transcribing results across hours of repetitive work.
 
-The code for each track lives in [`sft-vlm-finetune/`](sft-vlm-finetune/) (Marcus) and [`deep_fusion_strategy/`](deep_fusion_strategy/) (Annaelle), with the demo pipeline in [`src/iris/`](src/iris/).
+The code for each track lives in [`sft-vlm-finetune/`](sft-vlm-finetune/) (Marcus) and [`vlm_fusion/`](vlm_fusion/) (Annaelle), with the demo pipeline in [`src/iris/`](src/iris/).
 
 <p align="center">
   <img src="img/system-architecture-sketch.jpg" alt="System overview" width="600">
@@ -27,14 +27,15 @@ The code for each track lives in [`sft-vlm-finetune/`](sft-vlm-finetune/) (Marcu
 
 ### Action Recognition and Multimodal Fusion - Annaelle Myriam Benlamri
 
-Investigated specialized video action recognition models and two strategies for integrating them with a VLM, evaluated on LabActionMotion and FineBio (32 action classes).
+Investigated specialized video action recognition models and two strategies for integrating them with a VLM, evaluated on the [FineBio Dataset](https://github.com/aistairc/FineBio).
 
-- **Backbone**: VideoMAE V2 (ViT-Base distilled from ViT-Giant), pretrained on 1.35M unlabeled clips and fine-tuned on laboratory datasets
+- **Backbone**: VideoMAE V2 (ViT-Base distilled from ViT-Giant, https://huggingface.co/OpenGVLab/VideoMAE2/tree/main/distill), pretrained on 1.35M unlabeled clips and fine-tuned on the processed FineBio dataset.
 - **Fusion strategy 1, Prompt injection**: Top-k predicted actions from VideoMAE V2 are formatted as structured context and injected into Qwen2.5-VL's prompt
-- **Fusion strategy 2, Deep latent fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
+- **Fusion strategy 2, Deep fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
 
-- **Report**: [`Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf`](Annaelle-Benlamri-IRIS-Action-Recognition-Report.pdf)
-- **Code**: [`deep_fusion_strategy/`](deep_fusion_strategy/)
+- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](Annaelle-Benlamri-IRIS-VLM-Report.pdf)
+- **Code**: [`vlm_fusion/`](vlm_fusion/)
+- **Models on HuggingFace**: [videomaev2-finetuned-finebio](AnnaelleMyriam/videomaev2-finetuned-finebio), [videomae-qwen-connectors](AnnaelleMyriam/videomae-qwen-connectors)
 
 ---
 
@@ -102,7 +103,7 @@ Web interface available at `http://localhost:8006`. For full setup, configuratio
 | [docs/rcp-guide.md](docs/rcp-guide.md)         | VLM training, evaluation, and inference CLI reference |
 | [docs/API.md](docs/API.md)                     | REST and WebSocket API reference                      |
 | [sft-vlm-finetune/](sft-vlm-finetune/)         | VLM fine-tuning — dataset prep, training, evaluation  |
-| [deep_fusion_strategy/](deep_fusion_strategy/) | Action recognition and deep fusion architecture       |
+| [vlm_fusion/](vlm_fusion/)                     | Action recognition and deep fusion architecture       |
 
 ---
 
