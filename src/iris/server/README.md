@@ -184,10 +184,10 @@ jobs:
 
 ```bash
 # Standard start
-uv run python -m iris.server.main
+uv run iris-server
 
 # With custom config
-IRIS_MODEL_ID="Qwen/Qwen2.5-VL-7B-Instruct" uv run python -m iris.server.main
+IRIS_CONFIG_FILE=configs/config.rcp.yaml uv run iris-server
 ```
 
 ## Performance Considerations

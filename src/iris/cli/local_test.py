@@ -8,7 +8,7 @@ from PIL import Image
 
 from iris.server.inference.executor import InferenceExecutor
 from iris.server.inference.jobs import Job, JobStatus, SingleFrameJob
-from iris.vlm.models import load_model_and_processor
+from iris.server.model_loader import load_model_and_processor
 
 logging.basicConfig(
     level=logging.INFO,

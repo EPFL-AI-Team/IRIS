@@ -23,7 +23,7 @@ def load_yaml_config(config_path: str | None = None) -> dict[str, Any]:
     """
     # Priority: explicit path > env var > default
     if config_path is None:
-        config_path = os.getenv("IRIS_CONFIG_FILE", "config.yaml")
+        config_path = os.getenv("IRIS_CONFIG_FILE", "configs/config.yaml")
 
     # Find project root (where config.yaml lives)
     current = Path(__file__).resolve()

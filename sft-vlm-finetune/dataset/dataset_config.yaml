@@ -1,0 +1,45 @@
+# Dataset script configuration
+#
+# Notes:
+# - Prefer absolute paths. Only `~` is expanded automatically.
+# - Edit the profile paths to match your machine/environment.
+
+default_profile: mac
+
+default_split_name: train_without_vis_analysis
+
+# Frame extraction/sampling settings
+#
+# Strategy: keep a canonical filename grid (0..canonical_max_frames-1) so that when
+# you change per_segment later (e.g., 4 -> 8), already-extracted frames can be reused.
+#
+# Example (canonical_max_frames=16, per_segment=4): frames [0, 5, 10, 15]
+frames:
+  canonical_max_frames: 16
+  per_segment: 4
+
+# Quotas for sampling/downsampling when creating splits
+quotas:
+  train_per_verb: 1000
+  val_test_per_verb: 200
+
+profiles:
+  mac:
+    annotations_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/annotations/finebio_action_annotations"
+    videos_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio/videos/w640"
+    output_dir: "/Users/marcushamelink/Developer/ml/IRIS-semester-project/data/finebio_processed"
+
+  rcp-container:
+    annotations_dir: "/scratch/iris/finebio_raw/annotations/finebio_action_annotations"
+    videos_dir: "/scratch/iris/finebio_raw/videos/w640"
+    output_dir: "/scratch/iris/finebio_processed"
+
+  rcp:
+    annotations_dir: "/mnt/aiteam/scratch/iris/finebio_raw/annotations/finebio_action_annotations"
+    videos_dir: "/mnt/aiteam/scratch/iris/finebio_raw/videos/w640"  # Point to existing frames
+    output_dir: "/mnt/aiteam/scratch/iris/finebio_processed"
+
+  izar:
+    annotations_dir: "/ABS/PATH/TO/finebio/annotations/finebio_action_annotations"
+    videos_dir: "/ABS/PATH/TO/finebio/videos/w640"
+    output_dir: "/ABS/PATH/TO/finebio_processed"

@@ -1,0 +1,87 @@
+# IRIS Configuration
+# Override via environment variables: IRIS_SERVER__PORT=8002
+
+server:
+  host: 0.0.0.0
+  port: 8005
+  model_id: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+  vlm_hardware: "mac"      # Optional: Hardware profile (v100, mac, etc.) - ENABLED for Mac optimizations
+
+  # ============================================================================
+  # Queue Parameters - Frame Dropping Control
+  # ============================================================================
+  # These parameters control when to drop frames when the server can't keep up
+  # with the incoming frame rate.
+  #
+  # live_queue_threshold: When to start dropping frames in live mode
+  #   - Frames are dropped when queue depth >= this value
+  #   - Used only in live streaming mode
+  #
+  # max_queue_size: Hard limit on queue capacity
+  #   - Maximum number of jobs that can be queued
+  #   - Prevents memory exhaustion (OOM)
+  #   - Applies to all modes (live and batch)
+  #
+  # Configuration Guidelines:
+  #   Live mode (typical):       Set both to same value (1-2)
+  #   Analysis mode:             Set max_queue_size higher (50-100) to prevent dropping
+  #   Multi-user/high throughput: Set max_queue_size higher for buffering
+  #
+  # Constraint: live_queue_threshold <= max_queue_size
+  # ============================================================================
+  live_queue_threshold: 1
+  max_queue_size: 50
+  
+  num_workers: 1
+  graceful_shutdown_timeout: 30.0
+  enable_log_streaming: true
+  log_streaming_min_level: "INFO"
+  enable_metrics: true
+  jobs:
+    video:
+      buffer_size: 2
+      overlap_frames: 0
+      default_fps: 5
+      max_new_tokens: 64      # Reduced from 128 for Mac (shorter responses, faster generation)
+      prompt: "Analyze this video segment of a biological experiment. Return one JSON object with keys: action (human action/pose), tool (object used), target (object acted on), context (scene/activity). Respond with JSON only—no markdown, no prose, no code fences."
+
+  # ============================================================================
+  # Batch Inference Configuration (Analysis Mode Only)
+  # ============================================================================
+  # Batch inference processes multiple video segments in a single GPU call
+  # for significantly faster analysis throughput (9-10x speedup expected).
+  #
+  # enabled: Set to true to enable batch inference for analysis mode
+  # batch_size: Number of segments to process per GPU batch
+  #   - Recommended for Mac: 2-4 (limited VRAM)
+  #   - Recommended for A100 80GB: 16-32
+  #
+  # Note: Only applies to analysis mode. Live mode always processes segments individually.
+  # ============================================================================
+  batch_inference:
+    enabled: false      # Start disabled for safety (Mac has limited VRAM)
+    batch_size: 2       # Conservative batch size for Mac
+
+client:
+  video:
+    width: 640
+    height: 480
+    capture_fps: 10
+    jpeg_quality: 80
+    camera_index: 0
+  server:
+    host: "localhost"
+    port: 8005
+    use_ssl: false
+  web:
+    host: "0.0.0.0"
+    port: 8006
+    use_ssl: true
+    cert_dir: "~/iris-certs"  # Directory containing key.pem and cert.pem
+
+  # Segment configuration defaults (T, s, k)
+  # IMPORTANT: These are sent by client and override server buffer_size/overlap_frames!
+  segment:
+    segment_time: 2.0        # T: Duration of each segment in seconds
+    frames_per_segment: 1    # s: Number of frames per segment (reduced for Mac - was 8)
+    overlap_frames: 0        # k: Number of overlap frames (disabled for Mac - was 4)

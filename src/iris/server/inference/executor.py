@@ -180,7 +180,7 @@ class InferenceExecutor:
         worker_processor = None
         if self.model_id:
             try:
-                from iris.vlm.models import load_model_and_processor
+                from iris.server.model_loader import load_model_and_processor
 
                 logger.info(f"{worker_name} loading model replica: {self.model_id}")
                 worker_model, worker_processor = load_model_and_processor(

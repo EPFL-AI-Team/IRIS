@@ -76,10 +76,10 @@ runai submit iris-server-interactive \
 	--interactive --attach
 
 # Once in interactive container:
-IRIS_CONFIG_FILE=config.rcp.yaml uv run iris-server
+IRIS_CONFIG_FILE=configs/config.rcp.yaml uv run iris-server
 
 # Or if running on a V100:
-IRIS_CONFIG_FILE=config.rcp.yaml uv run iris-server --vlm-hardware v100
+IRIS_CONFIG_FILE=configs/config.rcp.yaml uv run iris-server --vlm-hardware v100
 ```
 
 **Terminal 4 (SSH to RCP):**

@@ -34,7 +34,7 @@ Queue Parameters:
 
 Examples:
   # Use alternate config file
-  IRIS_CONFIG_FILE=config.rcp.yaml iris-server
+  IRIS_CONFIG_FILE=configs/config.rcp.yaml iris-server
 
   # Override model checkpoint
   iris-server --model-id /scratch/iris/checkpoints/qwen3b_finebio_finetune_iris/
@@ -43,7 +43,7 @@ Examples:
   iris-server --port 9000
 
   # Combined: config file + CLI overrides
-  IRIS_CONFIG_FILE=config.rcp.yaml iris-server --port 9000 --num-workers 2
+  IRIS_CONFIG_FILE=configs/config.rcp.yaml iris-server --port 9000 --num-workers 2
         """
     )
 

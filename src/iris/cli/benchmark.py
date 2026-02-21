@@ -6,9 +6,10 @@ import sys
 
 def run():
     """Run benchmark CLI."""
-    # Import here to avoid loading transformers on every CLI call
-    sys.path.insert(0, str(Path(__file__).parents[3]))
-    from iris.vlm.inference.benchmark_inference import main
+    # benchmark_inference.py lives in sft-vlm-finetune/vlm/inference/ after the extraction
+    sft_path = str(Path(__file__).parents[3] / "sft-vlm-finetune")
+    sys.path.insert(0, sft_path)
+    from vlm.inference.benchmark_inference import main
 
     main()
 
