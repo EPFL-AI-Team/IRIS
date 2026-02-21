@@ -55,7 +55,7 @@ Built the full streaming pipeline from hardware to inference server, and fine-tu
 - **Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
 - **Inference server**: [`src/iris/server/`](src/iris/server/)
 - **Client backend and frontend**: [`src/iris/client/`](src/iris/client/)
-- **VLM fine-tuning**: [`sft-vlm-finetune/`](sft-vlm-finetune/) — dataset prep, training scripts, evaluation
+- **VLM fine-tuning**: [`sft-vlm-finetune/`](sft-vlm-finetune/) - dataset prep, training scripts, evaluation
 
 ---
 
@@ -71,6 +71,8 @@ Live mode streams from the camera in real-time, with results appearing as infere
 <p align="center">
   <em>Left: live documentation mode. Right: analysis mode with timeline and report generation.</em>
 </p>
+
+Detailed demo video can be found [here](https://youtu.be/CYe0WVIULUI)
 
 ---
 
@@ -102,7 +104,7 @@ Web interface available at `http://localhost:8006`. For full setup, configuratio
 | [docs/cluster-setup.md](docs/cluster-setup.md) | Running on EPFL Izar and RCP clusters                 |
 | [docs/rcp-guide.md](docs/rcp-guide.md)         | VLM training, evaluation, and inference CLI reference |
 | [docs/API.md](docs/API.md)                     | REST and WebSocket API reference                      |
-| [sft-vlm-finetune/](sft-vlm-finetune/)         | VLM fine-tuning — dataset prep, training, evaluation  |
+| [sft-vlm-finetune/](sft-vlm-finetune/)         | VLM fine-tuning - dataset prep, training, evaluation  |
 | [vlm_fusion/](vlm_fusion/)                     | Action recognition and deep fusion architecture       |
 
 ---
