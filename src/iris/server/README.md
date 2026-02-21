@@ -6,8 +6,7 @@ The IRIS server is a video inference server that receives frames, batches them, 
 
 ```
 server/
-├── app.py                     # Main FastAPI app, WebSocket endpoint, lifespan
-├── main.py                    # Entry point (uvicorn runner)
+├── main.py                    # Main FastAPI app, lifespan, and entry point (uvicorn runner)
 ├── config.py                  # Server configuration (Pydantic models)
 ├── dependencies.py            # ServerState singleton
 ├── frame_buffer.py            # FrameBuffer for batching frames
@@ -28,7 +27,7 @@ server/
 ├── routes/                    # HTTP/WS routes (modular)
 │   ├── system.py             # Health, status endpoints
 │   ├── jobs.py               # Job management endpoints
-│   ├── video.py              # Video-specific endpoints
+│   ├── config.py             # Config endpoints
 │   └── websocket.py          # WebSocket handlers
 └── services/                  # Business logic services
 ```
@@ -87,7 +86,7 @@ server/
 
 ### Connection Layer
 
-**WebSocket Endpoint** (`app.py` `/ws/stream`)
+**WebSocket Endpoint** (`main.py` `/ws/stream`)
 - Accepts client connections
 - Creates per-connection FrameBuffer
 - Runs send/receive loops concurrently
