@@ -17,6 +17,7 @@ import logging
 
 from .config import load_config
 from .data import QwenDataCollator
+from .models import _resolve_attn_implementation
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,9 @@ class VLMTrainer:
                 logger.info(f"Resolution limit: {max_pixels} pixels")
 
             # Get attn_implementation from config (default to "sdpa" for PyTorch 2.0+)
-            attn_implementation = self.cfg["model"].get("attn_implementation", "sdpa")
+            attn_implementation = _resolve_attn_implementation(
+                self.cfg["model"].get("attn_implementation", "sdpa")
+            )
 
             logger.info(
                 f"Loading model: {model_name} with attention: {attn_implementation}"

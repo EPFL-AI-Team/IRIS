@@ -82,7 +82,9 @@ def load_model_and_processor(
     device = hw_config.get("device", "auto")
     dtype_str = model_dtype or hw_config.get("model", {}).get("dtype", "auto")
     torch_dtype = _parse_dtype(dtype_str)
-    attn_implementation = hw_config.get("model", {}).get("attn_implementation", "sdpa")
+    attn_implementation = _resolve_attn_implementation(
+        hw_config.get("model", {}).get("attn_implementation", "sdpa")
+    )
     low_cpu_mem_usage = hw_config.get("model", {}).get("low_cpu_mem_usage", True)
 
     # Build model loading kwargs (NOTE: transformers uses torch_dtype, not dtype)
@@ -153,6 +155,28 @@ def _parse_dtype(dtype_str: str) -> Any:
 
     logger.warning(f"Unknown dtype: {dtype_str}, using 'auto'")
     return "auto"
+
+
+def _resolve_attn_implementation(attn_impl: str) -> str:
+    """Upgrade sdpa -> flash_attention_2 if hardware and package support it."""
+    if attn_impl != "sdpa":
+        return attn_impl
+    import torch
+    if not torch.cuda.is_available():
+        return attn_impl
+    try:
+        major, _ = torch.cuda.get_device_capability()
+    except Exception:
+        return attn_impl
+    if major < 8:  # Flash Attention 2 requires Ampere (sm80) or newer
+        return attn_impl
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        logger.debug("flash-attn not installed; staying with sdpa")
+        return attn_impl
+    logger.info("Flash Attention 2 supported — upgrading from sdpa")
+    return "flash_attention_2"
 
 
 def _build_quantization_config(quant_cfg: dict) -> Any | None:
