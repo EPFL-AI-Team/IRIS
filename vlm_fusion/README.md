@@ -6,7 +6,7 @@ Investigated specialized video action recognition models and two strategies for 
 - **Fusion strategy 1, Prompt injection**: Top-k predicted actions from VideoMAE V2 are formatted as structured context and injected into Qwen2.5-VL's prompt
 - **Fusion strategy 2, Deep fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
 
-- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](Annaelle-Benlamri-IRIS-VLM-Report.pdf)
+- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](Ahttps://github.com/EPFL-AI-Team/IRIS/blob/main/Annaelle-Benlamri-IRIS-VLM-Report.pdf)
 - **Code**: [`vlm_fusion/`](vlm_fusion/)
 
 
@@ -18,7 +18,7 @@ Prompt-based injection treats VideoMAE-v2 as an external action recognizer whose
 ### Approach
 
 - VideoMAE-v2 produces action class probabilities: `p(a|x) = softmax(g(Zv))`
-- Top-k predicted actions are extracted (typically k  [1, 5]) with their confidence scores
+- Top-k predicted actions are extracted with their confidence scores
 - Predictions are formatted as structured text and injected into the VLM prompt
 - The VLM generates protocol documentation conditioned on these action predictions
 
@@ -79,9 +79,9 @@ Video (16 frames) → VideoMAE-v2 (frozen) [1568 tokens × 768]
 
 ## Checkpoints
 
-Available at: 
-- [videomaev2-finetuned-finebio](AnnaelleMyriam/videomaev2-finetuned-finebio)
-- [videomae-qwen-connectors](AnnaelleMyriam/videomae-qwen-connectors)
+Available at:
+- [videomaev2-finetuned-finebio](https://huggingface.co/AnnaelleMyriam/videomaev2-finetuned-finebio)
+- [videomae-qwen-connectors](https://huggingface.co/AnnaelleMyriam/videomae-qwen-connectors)
 
 ## Repository Structure
 
