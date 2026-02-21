@@ -103,6 +103,7 @@ def load_model_and_processor(
 
     # Mac MPS device handling: Explicitly detect and use MPS when available
     import torch
+
     use_mps = False
     if hardware == "mac" and torch.backends.mps.is_available():
         logger.info("Mac MPS device detected - using explicit device mapping")
@@ -121,7 +122,9 @@ def load_model_and_processor(
     )
 
     logger.info(f"Loading model: {resolved_model_id}")
-    model = AutoModelForImageTextToText.from_pretrained(resolved_model_id, **model_kwargs)
+    model = AutoModelForImageTextToText.from_pretrained(
+        resolved_model_id, **model_kwargs
+    )
 
     # Move to MPS device after loading if Mac
     if use_mps:
@@ -162,6 +165,7 @@ def _resolve_attn_implementation(attn_impl: str) -> str:
     if attn_impl != "sdpa":
         return attn_impl
     import torch
+
     if not torch.cuda.is_available():
         return attn_impl
     try:
@@ -175,7 +179,7 @@ def _resolve_attn_implementation(attn_impl: str) -> str:
     except ImportError:
         logger.debug("flash-attn not installed; staying with sdpa")
         return attn_impl
-    logger.info("Flash Attention 2 supported — upgrading from sdpa")
+    logger.info("Flash Attention 2 supported - upgrading from sdpa")
     return "flash_attention_2"
 
 
@@ -193,7 +197,9 @@ def _build_quantization_config(quant_cfg: dict) -> Any | None:
     try:
         from transformers import BitsAndBytesConfig
     except ImportError:
-        logger.error("BitsAndBytes not available. Install with: pip install bitsandbytes")
+        logger.error(
+            "BitsAndBytes not available. Install with: pip install bitsandbytes"
+        )
         return None
 
     if load_in_4bit:

@@ -10,6 +10,7 @@ Can be used as CLI or imported as module.
 
 import argparse
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,8 +20,6 @@ import torch
 from PIL import Image
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ def _resolve_attn_implementation(attn_impl: str) -> str:
     except ImportError:
         logger.debug("flash-attn not installed; staying with sdpa")
         return attn_impl
-    logger.info("Flash Attention 2 supported — upgrading from sdpa")
+    logger.info("Flash Attention 2 supported - upgrading from sdpa")
     return "flash_attention_2"
 
 
@@ -304,7 +303,9 @@ def infer_video(
 
     results = []
     for i, seg in enumerate(segments):
-        logger.info(f"Processing segment {i + 1}/{len(segments)} at {seg['start_sec']:.2f}s")
+        logger.info(
+            f"Processing segment {i + 1}/{len(segments)} at {seg['start_sec']:.2f}s"
+        )
 
         try:
             response = infer_segment(
