@@ -6,7 +6,7 @@ Investigated specialized video action recognition models and two strategies for 
 - **Fusion strategy 1, Prompt injection**: Top-k predicted actions from VideoMAE V2 are formatted as structured context and injected into Qwen2.5-VL's prompt
 - **Fusion strategy 2, Deep fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
 
-- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](Ahttps://github.com/EPFL-AI-Team/IRIS/blob/main/Annaelle-Benlamri-IRIS-VLM-Report.pdf)
+- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](https://github.com/EPFL-AI-Team/IRIS/blob/main/Annaelle-Benlamri-IRIS-VLM-Report.pdf)
 - **Code**: [`vlm_fusion/`](vlm_fusion/)
 
 
@@ -21,29 +21,6 @@ Prompt-based injection treats VideoMAE-v2 as an external action recognizer whose
 - Top-k predicted actions are extracted with their confidence scores
 - Predictions are formatted as structured text and injected into the VLM prompt
 - The VLM generates protocol documentation conditioned on these action predictions
-
-### Prompt Template
-
-```
-SYSTEM: You are an assistant documenting laboratory procedures based on video analysis.
-
-USER:
-Segment metadata: start: <t_start>s, end: <t_end>s, duration: <dur>s
-
-Action recognizer (VideoMAE-v2) predictions (top-k):
-1) <action_1> (confidence: <p_1>%)
-2) <action_2> (confidence: <p_2>%)
-...
-
-Task: Based on the action recognizer predictions, produce a structured description
-of the laboratory step. Output a JSON object with fields:
-(step_id, time, action, manipulated_object, affected_object, notes).
-
-If the evidence is insufficient, inconsistent, or the confidence scores are low,
-output "uncertain": true and explain why in notes.
-
-Respond ONLY with the JSON object.
-```
 
 
 ## Strategy 2 : Deep Fusion
