@@ -33,9 +33,9 @@ Investigated specialized video action recognition models and two strategies for 
 - **Fusion strategy 1, Prompt injection**: Top-k predicted actions from VideoMAE V2 are formatted as structured context and injected into Qwen2.5-VL's prompt
 - **Fusion strategy 2, Deep fusion**: VideoMAE V2 spatiotemporal tokens are compressed via a Perceiver Resampler and projected directly into Qwen2.5-VL's embedding space via a trainable MLP, with both backbones frozen
 
-- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](Annaelle-Benlamri-IRIS-VLM-Report.pdf)
+- **Report**: [`Annaelle-Benlamri-IRIS-VLM-Report.pdf`](https://github.com/EPFL-AI-Team/IRIS/blob/main/Annaelle-Benlamri-IRIS-VLM-Report.pdf)
 - **Code**: [`vlm_fusion/`](vlm_fusion/)
-- **Models on HuggingFace**: [videomaev2-finetuned-finebio](AnnaelleMyriam/videomaev2-finetuned-finebio), [videomae-qwen-connectors](AnnaelleMyriam/videomae-qwen-connectors)
+- **Models on HuggingFace**: [videomaev2-finetuned-finebio](https://huggingface.co/AnnaelleMyriam/videomaev2-finetuned-finebio), [videomae-qwen-connectors](https://huggingface.co/AnnaelleMyriam/videomae-qwen-connectors)
 
 ---
 
