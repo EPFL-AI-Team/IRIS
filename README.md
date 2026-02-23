@@ -117,4 +117,4 @@ Web interface available at `http://localhost:8006`. For full setup, configuratio
 
 ---
 
-**License**: Apache 2.0
+**License**: [`MIT License`](https://github.com/EPFL-AI-Team/IRIS/blob/main/LICENSE)
