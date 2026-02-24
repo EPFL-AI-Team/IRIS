@@ -51,7 +51,7 @@ Built the full streaming pipeline from hardware to inference server, and fine-tu
   <img src="img/system-architecture-diagram.jpg" alt="System architecture diagram" width="280">
 </p>
 
-- **Report**: [`Marcus-Hamelink-IRIS-VLM-Report.pdf`](Marcus-Hamelink-IRIS-VLM-Report.pdf)
+- **Report**: [`Marcus-Hamelink-IRIS-Report.pdf`](./Marcus-Hamelink-IRIS-Report.pdf)
 - **Model on HuggingFace**: [animarcus/iris-qwen2.5-vl-3b-finebio](https://huggingface.co/animarcus/iris-qwen2.5-vl-3b-finebio)
 - **Inference server**: [`src/iris/server/`](src/iris/server/)
 - **Client backend and frontend**: [`src/iris/client/`](src/iris/client/)
