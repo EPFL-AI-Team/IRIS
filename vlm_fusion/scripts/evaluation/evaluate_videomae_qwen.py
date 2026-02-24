@@ -1,5 +1,6 @@
 """
 VideoMAE-Qwen2.5-VL Evaluation Script
+Compares fine-tuned model with baseline Qwen2.5-VL-3B-Instruct
 """
 
 import os
@@ -31,12 +32,10 @@ from transformers import (
     AutoProcessor,
     Qwen2_5_VLForConditionalGeneration,
 )
-from huggingface_hub import hf_hub_download
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 try:
     from train_videomae_qwen_contrastive_new_resampler import (
@@ -47,46 +46,6 @@ try:
 except ImportError:
     logger.error("Cannot import model classes. Make sure train_videomae_qwen_contrastive_new_resampler.py is in PYTHONPATH")
     sys.exit(1)
-
-
-
-def extract_first_sentence(text: str) -> str:
-    """
-    Extract only the first sentence from generated text.
-    This ensures outputs are concise and follow "one sentence" instructions.
-
-    Args:
-        text: Generated text (may contain multiple sentences)
-
-    Returns:
-        First sentence only
-    """
-    import re
-
-    text = text.strip()
-
-    if not text:
-        return text
-
-    # Split on sentence-ending punctuation (., !, ?)
-    # Use regex to handle edge cases like "Dr." or "etc."
-    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
-
-    # If no clear sentence boundary found, split on basic punctuation
-    if len(sentences) == 1:
-        sentences = re.split(r'[.!?]', text)
-
-    # Return first non-empty sentence
-    for sent in sentences:
-        sent = sent.strip()
-        if sent:
-            # Add period if not already there
-            if not sent.endswith(('.', '!', '?')):
-                sent += '.'
-            return sent
-
-    return text
-
 
 
 class VideoTextEvalDataset(Dataset):
@@ -100,7 +59,7 @@ class VideoTextEvalDataset(Dataset):
         video_processor: VideoMAEImageProcessor,
         tokenizer: AutoTokenizer,
         num_frames: int = 16,
-        instruction_prompt: str = "Document the experimental protocol observed in this video, including the actions performed and materials used. Answer in EXACTLY one concise sentence.",
+        instruction_prompt: str = "Document the experimental protocol observed in this video, including the actions performed and materials used.",
     ):
         with open(data_path, 'r') as f:
             self.data = json.load(f)
@@ -187,8 +146,6 @@ class QwenBaselineModel:
         Returns:
             Generated text
         """
-        # Prepare inputs for Qwen2.5-VL
-        # Format: text with <|vision_start|><|image_pad|><|vision_end|> tokens
         messages = [
             {
                 "role": "user",
@@ -335,10 +292,10 @@ class MetricsCalculator:
             rouge2_f_scores.append(rouge_results['rouge2'].fmeasure)
             rougeL_f_scores.append(rouge_results['rougeL'].fmeasure)
 
-
+            # Length
             lengths.append(len(pred_tokens))
 
-        # BERTScore
+        # BERTScore (batch computation for efficiency)
         P, R, F1 = bert_score(predictions, references, lang='en', verbose=False)
         bert_f1 = F1.mean().item()
 
@@ -354,6 +311,7 @@ class MetricsCalculator:
             bert_score_f1=bert_f1,
             avg_length=np.mean(lengths),
         )
+
 
 
 
@@ -376,19 +334,17 @@ def load_finetuned_model(
         mlp_hidden_dim=4096,
         mlp_num_layers=3,
         mlp_dropout=0.1,
-        use_lora=False,
+        use_lora=False,  
     )
 
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
-    # Extract state dict from Lightning checkpoint
     if 'state_dict' in checkpoint:
         state_dict = checkpoint['state_dict']
-        # Remove 'model.' prefix from keys (Lightning adds this)
+        # Remove 'model.' prefix from keys
         state_dict = {k.replace('model.', ''): v for k, v in state_dict.items()}
     else:
         state_dict = checkpoint
-
 
     model.load_state_dict(state_dict, strict=False)
     model = model.to(device)
@@ -405,13 +361,9 @@ def evaluate_model(
     max_new_tokens: int = 128,
     temperature: float = 0.7,
     top_p: float = 0.9,
-    extract_first_sentence_only: bool = False,
 ) -> Tuple[List[str], List[str], List[str]]:
     """
     Evaluate fine-tuned model on dataset
-
-    Args:
-        extract_first_sentence_only: If True, extract only first sentence from outputs
 
     Returns:
         predictions, references, video_paths
@@ -438,10 +390,6 @@ def evaluate_model(
                 top_p=top_p,
             )
 
-        # Post-process: extract first sentence if requested
-        if extract_first_sentence_only:
-            generated_text = extract_first_sentence(generated_text)
-
         predictions.append(generated_text)
         references.append(ground_truth)
         video_paths.append(sample['video_path'])
@@ -455,13 +403,9 @@ def evaluate_baseline(
     max_new_tokens: int = 128,
     temperature: float = 0.7,
     top_p: float = 0.9,
-    extract_first_sentence_only: bool = False,
 ) -> Tuple[List[str], List[str], List[str]]:
     """
     Evaluate baseline Qwen model on dataset
-
-    Args:
-        extract_first_sentence_only: If True, extract only first sentence from outputs
 
     Returns:
         predictions, references, video_paths
@@ -473,11 +417,13 @@ def evaluate_baseline(
     for i in tqdm(range(len(dataset)), desc="Evaluating baseline model"):
         sample = dataset[i]
 
-
+        # Convert pixel_values to PIL images
+        # pixel_values: [num_frames, 3, 224, 224]
         pixel_values = sample['pixel_values']
         frames = []
         for j in range(pixel_values.shape[0]):
             frame = pixel_values[j].permute(1, 2, 0).numpy()
+            # Assuming ImageNet normalization
             mean = np.array([0.485, 0.456, 0.406])
             std = np.array([0.229, 0.224, 0.225])
             frame = (frame * std + mean) * 255
@@ -494,10 +440,6 @@ def evaluate_baseline(
             temperature=temperature,
             top_p=top_p,
         )
-
-        # Post-process: extract first sentence if requested
-        if extract_first_sentence_only:
-            generated_text = extract_first_sentence(generated_text)
 
         predictions.append(generated_text)
         references.append(ground_truth)
@@ -517,7 +459,6 @@ def plot_metrics_comparison(
     metrics_dict_ft = finetuned_metrics.to_dict()
     metrics_dict_bl = baseline_metrics.to_dict()
 
-    # Remove avg_length from comparison
     metrics_dict_ft.pop('Avg Length', None)
     metrics_dict_bl.pop('Avg Length', None)
 
@@ -563,7 +504,6 @@ def plot_radar_chart(
 ):
     """Create radar chart comparing key metrics"""
 
-    # Select key metrics for radar chart
     key_metrics = ['BLEU-4', 'METEOR', 'ROUGE-L', 'BERTScore-F1']
 
     ft_dict = finetuned_metrics.to_dict()
@@ -611,9 +551,7 @@ def save_qualitative_results(
     """Save qualitative comparison of generations"""
 
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write("=" * 100 + "\n")
-        f.write("QUALITATIVE EVALUATION: VideoMAE-Qwen vs Qwen Baseline\n")
-        f.write("=" * 100 + "\n\n")
+        f.write("\n  QUALITATIVE EVALUATION: VideoMAE-Qwen vs Qwen Baseline\n")
 
         for i in range(min(num_samples, len(references))):
             f.write(f"Sample {i+1}\n")
@@ -642,12 +580,11 @@ def create_summary_report(
     bl_dict = baseline_metrics.to_dict()
 
     with open(output_path, 'w') as f:
-        f.write("  EVALUATION REPORT: VideoMAE-Qwen2.5-VL vs Qwen2.5-VL Baseline\n")
+        f.write("\n  EVALUATION REPORT: VideoMAE-Qwen2.5-VL vs Qwen2.5-VL Baseline\n")
 
-        f.write(" QUANTITATIVE RESULTS\n")
+        f.write("\n QUANTITATIVE RESULTS\n")
 
         f.write(f"{'Metric':<20} {'Fine-tuned':<15} {'Baseline':<15} {'Improvement':<15}\n")
-        f.write("-" * 80 + "\n")
 
         for metric in ft_dict.keys():
             ft_val = ft_dict[metric]
@@ -660,9 +597,8 @@ def create_summary_report(
                 improvement = ((ft_val - bl_val) / bl_val * 100) if bl_val > 0 else 0
                 f.write(f"{metric:<20} {ft_val:<15.4f} {bl_val:<15.4f} {improvement:+.2f}%\n")
 
-        f.write("  KEY FINDINGS\n")
+        f.write("\n KEY FINDINGS\n")
 
-        # Calculate average improvement
         improvements = []
         for metric in ft_dict.keys():
             if metric != 'Avg Length':
@@ -687,23 +623,15 @@ def create_summary_report(
     logger.info(f"Summary report saved to {output_path}")
 
 
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate VideoMAE-Qwen2.5-VL model")
-
-    # Checkpoint arguments (either local path OR HuggingFace repo)
-    checkpoint_group = parser.add_mutually_exclusive_group(required=True)
-    checkpoint_group.add_argument('--checkpoint', type=str,
-                       help='Path to local fine-tuned model checkpoint')
-    checkpoint_group.add_argument('--hf_repo', type=str,
-                       help='HuggingFace repository name (e.g., username/repo-name)')
-
-    parser.add_argument('--checkpoint_filename', type=str,
-                       help='Checkpoint filename in HuggingFace repo (required if using --hf_repo)')
-
+    parser.add_argument('--checkpoint', type=str, required=True,
+                       help='Path to fine-tuned model checkpoint')
     parser.add_argument('--test_data', type=str, required=True,
                        help='Path to test annotations JSON')
     parser.add_argument('--videomae_model', type=str,
-                       default='AnnaelleMyriam/videomaev2-finetuned-finebio',
+                       default='/home/benlamri/models/videomae-base-distilled',
                        help='Path to VideoMAE model')
     parser.add_argument('--qwen_model', type=str,
                        default='Qwen/Qwen2.5-VL-3B-Instruct',
@@ -714,46 +642,22 @@ def main():
                        help='Device to use (cuda or cpu)')
     parser.add_argument('--num_frames', type=int, default=16,
                        help='Number of frames to sample')
-    parser.add_argument('--max_new_tokens', type=int, default=50,
+    parser.add_argument('--max_new_tokens', type=int, default=250,
                        help='Maximum tokens to generate')
-    parser.add_argument('--temperature', type=float, default=0.1,
+    parser.add_argument('--temperature', type=float, default=0.7,
                        help='Sampling temperature')
     parser.add_argument('--skip_baseline', action='store_true',
                        help='Skip baseline evaluation (only evaluate fine-tuned model)')
-    parser.add_argument('--extract_first_sentence', action='store_true',
-                       help='Extract only the first sentence from generated outputs (for concise predictions)')
 
     args = parser.parse_args()
 
-    if args.hf_repo and not args.checkpoint_filename:
-        parser.error("--checkpoint_filename is required when using --hf_repo")
-
-    if args.hf_repo:
-        logger.info(f"Downloading checkpoint from HuggingFace: {args.hf_repo}")
-        logger.info(f"Checkpoint file: {args.checkpoint_filename}")
-        try:
-            checkpoint_path = hf_hub_download(
-                repo_id=args.hf_repo,
-                filename=args.checkpoint_filename,
-                repo_type="model"
-            )
-            logger.info(f"Downloaded to: {checkpoint_path}")
-        except Exception as e:
-            logger.error(f"Failed to download checkpoint from HuggingFace: {e}")
-            sys.exit(1)
-    else:
-        checkpoint_path = args.checkpoint
-        logger.info(f"Using local checkpoint: {checkpoint_path}")
-
     os.makedirs(args.output_dir, exist_ok=True)
 
-    logger.info("STARTING EVALUATION")
+    logger.info("\n STARTING EVALUATION")
 
-    logger.info("Loading processors...")
     videomae_processor = VideoMAEImageProcessor.from_pretrained(args.videomae_model)
     tokenizer = AutoTokenizer.from_pretrained(args.qwen_model)
 
-    logger.info("Creating test dataset...")
     test_dataset = VideoTextEvalDataset(
         data_path=args.test_data,
         video_processor=videomae_processor,
@@ -761,27 +665,22 @@ def main():
         num_frames=args.num_frames,
     )
 
-    logger.info("Loading fine-tuned model...")
     finetuned_model = load_finetuned_model(
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=args.checkpoint,
         videomae_model_path=args.videomae_model,
         qwen_model_path=args.qwen_model,
         device=args.device
     )
 
-    logger.info("EVALUATING FINE-TUNED MODEL")
-    if args.extract_first_sentence:
-        logger.info("Post-processing: Extracting only first sentence from outputs")
+    logger.info("\n  EVALUATING FINE-TUNED MODEL")
     ft_predictions, ft_references, ft_video_paths = evaluate_model(
         model=finetuned_model,
         dataset=test_dataset,
         device=args.device,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
-        extract_first_sentence_only=args.extract_first_sentence,
     )
 
-    logger.info("Computing metrics for fine-tuned model...")
     metrics_calculator = MetricsCalculator()
     ft_metrics = metrics_calculator.compute_metrics(ft_predictions, ft_references)
 
@@ -790,7 +689,7 @@ def main():
         logger.info(f"  {k}: {v:.4f}")
 
     if not args.skip_baseline:
-        logger.info("EVALUATING BASELINE MODEL")
+        logger.info("\n  EVALUATING BASELINE MODEL")
 
         baseline_model = QwenBaselineModel(model_path=args.qwen_model)
         bl_predictions, bl_references, bl_video_paths = evaluate_baseline(
@@ -798,19 +697,15 @@ def main():
             dataset=test_dataset,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
-            extract_first_sentence_only=args.extract_first_sentence,
         )
 
-        # Compute metrics for baseline
-        logger.info("Computing metrics for baseline model...")
         bl_metrics = metrics_calculator.compute_metrics(bl_predictions, bl_references)
 
         logger.info("\nBaseline Model Metrics:")
         for k, v in bl_metrics.to_dict().items():
             logger.info(f"  {k}: {v:.4f}")
 
-        # Create visualizations
-        logger.info("GENERATING VISUALIZATIONS")
+        logger.info("\n  GENERATING VISUALIZATIONS")
 
         plot_metrics_comparison(
             ft_metrics, bl_metrics,
@@ -832,7 +727,6 @@ def main():
             os.path.join(args.output_dir, 'evaluation_report.txt')
         )
 
-    logger.info("Saving predictions...")
     results = {
         'finetuned': {
             'predictions': ft_predictions,
@@ -853,7 +747,7 @@ def main():
     with open(os.path.join(args.output_dir, 'predictions.json'), 'w') as f:
         json.dump(results, f, indent=2)
 
-    logger.info("\n EVALUATION COMPLETE")
+    logger.info("\n  EVALUATION COMPLETE")
     logger.info(f"Results saved to: {args.output_dir}")
 
 
